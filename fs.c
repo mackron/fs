@@ -1712,7 +1712,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
     fs_config defaultConfig;
     const fs_backend* pBackend = NULL;
     size_t backendDataSizeInBytes = 0;
-    fs_int64 initialStreamCursor;
+    fs_int64 initialStreamCursor = -1;
     size_t archiveTypesAllocSize = 0;
     size_t iArchiveType;
 
@@ -4556,7 +4556,7 @@ FS_API fs_iterator* fs_first_stdio(fs* pFS, const char* pDirectoryPath, size_t d
     WIN32_FIND_DATAW fd;
 
     /* An empty path means the current directory. Win32 will want us to specify "." in this case. */
-    if (pDirectoryPath == "") {
+    if (pDirectoryPath == NULL || pDirectoryPath[0] == '\0') {
         pDirectoryPath = ".";
         directoryPathLen = 1;
     }
@@ -4605,7 +4605,7 @@ FS_API fs_iterator* fs_first_stdio(fs* pFS, const char* pDirectoryPath, size_t d
     pQuery[queryLen + 2] = L'\0';
 
     /* Convert to backslashes. */
-    for (i = 0; i < queryLen; i += 1) {
+    for (i = 0; i < (size_t)queryLen; i += 1) {
         if (pQuery[i] == L'/') {
             pQuery[i] = L'\\';
         }
@@ -5553,7 +5553,7 @@ FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offse
             pStream->cursor += (size_t)offset;
         } else {
             /* Moving backwards. */
-            size_t absoluteOffset = FS_ABS(offset);
+            size_t absoluteOffset = (size_t)FS_ABS(offset); /* Safe cast because it was checked above. */
             if (absoluteOffset > pStream->cursor) {
                 return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer. */
             }

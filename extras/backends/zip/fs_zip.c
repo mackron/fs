@@ -249,7 +249,7 @@ FS_API fs_result fs_zip_deflate_decompressor_init(fs_zip_deflate_decompressor* p
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompressor, const fs_uint8* pInputBuffer, size_t* pInputBufferSize, fs_uint8* pOutputBufferStart, fs_uint8* pOutputBufferNext, size_t* pOutputBufferSize, const fs_uint32 flags)
+FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompressor, const fs_uint8* pInputBuffer, size_t* pInputBufferSize, fs_uint8* pOutputBufferStart, fs_uint8* pOutputBufferNext, size_t* pOutputBufferSize, fs_uint32 flags)
 {
     static const int sLengthBase[31] =
     {
@@ -1025,7 +1025,7 @@ static fs_result fs_zip_find_file_by_path(fs_zip* pZip, const char* pFilePath, s
     }
 
     /* Should never get here. */
-    return FS_DOES_NOT_EXIST;
+    /*return FS_DOES_NOT_EXIST;*/
 }
 
 static fs_result fs_zip_get_file_info_by_path(fs_zip* pZip, const char* pFilePath, size_t filePathLen, fs_zip_file_info* pInfo)
@@ -1429,7 +1429,7 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
             return FS_TOO_BIG;  /* Central directory is too big to fit into memory. */
         }
 
-        pZip->fileCount = cdRecordCount64;
+        pZip->fileCount = (size_t)cdRecordCount64;  /* Safe cast. Checked above. */
         
     } else {
         /* It's a 32-bit archive. */
@@ -1942,7 +1942,7 @@ static fs_result fs_file_read_zip_store(fs* pFS, fs_file_zip* pZipFile, void* pD
         if (bytesRemainingToRead > 0) {
             FS_ZIP_ASSERT(bytesRemainingToRead < pZipFile->cacheCap);
 
-            result = fs_stream_read(pZipFile->pStream, pZipFile->pCache, FS_ZIP_MIN(pZipFile->cacheCap, (pZipFile->info.uncompressedSize - (pZipFile->absoluteCursorUncompressed + bytesRead))), &pZipFile->cacheSize);
+            result = fs_stream_read(pZipFile->pStream, pZipFile->pCache, (size_t)FS_ZIP_MIN(pZipFile->cacheCap, (pZipFile->info.uncompressedSize - (pZipFile->absoluteCursorUncompressed + bytesRead))), &pZipFile->cacheSize); /* Safe cast to size_t because reading will be clamped to bytesToRead. */
             if (result != FS_SUCCESS) {
                 return result;
             }
@@ -2052,7 +2052,7 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
                 to be clamped to the number of bytes remaining in the file and the number of bytes
                 remaining in the cache.
                 */
-                compressedBytesToRead = FS_ZIP_MIN(pZipFile->compressedCacheCap - pZipFile->compressedCacheCursor, (pZipFile->info.compressedSize - pZipFile->absoluteCursorCompressed));
+                compressedBytesToRead = (size_t)FS_ZIP_MIN(pZipFile->compressedCacheCap - pZipFile->compressedCacheCursor, (pZipFile->info.compressedSize - pZipFile->absoluteCursorCompressed));
 
                 result = fs_stream_read(pZipFile->pStream, pZipFile->pCompressedCache + pZipFile->compressedCacheCursor, compressedBytesToRead, &compressedBytesRead);
                 /*
@@ -2140,8 +2140,6 @@ static fs_result fs_file_read_zip(fs_file* pFile, void* pDst, size_t bytesToRead
     } else {
         return FS_INVALID_FILE;  /* Should never get here. */
     }
-
-    return FS_SUCCESS;
 }
 
 static fs_result fs_file_write_zip(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten)
@@ -2251,7 +2249,7 @@ static fs_result fs_file_seek_zip(fs_file* pFile, fs_int64 offset, fs_seek_origi
         /* Now we just keep reading until we get to the seek point. */
         while (pZipFile->absoluteCursorUncompressed < newAbsoluteCursor) {  /* <-- absoluteCursorUncompressed will be incremented by fs_file_read_zip(). */
             fs_uint8 temp[4096];
-            size_t bytesToRead;
+            fs_uint64 bytesToRead;
             size_t bytesRead;
             fs_result result;
 
@@ -2261,7 +2259,7 @@ static fs_result fs_file_seek_zip(fs_file* pFile, fs_int64 offset, fs_seek_origi
             }
             
             bytesRead = 0;
-            result = fs_file_read_zip(pFile, temp, bytesToRead, &bytesRead);
+            result = fs_file_read_zip(pFile, temp, (size_t)bytesToRead, &bytesRead);    /* Safe cast to size_t because the bytes to read will be clamped to sizeof(temp). */
             if (result != FS_SUCCESS) {
                 return result;
             }
