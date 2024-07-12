@@ -835,7 +835,8 @@ FS_API size_t fs_file_get_backend_data_size(fs_file* pFile);
 FS_API fs_stream* fs_file_get_stream(fs_file* pFile);     /* Files are streams. They can be cast directly to fs_stream*, but this function is here for people who prefer function style getters. */
 FS_API fs* fs_file_get_fs(fs_file* pFile);
 
-FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen, int mode);
+FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen, int mode);
+FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, int mode);
 FS_API fs_iterator* fs_next(fs_iterator* pIterator);
 FS_API void fs_free_iterator(fs_iterator* pIterator);
 

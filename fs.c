@@ -3314,9 +3314,9 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                     }
 
                     if (dirPathRemainingLen == 0) {
-                        pArchiveIterator = fs_first(pArchive, "", 0, mode);
+                        pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
                     } else {
-                        pArchiveIterator = fs_first(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
+                        pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
                     }
 
                     while (pArchiveIterator != NULL) {
@@ -3392,9 +3392,9 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
 
 
                             if (dirPathRemainingLen == 0) {
-                                pArchiveIterator = fs_first(pArchive, "", 0, mode);
+                                pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
                             } else {
-                                pArchiveIterator = fs_first(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
+                                pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
                             }
 
                             while (pArchiveIterator != NULL) {
@@ -3414,7 +3414,7 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
     return pIterator;
 }
 
-FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen, int mode)
+FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen, int mode)
 {
     fs_iterator_internal* pIterator = NULL;  /* This is the iterator we'll eventually be returning. */
     const fs_backend* pBackend;
@@ -3467,7 +3467,7 @@ FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, size_t directo
                 
                 if (iMountPoint.pArchive != NULL) {
                     /* The mount point is an archive. We need to iterate over the contents of the archive. */
-                    pBackendIterator = fs_first(iMountPoint.pArchive, pDirSubPath, dirSubPathLen, mode);
+                    pBackendIterator = fs_first_ex(iMountPoint.pArchive, pDirSubPath, dirSubPathLen, mode);
                     while (pBackendIterator != NULL) {
                         pIterator = fs_iterator_internal_append(pIterator, pBackendIterator, pFS, mode);
                         pBackendIterator = fs_next(pBackendIterator);
@@ -3540,6 +3540,11 @@ FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, size_t directo
     fs_iterator_internal_resolve_public_members(pIterator);
 
     return (fs_iterator*)pIterator;
+}
+
+FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, int mode)
+{
+    return fs_first_ex(pFS, pDirectoryPath, FS_NULL_TERMINATED, mode);
 }
 
 FS_API fs_iterator* fs_next(fs_iterator* pIterator)

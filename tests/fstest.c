@@ -382,7 +382,7 @@ static int fsest_iteration()
     {
         fs_iterator* pIterator;
 
-        for (pIterator = fs_first(NULL, "", 0, 0); pIterator != NULL; pIterator = fs_next(pIterator)) {
+        for (pIterator = fs_first(NULL, "", 0); pIterator != NULL; pIterator = fs_next(pIterator)) {
             printf("    %s\n", pIterator->pName);
         }
     }
@@ -407,7 +407,7 @@ static int fsest_iteration()
     {
         fs_iterator* pIterator;
 
-        for (pIterator = fs_first(pFS, "iteration", FS_NULL_TERMINATED, FS_TRANSPARENT); pIterator != NULL; pIterator = fs_next(pIterator)) {
+        for (pIterator = fs_first(pFS, "iteration", FS_TRANSPARENT); pIterator != NULL; pIterator = fs_next(pIterator)) {
             printf("    %s\n", pIterator->pName);
         }
     }
