@@ -721,7 +721,8 @@ FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_al
 #define FS_VERBOSE                  0x0020  /* When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt" */
 
 #define FS_NO_CREATE_DIRS           0x0040  /* When used, directories will not be created automatically when opening files for writing. */
-#define FS_IGNORE_MOUNTS            0x0080  /* When used, mounted archives will be ignored when opening and iterating files. */
+#define FS_IGNORE_MOUNTS            0x0080  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
+#define FS_ONLY_MOUNTS              0x0100  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
 
 
 /* Garbage collection policies.*/

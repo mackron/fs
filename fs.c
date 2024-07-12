@@ -2849,9 +2849,11 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
         }
 
         /* If we get here it means we couldn't find the file from our search paths. Try opening directly. */
-        result = fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
-        if (result == FS_SUCCESS) {
-            return FS_SUCCESS;
+        if ((openMode & FS_ONLY_MOUNTS) == 0) {
+            result = fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
+            if (result == FS_SUCCESS) {
+                return FS_SUCCESS;
+            }
         }
 
         /* Getting here means we couldn't open the file from any mount points, nor could we open it directly. */
@@ -3514,7 +3516,9 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
         }
 
         /* Check for files directly in the file system. */
-        pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, pDirectoryPath, directoryPathLen, mode);
+        if ((mode & FS_ONLY_MOUNTS) == 0) {
+            pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, pDirectoryPath, directoryPathLen, mode);
+        }
     }
 
     /* If after the gathering step we don't have an iterator we can just return null. It just means nothing was found. */
