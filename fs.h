@@ -23,7 +23,7 @@ fs* pFS;
 
 result = fs_init(NULL, &pFS);
 if (result != FS_SUCCESS) {
-	// Failed to initialize.
+    // Failed to initialize.
 }
 ```
 
@@ -35,7 +35,7 @@ fs_file* pFile;
 
 result = fs_file_open(pFS, "file.txt", FS_READ, &pFile);
 if (result != FS_SUCCESS) {
-	// Failed to open file.
+    // Failed to open file.
 }
 ```
 
@@ -46,7 +46,7 @@ size_t bytesRead;
 
 result = fs_file_read(pFS, pBuffer, bytesToRead, &bytesRead);
 if (result != FS_SUCCESS) {
-	// Failed to read file. You can use FS_AT_END to check if reading failed to being at EOF.
+    // Failed to read file. You can use FS_AT_END to check if reading failed to being at EOF.
 }
 ```
 
@@ -83,7 +83,7 @@ read from an archive:
 ```c
 result = fs_file_open(pFS, "archive.zip/file-inside-archive.txt", FS_READ, &pFile);
 if (result != FS_SUCCESS) {
-	// Failed to open file.
+    // Failed to open file.
 }
 ```
 
@@ -109,7 +109,7 @@ disabling access to archives in this manner altogether via `FS_OPAQUE`:
 ```c
 result = fs_file_open(pFS, "archive.zip/file-inside-archive.txt", FS_READ | FS_OPAQUE, &pFile);
 if (result != FS_SUCCESS) {
-	// This example will always fail.
+    // This example will always fail.
 }
 ```
 
@@ -126,7 +126,7 @@ fs_file* pArchiveFile;
 
 result = fs_file_open(pFS, "archive.zip", FS_READ, &pArchiveFile);
 if (result != FS_SUCCESS) {
-	// Failed to open archive file.
+    // Failed to open archive file.
 }
 
 
@@ -138,7 +138,7 @@ archiveConfig = fs_config_init(FS_ZIP, NULL, fs_file_get_stream(pArchiveFile));
 
 result = fs_init(&archiveConfig, &pArchive);
 if (result != FS_SUCCESS) {
-	// Failed to initialize archive.
+    // Failed to initialize archive.
 }
 
 ...
@@ -159,7 +159,7 @@ you can use it just like any other:
 ```c
 result = fs_file_open(pArchive, "file-inside-archive.txt", FS_READ, &pFile);
 if (result != FS_SUCCESS) {
-	// Failed to open file.
+    // Failed to open file.
 }
 ```
 
@@ -262,8 +262,8 @@ Now you can write out different types of files, with the prefix being used to de
 be saved:
 
 ```c
-fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile);	// Prefixed with "config", so will use the "config" mount point.
-fs_file_open(pFs, "saves/save0.sav", FS_WRITE, &pFile);	// Prefixed with "saves", so will use the "saves" mount point.
+fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile); // Prefixed with "config", so will use the "config" mount point.
+fs_file_open(pFs, "saves/save0.sav", FS_WRITE, &pFile); // Prefixed with "saves", so will use the "saves" mount point.
 ```
 
 Note that writing directly into an archive is not supported by this API. To write into an archive,
@@ -277,8 +277,8 @@ You can enumerate over the contents of a directory like the following:
 
 ```c
 for (fs_iterator* pIterator = fs_first(pFS, "directory/to/enumerate", FS_NULL_TERMINATED, 0); pIterator != NULL; pIterator = fs_next(pIterator)) {
-	printf("Name: %s\n",   pIterator->pName);
-	printf("Size: %llu\n", pIterator->info.size);
+    printf("Name: %s\n",   pIterator->pName);
+    printf("Size: %llu\n", pIterator->info.size);
 }
 ```
 
