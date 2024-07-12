@@ -8,7 +8,7 @@
 FS_API int fs_strncpy(char* dst, const char* src, size_t count);    /* <-- This is not forward declared in the header. It exists in the .c file though. */
 
 
-static void fsest_print_result_v(const char* pPattern, int result, va_list args)
+static void fstest_print_result_v(const char* pPattern, int result, va_list args)
 {
     const char* pResultStr = (result == 0) ? "PASS" : "FAIL";
     char pBuffer[1024];
@@ -20,12 +20,12 @@ static void fsest_print_result_v(const char* pPattern, int result, va_list args)
     printf("%s%s%.*s%s\033[0m\n", ((result == 0) ? "\033[32m" : "\033[31m"), pBuffer, 80 - 4 - (int)strlen(pBuffer), pSpaces, pResultStr);
 }
 
-static void fsest_print_result_f(const char* pPattern, int result, ...)
+static void fstest_print_result_f(const char* pPattern, int result, ...)
 {
     va_list args;
     va_start(args, result);
     {
-        fsest_print_result_v(pPattern, result, args);
+        fstest_print_result_v(pPattern, result, args);
     }
     va_end(args);
 }
@@ -33,7 +33,7 @@ static void fsest_print_result_f(const char* pPattern, int result, ...)
 
 
 
-static int fsest_breakup_path_forward(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
+static int fstest_breakup_path_forward(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
 {
     fs_result result;
     fs_path_iterator i;
@@ -52,7 +52,7 @@ static int fsest_breakup_path_forward(const char* pPath, size_t pathLen, fs_path
     }
 }
 
-static int fsest_breakup_path_reverse(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
+static int fstest_breakup_path_reverse(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
 {
     fs_result result;
     fs_path_iterator i;
@@ -71,7 +71,7 @@ static int fsest_breakup_path_reverse(const char* pPath, size_t pathLen, fs_path
     }
 }
 
-static int fsest_reconstruct_path_forward(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+static int fstest_reconstruct_path_forward(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
 {
     size_t i;
     size_t len = 0;
@@ -92,7 +92,7 @@ static int fsest_reconstruct_path_forward(const fs_path_iterator* pIterator, siz
     return 0;
 }
 
-static int fsest_reconstruct_path_reverse(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+static int fstest_reconstruct_path_reverse(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
 {
     size_t i;
     size_t len = 0;
@@ -113,7 +113,7 @@ static int fsest_reconstruct_path_reverse(const fs_path_iterator* pIterator, siz
     return 0;
 }
 
-static int fsest_path(const char* pPath)
+static int fstest_path(const char* pPath)
 {
     fs_path_iterator segmentsForward[32];
     fs_path_iterator segmentsReverse[32];
@@ -126,11 +126,11 @@ static int fsest_path(const char* pPath)
 
     printf("Path: \"%s\"\n", pPath);
 
-    fsest_breakup_path_forward(pPath, (size_t)-1, segmentsForward, &segmentsForwardCount);
-    fsest_breakup_path_reverse(pPath, (size_t)-1, segmentsReverse, &segmentsReverseCount);
+    fstest_breakup_path_forward(pPath, (size_t)-1, segmentsForward, &segmentsForwardCount);
+    fstest_breakup_path_reverse(pPath, (size_t)-1, segmentsReverse, &segmentsReverseCount);
 
-    fsest_reconstruct_path_forward(segmentsForward, segmentsForwardCount, pPathReconstructedForward);
-    fsest_reconstruct_path_reverse(segmentsReverse, segmentsReverseCount, pPathReconstructedReverse);
+    fstest_reconstruct_path_forward(segmentsForward, segmentsForwardCount, pPathReconstructedForward);
+    fstest_reconstruct_path_reverse(segmentsReverse, segmentsReverseCount, pPathReconstructedReverse);
 
     if (strcmp(pPath, pPathReconstructedForward) != 0) {
         forwardResult = 1;
@@ -139,8 +139,8 @@ static int fsest_path(const char* pPath)
         reverseResult = 1;
     }
 
-    fsest_print_result_f("  Forward: \"%s\"", forwardResult, pPathReconstructedForward);
-    fsest_print_result_f("  Reverse: \"%s\"", reverseResult, pPathReconstructedReverse);
+    fstest_print_result_f("  Forward: \"%s\"", forwardResult, pPathReconstructedForward);
+    fstest_print_result_f("  Reverse: \"%s\"", reverseResult, pPathReconstructedReverse);
 
     if (forwardResult == 0 && reverseResult == 0) {
         return 0;
@@ -149,29 +149,29 @@ static int fsest_path(const char* pPath)
     }
 }
 
-static int fsest_paths()
+static int fstest_paths()
 {
     int result = 0;
 
-    result |= fsest_path("/");
-    result |= fsest_path("");
-    result |= fsest_path("/abc");
-    result |= fsest_path("/abc/");
-    result |= fsest_path("abc/");
-    result |= fsest_path("/abc/def/ghi");
-    result |= fsest_path("/abc/def/ghi/");
-    result |= fsest_path("abc/def/ghi/");
-    result |= fsest_path("C:");
-    result |= fsest_path("C:/");
-    result |= fsest_path("C:/abc");
-    result |= fsest_path("C:/abc/");
-    result |= fsest_path("C:/abc/def/ghi");
-    result |= fsest_path("C:/abc/def/ghi/");
-    result |= fsest_path("//localhost");
-    result |= fsest_path("//localhost/abc");
-    result |= fsest_path("//localhost//abc");
-    result |= fsest_path("~");
-    result |= fsest_path("~/Documents");
+    result |= fstest_path("/");
+    result |= fstest_path("");
+    result |= fstest_path("/abc");
+    result |= fstest_path("/abc/");
+    result |= fstest_path("abc/");
+    result |= fstest_path("/abc/def/ghi");
+    result |= fstest_path("/abc/def/ghi/");
+    result |= fstest_path("abc/def/ghi/");
+    result |= fstest_path("C:");
+    result |= fstest_path("C:/");
+    result |= fstest_path("C:/abc");
+    result |= fstest_path("C:/abc/");
+    result |= fstest_path("C:/abc/def/ghi");
+    result |= fstest_path("C:/abc/def/ghi/");
+    result |= fstest_path("//localhost");
+    result |= fstest_path("//localhost/abc");
+    result |= fstest_path("//localhost//abc");
+    result |= fstest_path("~");
+    result |= fstest_path("~/Documents");
 
     printf("\n");
 
@@ -184,14 +184,14 @@ static int fsest_paths()
 
 
 
-static int fsest_default_io()
+static int fstest_default_io()
 {
     /* TODO: Implement me. */
 
     return 0;
 }
 
-static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOutputDirectory, int openMode)
+static int fstest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOutputDirectory, int openMode)
 {
     fs_result result;
     fs_file_info fileInfo;
@@ -203,19 +203,19 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
     fs_uint64 totalBytesRead;
 
     result = fs_info(pFS, pFilePath, FS_READ | openMode, &fileInfo);
-    fsest_print_result_f("  Info      %s", (result != FS_SUCCESS), pFilePath);
+    fstest_print_result_f("  Info      %s", (result != FS_SUCCESS), pFilePath);
     if (result != 0) {
         return 1;
     }
 
     result = fs_file_open(pFS, pFilePath, FS_READ | openMode, &pFileIn);
-    fsest_print_result_f("  Open      %s", (result != FS_SUCCESS), pFilePath);
+    fstest_print_result_f("  Open      %s", (result != FS_SUCCESS), pFilePath);
     if (result != 0) {
         return 1;
     }
 
     result = fs_file_get_info(pFileIn, &fileInfo);
-    fsest_print_result_f("  File Info %s", (result != FS_SUCCESS), pFilePath);
+    fstest_print_result_f("  File Info %s", (result != FS_SUCCESS), pFilePath);
     if (result != 0) {
         fs_file_close(pFileIn);
         return 1;
@@ -223,7 +223,7 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
 
     snprintf(pOutputFilePath, sizeof(pOutputFilePath), "%s/%s", pOutputDirectory, fs_path_file_name(pFilePath, (size_t)-1));
     result = fs_file_open(pFS, pOutputFilePath, FS_WRITE | FS_TRUNCATE, &pFileOut);
-    fsest_print_result_f("  Open      %s", (result != FS_SUCCESS), pOutputFilePath);
+    fstest_print_result_f("  Open      %s", (result != FS_SUCCESS), pOutputFilePath);
     if (result != 0) {
         fs_file_close(pFileIn);
         return 1;
@@ -258,9 +258,9 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
         }
     }
 
-    fsest_print_result_f("  Read      %s",   (readResult  != FS_SUCCESS), pFilePath);
-    fsest_print_result_f("  Write     %s",   (writeResult != FS_SUCCESS), pOutputFilePath);
-    fsest_print_result_f("  Bytes     %llu", (totalBytesRead != fileInfo.size), totalBytesRead);
+    fstest_print_result_f("  Read      %s",   (readResult  != FS_SUCCESS), pFilePath);
+    fstest_print_result_f("  Write     %s",   (writeResult != FS_SUCCESS), pOutputFilePath);
+    fstest_print_result_f("  Bytes     %llu", (totalBytesRead != fileInfo.size), totalBytesRead);
 
 
     fs_file_close(pFileIn);
@@ -269,7 +269,7 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
     return 0;
 }
 
-static int fsest_archive_io()
+static int fstest_archive_io()
 {
     int result;
     fs* pFS;
@@ -287,7 +287,7 @@ static int fsest_archive_io()
     fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
 
     result = fs_init(&fsConfig, &pFS) != FS_SUCCESS;
-    fsest_print_result_f("  FS_STDIO Initialization", (result != FS_SUCCESS));
+    fstest_print_result_f("  FS_STDIO Initialization", (result != FS_SUCCESS));
     if (result != FS_SUCCESS) {
         return 1;
     }
@@ -311,21 +311,21 @@ static int fsest_archive_io()
     //fs_mount(pFS, "test", NULL, FS_MOUNT_PRIORITY_HIGHEST);
     //fs_mount(pFS, "blah", NULL, FS_MOUNT_PRIORITY_LOWEST);
 
-    result |= fsest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
-    //result |= fsest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
-    //result |= fsest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
+    result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
+    //result |= fstest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
+    //result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
 
 #if 0
     /* Mounted tests. TODO: Improve these. Make a separate test. */
     if (fs_mount(pFS, "testvectors", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors'\n"); }
     {
-        result |= fsest_archive_io_file(pFS, "testvectors.zip/miniaudio.h", "", FS_VERBOSE);
+        result |= fstest_archive_io_file(pFS, "testvectors.zip/miniaudio.h", "", FS_VERBOSE);
     }
     fs_unmount(pFS, "testvectors");
 
     if (fs_mount(pFS, "testvectors/testvectors.zip", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors/testvectors.zip'\n"); }
     {
-        result |= fsest_archive_io_file(pFS, "miniaudio.h", "", FS_VERBOSE);
+        result |= fstest_archive_io_file(pFS, "miniaudio.h", "", FS_VERBOSE);
     }
     fs_unmount(pFS, "testvectors/testvectors.zip");
 #endif
@@ -334,7 +334,7 @@ static int fsest_archive_io()
     return result;
 }
 
-static int fsest_write_io()
+static int fstest_write_io()
 {
     int result;
     fs* pFS;
@@ -345,7 +345,7 @@ static int fsest_write_io()
     fsConfig = fs_config_init_default();
 
     result = fs_init(&fsConfig, &pFS) != FS_SUCCESS;
-    fsest_print_result_f("  FS_STDIO Initialization", (result != FS_SUCCESS));
+    fstest_print_result_f("  FS_STDIO Initialization", (result != FS_SUCCESS));
     if (result != FS_SUCCESS) {
         return 1;
     }
@@ -376,7 +376,7 @@ static int fsest_write_io()
     return 0;
 }
 
-static int fsest_iteration()
+static int fstest_iteration()
 {
     int result;
     fs* pFS;
@@ -408,7 +408,7 @@ static int fsest_iteration()
     /* Iteration with registered archives. */
     printf("  With Archives\n");
     result = fs_init(&fsConfig, &pFS) != FS_SUCCESS;
-    fsest_print_result_f("    FS_STDIO Initialization", (result != FS_SUCCESS));
+    fstest_print_result_f("    FS_STDIO Initialization", (result != FS_SUCCESS));
     if (result != FS_SUCCESS) {
         return 1;
     }
@@ -427,14 +427,14 @@ static int fsest_iteration()
 
 }
 
-static int fsest_io()
+static int fstest_io()
 {
     int result = 0;
 
-    result |= fsest_default_io();
-    result |= fsest_archive_io();
-    result |= fsest_write_io();
-    result |= fsest_iteration();
+    result |= fstest_default_io();
+    result |= fstest_archive_io();
+    result |= fstest_write_io();
+    result |= fstest_iteration();
 
     if (result == 0) {
         return 0;
@@ -446,8 +446,8 @@ static int fsest_io()
 
 int main(int argc, char** argv)
 {
-    fsest_paths();
-    fsest_io();
+    fstest_paths();
+    fstest_io();
 
     (void)argc;
     (void)argv;
