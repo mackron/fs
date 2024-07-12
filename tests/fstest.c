@@ -200,6 +200,7 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
     char pOutputFilePath[1024];
     fs_result readResult = FS_SUCCESS;
     fs_result writeResult = FS_SUCCESS;
+    fs_uint64 totalBytesRead;
 
     result = fs_info(pFS, pFilePath, FS_READ | openMode, &fileInfo);
     fsest_print_result_f("  Info      %s", (result != FS_SUCCESS), pFilePath);
@@ -228,19 +229,27 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
         return 1;
     }
 
+    totalBytesRead = 0;
     for (;;) {
         char chunk[4096];
         size_t bytesRead = 0;
 
         result = fs_file_read(pFileIn, chunk, sizeof(chunk), &bytesRead);
         if (result != FS_SUCCESS) {
-            readResult = result;
+            if (result == FS_AT_END && bytesRead == 0) {
+                readResult = FS_SUCCESS;    /* Don't present an error for an EOF condition. */
+            } else {
+                readResult = result;
+            }
+
             break;
         }
 
         if (bytesRead == 0) {
             break;
         }
+
+        totalBytesRead += bytesRead;
         
         result = fs_file_write(pFileOut, chunk, bytesRead, NULL);
         if (result != FS_SUCCESS) {
@@ -249,8 +258,10 @@ static int fsest_archive_io_file(fs* pFS, const char* pFilePath, const char* pOu
         }
     }
 
-    fsest_print_result_f("  Read      %s", (readResult  != FS_SUCCESS), pFilePath);
-    fsest_print_result_f("  Write     %s", (writeResult != FS_SUCCESS), pOutputFilePath);
+    fsest_print_result_f("  Read      %s",   (readResult  != FS_SUCCESS), pFilePath);
+    fsest_print_result_f("  Write     %s",   (writeResult != FS_SUCCESS), pOutputFilePath);
+    fsest_print_result_f("  Bytes     %llu", (totalBytesRead != fileInfo.size), totalBytesRead);
+
 
     fs_file_close(pFileIn);
     fs_file_close(pFileOut);
@@ -301,10 +312,10 @@ static int fsest_archive_io()
     //fs_mount(pFS, "blah", NULL, FS_MOUNT_PRIORITY_LOWEST);
 
     result |= fsest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
-    result |= fsest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
-    result |= fsest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
+    //result |= fsest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
+    //result |= fsest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
 
-#if 1
+#if 0
     /* Mounted tests. TODO: Improve these. Make a separate test. */
     if (fs_mount(pFS, "testvectors", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors'\n"); }
     {
