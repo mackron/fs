@@ -1015,6 +1015,8 @@ FS_API void fs_sort(void* pBase, size_t count, size_t stride, int (*compareProc)
 FS_API void* fs_binary_search(const void* pKey, const void* pList, size_t count, size_t stride, int (*compareProc)(void*, const void*, const void*), void* pUserData);
 FS_API void* fs_linear_search(const void* pKey, const void* pList, size_t count, size_t stride, int (*compareProc)(void*, const void*, const void*), void* pUserData);
 FS_API void* fs_sorted_search(const void* pKey, const void* pList, size_t count, size_t stride, int (*compareProc)(void*, const void*, const void*), void* pUserData);
+
+FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count);
 /* END fs_utils.h */
 
 
