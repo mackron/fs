@@ -312,10 +312,10 @@ static int fstest_archive_io()
     //fs_mount(pFS, "blah", NULL, FS_MOUNT_PRIORITY_LOWEST);
 
     result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
-    //result |= fstest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
-    //result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
+    result |= fstest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
+    result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_TRANSPARENT); /* Files opened in transparent mode must still support verbose paths. */
 
-#if 0
+#if 1
     /* Mounted tests. TODO: Improve these. Make a separate test. */
     if (fs_mount(pFS, "testvectors", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors'\n"); }
     {

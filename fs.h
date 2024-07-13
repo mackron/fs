@@ -723,6 +723,7 @@ FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_al
 #define FS_NO_CREATE_DIRS           0x0040  /* When used, directories will not be created automatically when opening files for writing. */
 #define FS_IGNORE_MOUNTS            0x0080  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
 #define FS_ONLY_MOUNTS              0x0100  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
+#define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
 
 
 /* Garbage collection policies.*/

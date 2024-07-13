@@ -2695,6 +2695,26 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     return result;
 }
 
+static fs_result fs_validate_path(const char* pPath, size_t pathLen, int mode)
+{
+    if ((mode & FS_NO_SPECIAL_DIRS) != 0) {
+        fs_path_iterator iPathSeg;
+        fs_result result;
+
+        for (result = fs_path_first(pPath, pathLen, &iPathSeg); result == FS_SUCCESS; result = fs_path_next(&iPathSeg)) {
+            if (fs_strncmp(iPathSeg.pFullPath, ".", iPathSeg.segmentLength) == 0) {
+                return FS_INVALID_ARGS;
+            }
+
+            if (fs_strncmp(iPathSeg.pFullPath, "..", iPathSeg.segmentLength) == 0) {
+                return FS_INVALID_ARGS;
+            }
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
 FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile, fs_file_info* pInfo)
 {
     fs_result result;
@@ -2706,6 +2726,11 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
     if (pFilePath == NULL || openMode == 0) {
         return FS_INVALID_ARGS;
+    }
+
+    result = fs_validate_path(pFilePath, FS_NULL_TERMINATED, openMode);
+    if (result != FS_SUCCESS) {
+        return result;
     }
 
     if ((openMode & FS_WRITE) != 0) {
@@ -3421,11 +3446,17 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
     fs_iterator_internal* pIterator = NULL;  /* This is the iterator we'll eventually be returning. */
     const fs_backend* pBackend;
     fs_iterator* pBackendIterator;
+    fs_result result;
     size_t cursor;
     size_t iItem;
     
     if (pDirectoryPath == NULL) {
         pDirectoryPath = "";
+    }
+
+    result = fs_validate_path(pDirectoryPath, directoryPathLen, mode);
+    if (result != FS_SUCCESS) {
+        return NULL;    /* Invalid path. */
     }
 
     pBackend = fs_get_backend_or_default(pFS);
