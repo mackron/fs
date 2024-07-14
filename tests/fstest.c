@@ -153,8 +153,13 @@ static int fstest_path_normalize(const char* pPath, const char* pExpected)
 {
     char pNormalizedPath[1024];
     int result;
+    int length;
 
     printf("Path: \"%s\" = \"%s\"\n", pPath, (pExpected == NULL) ? "ERROR" : pExpected);
+
+    /* Get the length first so we can check that it's working correctly. */
+    length = fs_path_normalize(NULL, 0, pPath, FS_NULL_TERMINATED);
+
     result = fs_path_normalize(pNormalizedPath, sizeof(pNormalizedPath), pPath, FS_NULL_TERMINATED);
     if (result < 0) {
         if (pExpected != NULL) {
@@ -166,6 +171,11 @@ static int fstest_path_normalize(const char* pPath, const char* pExpected)
         }
     }
 
+    /* Compare the length. */
+    result = length != result;
+    fstest_print_result_f("  Length: %d", result, length);
+
+    /* Compare the result with expected. */
     result = strcmp(pNormalizedPath, pExpected) != 0;
     fstest_print_result_f("  Normalized: \"%s\"", result, pNormalizedPath);
 
