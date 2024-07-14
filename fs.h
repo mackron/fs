@@ -910,6 +910,7 @@ FS_API const char* fs_path_extension(const char* pPath, size_t pathLen);    /* D
 FS_API fs_bool32 fs_path_extension_equal(const char* pPath, size_t pathLen, const char* pExtension, size_t extensionLen); /* Returns true if the extension is equal to the given extension. Case insensitive. */
 FS_API const char* fs_path_trim_base(const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen);
 FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size_t basePathLen, const char* pPathToAppend, size_t pathToAppendLen); /* pDst can be equal to pBasePath in which case it will be appended in-place. pDst can be null in which case the function will return the required length. */
+FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_t pathLen); /* The only root component recognized is "/". The path cannot start with "C:", "//<address>", etc. This is not intended to be a general cross-platform path normalization routine. If the path starts with "/", this will fail with a negative result code if normalization would result in the path going above the root directory. Will convert all separators to "/". Will remove trailing slash. pDst can be null in which case the required length will be returned. */
 /* END fs_path.h */
 
 

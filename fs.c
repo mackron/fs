@@ -5328,6 +5328,131 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
 
     return (int)dstLen;
 }
+
+FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_t pathLen)
+{
+    fs_path_iterator iPath;
+    fs_result result;
+    fs_bool32 startsWithRoot = FS_FALSE;
+    fs_path_iterator stack[256];    /* The size of this array controls the maximum number of components supported by this function. We're not doing any heap allocations here. Might add this later if necessary. */
+    int top = 0;    /* Acts as a counter for the number of valid items in the stack. */
+    int leadingBackNavCount = 0;
+    int dstLen = 0;
+
+    if (pPath == NULL) {
+        pPath = "";
+        pathLen = 0;
+    }
+
+    if (pDst != NULL && dstCap > 0) {
+        pDst[0] = '\0';
+    }
+
+    /* Get rid of the empty case just to make our life easier below. */
+    if (pathLen == 0 || pPath[0] == '\0') {
+        return 0;
+    }
+
+    result = fs_path_first(pPath, pathLen, &iPath);
+    if (result != FS_SUCCESS) {
+        return -1;  /* Should never hit this because we did an empty string test above. */
+    }
+
+    /* We have a special case for when the result starts with "/". */
+    if (iPath.segmentLength == 0) {
+        startsWithRoot = FS_TRUE;
+
+        if (pDst != NULL && dstCap > 0) {
+            pDst[0] = '/';
+            pDst   += 1;
+            dstCap -= 1;
+        }
+        dstLen += 1;
+
+        /* Get past the root. */
+        result = fs_path_next(&iPath);
+        if (result != FS_SUCCESS) {
+            return dstLen;
+        }
+    }
+
+    for (;;) {
+        /* Everything in this control block should goto a section below. */
+        {
+            if (iPath.segmentLength == 0 || (iPath.segmentLength == 1 && iPath.pFullPath[iPath.segmentOffset] == '.')) {
+                /* It's either an empty segment or ".". These are ignored. */
+                goto next_segment;
+            } else if (iPath.segmentLength == 2 && iPath.pFullPath[iPath.segmentOffset] == '.' && iPath.pFullPath[iPath.segmentOffset + 1] == '.') {
+                /* It's a ".." segment. We need to either pop an entry from the stack, or if there is no way to go further back, push the "..". */
+                if (top > leadingBackNavCount) {
+                    top -= 1;
+                    goto next_segment;
+                } else {
+                    leadingBackNavCount += 1;
+                    goto push_segment;
+                }
+            } else {
+                /* It's a regular segment. These always need to be pushed onto the stack. */
+                goto push_segment;
+            }
+        }
+
+    push_segment:
+        if (top < (int)FS_COUNTOF(stack)) {
+            stack[top] = iPath;
+            top += 1;
+        } else {
+            return -1;  /* Ran out of room in "stack". */
+        }
+
+    next_segment:
+        result = fs_path_next(&iPath);
+        if (result != FS_SUCCESS) {
+            break;
+        }
+    }
+
+    /* At this point we should have a stack of items. */
+    if (top > 0) {
+        if (startsWithRoot) {
+            /* Getting here means we're starting with the root. The first item on the stack cannot be "..". */
+            if (stack[0].segmentLength == 2 && stack[0].pFullPath[stack[0].segmentOffset] == '.' && stack[0].pFullPath[stack[0].segmentOffset + 1] == '.') {
+                return -1;  /* Trying to navigate above the root which is not allowed when the path starts with "/". */
+            }
+        }
+
+        /* Now we can construct the output path. */
+        {
+            int i = 0;
+            for (i = 0; i < top; i += 1) {
+                size_t segLen = stack[i].segmentLength;
+                if (pDst != NULL && dstCap > segLen) {
+                    FS_COPY_MEMORY(pDst, stack[i].pFullPath + stack[i].segmentOffset, segLen);
+                    pDst   += segLen;
+                    dstCap -= segLen;
+                }
+                dstLen += (int)segLen;
+
+                /* Separator. */
+                if (i + 1 < top) {
+                    if (pDst != NULL && dstCap > 0) {
+                        pDst[0] = '/';
+                        pDst   += 1;
+                        dstCap -= 1;
+                    }
+                    dstLen += 1;
+                }
+            }
+        }
+    }
+
+    /* Null terminate. */
+    if (pDst != NULL && dstCap > 0) {
+        pDst[0] = '\0';
+    }
+
+    return dstLen;
+}
 /* END fs_path.c */
 
 

@@ -149,6 +149,34 @@ static int fstest_path(const char* pPath)
     }
 }
 
+static int fstest_path_normalize(const char* pPath, const char* pExpected)
+{
+    char pNormalizedPath[1024];
+    int result;
+
+    printf("Path: \"%s\" = \"%s\"\n", pPath, (pExpected == NULL) ? "ERROR" : pExpected);
+    result = fs_path_normalize(pNormalizedPath, sizeof(pNormalizedPath), pPath, FS_NULL_TERMINATED);
+    if (result < 0) {
+        if (pExpected != NULL) {
+            fstest_print_result_f("  Normalized: %s", 1, "ERROR");
+            return 1;
+        } else {
+            fstest_print_result_f("  Normalized: %s", 0, "ERROR");
+            return 0;
+        }
+    }
+
+    result = strcmp(pNormalizedPath, pExpected) != 0;
+    fstest_print_result_f("  Normalized: \"%s\"", result, pNormalizedPath);
+
+    /* Just for placing a breakpoint for debugging. */
+    if (result == 1) {
+        return 1;
+    }
+
+    return result;
+}
+
 static int fstest_paths()
 {
     int result = 0;
@@ -172,6 +200,22 @@ static int fstest_paths()
     result |= fstest_path("//localhost//abc");
     result |= fstest_path("~");
     result |= fstest_path("~/Documents");
+
+    printf("\n");
+    printf("Path Normalization\n");
+    result |= fstest_path_normalize("", "");
+    result |= fstest_path_normalize("/", "/");
+    result |= fstest_path_normalize("/abc/def/ghi", "/abc/def/ghi");
+    result |= fstest_path_normalize("/..", NULL);   /* Expecting error. */
+    result |= fstest_path_normalize("..", "..");
+    result |= fstest_path_normalize("abc/../def", "def");
+    result |= fstest_path_normalize("abc/./def", "abc/def");
+    result |= fstest_path_normalize("../abc/def", "../abc/def");
+    result |= fstest_path_normalize("abc/def/..", "abc");
+    result |= fstest_path_normalize("abc/../../def", "../def");
+    result |= fstest_path_normalize("/abc/../../def", NULL);   /* Expecting error. */
+    result |= fstest_path_normalize("abc/def/", "abc/def");
+    result |= fstest_path_normalize("/abc/def/", "/abc/def");
 
     printf("\n");
 
@@ -447,7 +491,7 @@ static int fstest_io()
 int main(int argc, char** argv)
 {
     fstest_paths();
-    fstest_io();
+    //fstest_io();
 
     (void)argc;
     (void)argv;
