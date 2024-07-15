@@ -5329,11 +5329,11 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
     return (int)dstLen;
 }
 
-FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_t pathLen)
+FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_t pathLen, unsigned int options)
 {
     fs_path_iterator iPath;
     fs_result result;
-    fs_bool32 startsWithRoot = FS_FALSE;
+    fs_bool32 allowLeadingBackNav = FS_TRUE;
     fs_path_iterator stack[256];    /* The size of this array controls the maximum number of components supported by this function. We're not doing any heap allocations here. Might add this later if necessary. */
     int top = 0;    /* Acts as a counter for the number of valid items in the stack. */
     int leadingBackNavCount = 0;
@@ -5360,7 +5360,7 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
 
     /* We have a special case for when the result starts with "/". */
     if (iPath.segmentLength == 0) {
-        startsWithRoot = FS_TRUE;
+        allowLeadingBackNav = FS_FALSE; /* When the path starts with "/" we cannot allow a leading ".." in the output path. */
 
         if (pDst != NULL && dstCap > 0) {
             pDst[0] = '/';
@@ -5376,8 +5376,12 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
         }
     }
 
+    if ((options & FS_NO_ABOVE_ROOT_NAVIGATION) != 0) {
+        allowLeadingBackNav = FS_FALSE;
+    }
+
     for (;;) {
-        /* Everything in this control block should goto a section below. */
+        /* Everything in this control block should goto a section below or abort early. */
         {
             if (iPath.segmentLength == 0 || (iPath.segmentLength == 1 && iPath.pFullPath[iPath.segmentOffset] == '.')) {
                 /* It's either an empty segment or ".". These are ignored. */
@@ -5388,6 +5392,11 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
                     top -= 1;
                     goto next_segment;
                 } else {
+                    /* In this case the path is trying to navigate above the root. This is not always allowed. */
+                    if (!allowLeadingBackNav) {
+                        return -1;
+                    }
+
                     leadingBackNavCount += 1;
                     goto push_segment;
                 }
@@ -5412,36 +5421,27 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
         }
     }
 
-    /* At this point we should have a stack of items. */
-    if (top > 0) {
-        if (startsWithRoot) {
-            /* Getting here means we're starting with the root. The first item on the stack cannot be "..". */
-            if (stack[0].segmentLength == 2 && stack[0].pFullPath[stack[0].segmentOffset] == '.' && stack[0].pFullPath[stack[0].segmentOffset + 1] == '.') {
-                return -1;  /* Trying to navigate above the root which is not allowed when the path starts with "/". */
+    /* At this point we should have a stack of items. Now we can construct the output path. */
+    {
+        int i = 0;
+        for (i = 0; i < top; i += 1) {
+            size_t segLen = stack[i].segmentLength;
+
+            if (pDst != NULL && dstCap > segLen) {
+                FS_COPY_MEMORY(pDst, stack[i].pFullPath + stack[i].segmentOffset, segLen);
+                pDst   += segLen;
+                dstCap -= segLen;
             }
-        }
+            dstLen += (int)segLen;
 
-        /* Now we can construct the output path. */
-        {
-            int i = 0;
-            for (i = 0; i < top; i += 1) {
-                size_t segLen = stack[i].segmentLength;
-                if (pDst != NULL && dstCap > segLen) {
-                    FS_COPY_MEMORY(pDst, stack[i].pFullPath + stack[i].segmentOffset, segLen);
-                    pDst   += segLen;
-                    dstCap -= segLen;
+            /* Separator. */
+            if (i + 1 < top) {
+                if (pDst != NULL && dstCap > 0) {
+                    pDst[0] = '/';
+                    pDst   += 1;
+                    dstCap -= 1;
                 }
-                dstLen += (int)segLen;
-
-                /* Separator. */
-                if (i + 1 < top) {
-                    if (pDst != NULL && dstCap > 0) {
-                        pDst[0] = '/';
-                        pDst   += 1;
-                        dstCap -= 1;
-                    }
-                    dstLen += 1;
-                }
+                dstLen += 1;
             }
         }
     }
