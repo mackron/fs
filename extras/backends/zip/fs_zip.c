@@ -988,47 +988,86 @@ static const char* fs_zip_get_file_path_by_record_offset(fs_zip* pZip, size_t of
     return pCentralDirectoryRecord + 46;
 }
 
-static fs_result fs_zip_find_file_by_path(fs_zip* pZip, const char* pFilePath, size_t filePathLen, size_t* pFileIndex)
+static fs_result fs_zip_find_file_by_path(fs_zip* pZip, const fs_allocation_callbacks* pAllocationCallbacks, const char* pFilePath, size_t filePathLen, size_t* pFileIndex)
 {
     fs_result result;
     fs_path_iterator pathIterator;
     fs_zip_cd_node* pCurrentNode;
+    char  pFilePathCleanStack[1024];
+    char* pFilePathCleanHeap = NULL;
+    char* pFilePathClean;
+    int filePathCleanLen;
 
     FS_ZIP_ASSERT(pZip       != NULL);
     FS_ZIP_ASSERT(pFilePath  != NULL);
     FS_ZIP_ASSERT(pFileIndex != NULL);
 
+    if (filePathLen == 0) {
+        return FS_INVALID_ARGS; /* The path is empty. */
+    }
+
+    /* Skip past the root item if any. */
+    if (pFilePath[0] == '/' || pFilePath[0] == '\\') {
+        pFilePath += 1;
+        if (filePathLen > 0) {
+            filePathLen -= 1;
+        }
+    }
+
+    /* The path must be clean of any special directories. We'll have to clean the path with fs_path_normalize(). */
+    filePathCleanLen = fs_path_normalize(pFilePathCleanStack, sizeof(pFilePathCleanStack), pFilePath, filePathLen, FS_NO_ABOVE_ROOT_NAVIGATION);
+    if (filePathCleanLen < 0) {
+        return FS_DOES_NOT_EXIST;
+    }
+
+    if (filePathCleanLen > (int)sizeof(pFilePathCleanStack)) {
+        pFilePathCleanHeap = (char*)fs_malloc(filePathCleanLen + 1, pAllocationCallbacks);
+        if (pFilePathCleanHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        fs_path_normalize(pFilePathCleanHeap, filePathCleanLen + 1, pFilePath, filePathLen, FS_NO_ABOVE_ROOT_NAVIGATION); /* <-- This should never fail. */
+        pFilePathClean = pFilePathCleanHeap;
+    } else {
+        pFilePathClean = pFilePathCleanStack;
+    }
+
     /* Start at the root node. */
     pCurrentNode = pZip->pCDRootNode;
 
-    result = fs_result_from_errno(fs_path_first(pFilePath, filePathLen, &pathIterator));
-    if (result != FS_SUCCESS) {
-        return result;  /* Probably trying to find the root item which does not have an index. */
+    result = fs_result_from_errno(fs_path_first(pFilePathClean, (size_t)filePathCleanLen, &pathIterator));
+    if (result == FS_SUCCESS) {
+        /* Reset the error code for safety. The loop below will be setting it to a proper value. */
+        result = FS_DOES_NOT_EXIST;
+        for (;;) {
+            fs_zip_cd_node* pChildNode;
+            
+            pChildNode = fs_zip_cd_node_find_child(pCurrentNode, pathIterator.pFullPath + pathIterator.segmentOffset, pathIterator.segmentLength);
+            if (pChildNode == NULL) {
+                result = FS_DOES_NOT_EXIST;
+                break;
+            }
+
+            pCurrentNode = pChildNode;
+
+            result = fs_result_from_errno(fs_path_next(&pathIterator));
+            if (result != FS_SUCCESS) {
+                /* We've reached the end. The file we're on must be the file index. */
+                *pFileIndex = pCurrentNode->iFile;
+
+                result = FS_SUCCESS;
+                break;
+            }
+        }
+    } else {
+        result = FS_DOES_NOT_EXIST;
     }
 
-    for (;;) {
-        fs_zip_cd_node* pChildNode;
-        
-        pChildNode = fs_zip_cd_node_find_child(pCurrentNode, pathIterator.pFullPath + pathIterator.segmentOffset, pathIterator.segmentLength);
-        if (pChildNode == NULL) {
-            return FS_DOES_NOT_EXIST;
-        }
-
-        pCurrentNode = pChildNode;
-
-        result = fs_result_from_errno(fs_path_next(&pathIterator));
-        if (result != FS_SUCCESS) {
-            /* We've reached the end. The file we're on must be the file index. */
-            *pFileIndex = pCurrentNode->iFile;
-            return FS_SUCCESS;
-        }
-    }
-
-    /* Should never get here. */
-    /*return FS_DOES_NOT_EXIST;*/
+    fs_free(pFilePathCleanHeap, pAllocationCallbacks);
+    return result;
 }
 
-static fs_result fs_zip_get_file_info_by_path(fs_zip* pZip, const char* pFilePath, size_t filePathLen, fs_zip_file_info* pInfo)
+static fs_result fs_zip_get_file_info_by_path(fs_zip* pZip, const fs_allocation_callbacks* pAllocationCallbacks, const char* pFilePath, size_t filePathLen, fs_zip_file_info* pInfo)
 {
     fs_result result;
     size_t iFile;
@@ -1037,7 +1076,7 @@ static fs_result fs_zip_get_file_info_by_path(fs_zip* pZip, const char* pFilePat
     FS_ZIP_ASSERT(pFilePath != NULL);
     FS_ZIP_ASSERT(pInfo     != NULL);
 
-    result = fs_zip_find_file_by_path(pZip, pFilePath, filePathLen, &iFile);
+    result = fs_zip_find_file_by_path(pZip, pAllocationCallbacks, pFilePath, filePathLen, &iFile);
     if (result != FS_SUCCESS) {
         return result;  /* Most likely the file could not be found. */
     }
@@ -1723,7 +1762,7 @@ static fs_result fs_info_zip(fs* pFS, const char* pPath, fs_file_info* pInfo)
     pZip = (fs_zip*)fs_get_backend_data(pFS);
     FS_ZIP_ASSERT(pZip != NULL);
 
-    result = fs_zip_get_file_info_by_path(pZip, pPath, (size_t)-1, &info);
+    result = fs_zip_get_file_info_by_path(pZip, fs_get_allocation_callbacks(pFS), pPath, (size_t)-1, &info);
     if (result != FS_SUCCESS) {
         return result;  /* Probably not found. */
     }
@@ -1786,7 +1825,7 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     pZipFile->pStream = pStream;
 
     /* We need to find the file info by it's path. */
-    result = fs_zip_get_file_info_by_path(pZip, pPath, (size_t)-1, &pZipFile->info);
+    result = fs_zip_get_file_info_by_path(pZip, fs_get_allocation_callbacks(pFS), pPath, (size_t)-1, &pZipFile->info);
     if (result != FS_SUCCESS) {
         return result;  /* Probably not found. */
     }
@@ -2369,6 +2408,10 @@ FS_API fs_iterator* fs_first_zip(fs* pFS, const char* pDirectoryPath, size_t dir
     fs_iterator_zip* pIterator;
     fs_path_iterator directoryPathIterator;
     fs_zip_cd_node* pCurrentNode;
+    char  pDirectoryPathCleanStack[1024];
+    char* pDirectoryPathCleanHeap = NULL;
+    char* pDirectoryPathClean;
+    int directoryPathCleanLen;
 
     pZip = (fs_zip*)fs_get_backend_data(pFS);
     FS_ZIP_ASSERT(pZip != NULL);
@@ -2380,8 +2423,28 @@ FS_API fs_iterator* fs_first_zip(fs* pFS, const char* pDirectoryPath, size_t dir
     /* Skip past any leading slash. */
     if (pDirectoryPath[0] == '/' || pDirectoryPath[0] == '\\') {
         pDirectoryPath += 1;
+        if (directoryPathLen > 0) {
+            directoryPathLen -= 1;
+        }
     }
 
+    /* The path must be clean of any special directories. We'll have to clean the path with fs_path_normalize(). */
+    directoryPathCleanLen = fs_path_normalize(pDirectoryPathCleanStack, sizeof(pDirectoryPathCleanStack), pDirectoryPath, directoryPathLen, FS_NO_ABOVE_ROOT_NAVIGATION);
+    if (directoryPathCleanLen < 0) {
+        return NULL;
+    }
+
+    if (directoryPathCleanLen > (int)sizeof(pDirectoryPathCleanStack)) {
+        pDirectoryPathCleanHeap = (char*)fs_malloc(directoryPathCleanLen + 1, fs_get_allocation_callbacks(pFS));
+        if (pDirectoryPathCleanHeap == NULL) {
+            return NULL;    /* Out of memory. */
+        }
+
+        fs_path_normalize(pDirectoryPathCleanHeap, directoryPathCleanLen + 1, pDirectoryPath, directoryPathLen, FS_NO_ABOVE_ROOT_NAVIGATION);   /* <-- This should never fail. */
+        pDirectoryPathClean = pDirectoryPathCleanHeap;
+    } else {
+        pDirectoryPathClean = pDirectoryPathCleanStack;
+    }
 
     /* Always start from the root node. */
     pCurrentNode = pZip->pCDRootNode;
@@ -2390,13 +2453,14 @@ FS_API fs_iterator* fs_first_zip(fs* pFS, const char* pDirectoryPath, size_t dir
     All we need to do is find the node the corresponds to the specified directory path. To do this
     we just iterate over each segment in the path and get the children one after the other.
     */
-    if (fs_result_from_errno(fs_path_first(pDirectoryPath, directoryPathLen, &directoryPathIterator)) == FS_SUCCESS) {
+    if (fs_result_from_errno(fs_path_first(pDirectoryPathClean, directoryPathCleanLen, &directoryPathIterator)) == FS_SUCCESS) {
         for (;;) {
             /* Try finding the child node. If this cannot be found, the directory does not exist. */
             fs_zip_cd_node* pChildNode;
 
             pChildNode = fs_zip_cd_node_find_child(pCurrentNode, directoryPathIterator.pFullPath + directoryPathIterator.segmentOffset, directoryPathIterator.segmentLength);
             if (pChildNode == NULL) {
+                fs_free(pDirectoryPathCleanHeap, fs_get_allocation_callbacks(pFS));
                 return NULL;    /* Does not exist. */
             }
 
@@ -2415,6 +2479,9 @@ FS_API fs_iterator* fs_first_zip(fs* pFS, const char* pDirectoryPath, size_t dir
         */
         FS_ZIP_ASSERT(pCurrentNode == pZip->pCDRootNode);
     }
+
+    /* The heap allocation of the clean path is no longer needed, if we have one. */
+    fs_free(pDirectoryPathCleanHeap, fs_get_allocation_callbacks(pFS));
 
     /* If the current node does not have any children, there is no first item and therefore nothing to return. */
     if (pCurrentNode->childCount == 0) {

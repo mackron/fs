@@ -158,9 +158,9 @@ static int fstest_path_normalize(const char* pPath, const char* pExpected)
     printf("Path: \"%s\" = \"%s\"\n", pPath, (pExpected == NULL) ? "ERROR" : pExpected);
 
     /* Get the length first so we can check that it's working correctly. */
-    length = fs_path_normalize(NULL, 0, pPath, FS_NULL_TERMINATED);
+    length = fs_path_normalize(NULL, 0, pPath, FS_NULL_TERMINATED, 0);
 
-    result = fs_path_normalize(pNormalizedPath, sizeof(pNormalizedPath), pPath, FS_NULL_TERMINATED);
+    result = fs_path_normalize(pNormalizedPath, sizeof(pNormalizedPath), pPath, FS_NULL_TERMINATED, 0);
     if (result < 0) {
         if (pExpected != NULL) {
             fstest_print_result_f("  Normalized: %s", 1, "ERROR");
@@ -501,7 +501,7 @@ static int fstest_io()
 int main(int argc, char** argv)
 {
     fstest_paths();
-    //fstest_io();
+    fstest_io();
 
     (void)argc;
     (void)argv;
