@@ -1504,42 +1504,6 @@ static const fs_backend* fs_get_backend_or_default(const fs* pFS)
     }
 }
 
-static const fs_backend* fs_select_backend_by_file_path(const fs* pFS, const char* pFilePath, size_t filePathLen, void** ppBackendConfig)
-{
-    size_t fileTypesCursor;
-
-    if (pFS == NULL) {
-        return NULL;
-    }
-
-    if (ppBackendConfig != NULL) {
-        *ppBackendConfig = NULL;
-    }
-
-    /* Seach for a suitable backend from the registered extensions.*/
-    fileTypesCursor = 0;
-    while (fileTypesCursor < pFS->archiveTypesAllocSize) {
-        const fs_backend* pBackend;
-        const char* pExtension;
-        size_t extensionLen;
-
-        pBackend   = *(const fs_backend**)FS_OFFSET_PTR(pFS->pArchiveTypes, fileTypesCursor);
-        pExtension =  (const char*         )FS_OFFSET_PTR(pFS->pArchiveTypes, fileTypesCursor + sizeof(fs_backend*));
-
-        extensionLen = strlen(pExtension);
-        FS_ASSERT(extensionLen > 0);    /* The length of the extension will have been validated when it was first registered. */
-
-        if (fs_path_extension_equal(pFilePath, filePathLen, pExtension, extensionLen)) {
-            return pBackend;
-        }
-
-        /* Getting here means this is not the extension. Move the cursor forward. */
-        fileTypesCursor += FS_ALIGN(sizeof(fs_backend*) + (extensionLen + 1), FS_SIZEOF_PTR);    /* +1 for null terminator. */
-    }
-
-    return NULL;
-}
-
 typedef struct fs_registered_backend_iterator
 {
     const fs* pFS;
@@ -2109,7 +2073,9 @@ FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, void* p
 
 FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive)
 {
-    const fs_backend* pArchiveBackend;
+    fs_result backendIteratorResult;
+    fs_registered_backend_iterator iBackend;
+    fs_result result;
 
     if (ppArchive == NULL) {
         return FS_INVALID_ARGS;
@@ -2121,13 +2087,22 @@ FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode
         return FS_INVALID_ARGS;
     }
 
-    pArchiveBackend = fs_select_backend_by_file_path(pFS, pArchivePath, FS_NULL_TERMINATED, NULL);
-    if (pArchiveBackend != NULL) {
-        return fs_open_archive_ex(pFS, pArchiveBackend, NULL, pArchivePath, FS_NULL_TERMINATED, openMode, ppArchive);
-    } else {
-        /* Not an archive. */
-        return FS_NO_BACKEND;
+    /*
+    There can be multiple backends registered to the same extension. We just iterate over each one in order
+    and use the first that works.
+    */
+    result = FS_NO_BACKEND;
+    for (backendIteratorResult = fs_first_registered_backend(pFS, &iBackend); backendIteratorResult == FS_SUCCESS; backendIteratorResult = fs_next_registered_backend(&iBackend)) {
+        if (fs_path_extension_equal(pArchivePath, FS_NULL_TERMINATED, iBackend.pExtension, iBackend.extensionLen)) {
+            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePath, FS_NULL_TERMINATED, openMode, ppArchive);
+            if (result == FS_SUCCESS) {
+                return FS_SUCCESS;
+            }
+        }
     }
+
+    /* Failed to open from any archive backend. */
+    return result;
 }
 
 FS_API void fs_close_archive(fs* pArchive)
@@ -2492,7 +2467,7 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                         result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_OPAQUE | openMode, &pArchive);
                         fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
 
-                        if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive(). */
+                        if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
                             continue;   /* Failed to open this archive. Keep looking. */
                         }
 
@@ -3413,7 +3388,7 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                             result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | mode, &pArchive);
                             fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
 
-                            if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive(). */
+                            if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
                                 continue;   /* Failed to open this archive. Keep looking. */
                             }
 
