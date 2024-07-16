@@ -2060,7 +2060,14 @@ FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, void* p
         return FS_INVALID_ARGS;
     }
 
-    /* TODO: Need to reference archives by their clean paths to avoid cases where "." and ".." are used, but still point to the same archive. Need to also consider the base path. */
+    /*
+    It'd be nice to be able to resolve the path here to eliminate any "." and ".." segments thereby
+    making the path always consistent for a given archive. However, I cannot think of a way to do
+    this without having a backend-specific function like a `resolve()` or whatnot. The problem is
+    that the path might be absolute, or it might be relative, and to get it right, parcticularly
+    when dealing with different operating systems' ways of specifying an absolute path, you really
+    need to have the support of the backend. I might add support for this later.
+    */
 
     fs_mtx_lock(&pFS->archiveLock);
     {
