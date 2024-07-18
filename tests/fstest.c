@@ -1,5 +1,6 @@
 #include "../fs.h"
 #include "../extras/backends/zip/fs_zip.h"
+#include "../extras/backends/subfs/fs_subfs.h"
 
 #include <stdarg.h>
 #include <stdio.h>

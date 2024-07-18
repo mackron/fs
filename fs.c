@@ -1798,11 +1798,6 @@ FS_API void fs_uninit(fs* pFS)
     fs_free(pFS->pWriteMountPoints, &pFS->allocationCallbacks);
     pFS->pWriteMountPoints = NULL;
 
-    //if (pFS->isOwnerOfArchiveTypes) {
-    //    fs_free(pFS->pArchiveTypes, &pFS->allocationCallbacks);
-    //}
-    //pFS->pArchiveTypes = NULL;
-
     fs_free(pFS->pOpenedArchives, &pFS->allocationCallbacks);
     pFS->pOpenedArchives = NULL;
 

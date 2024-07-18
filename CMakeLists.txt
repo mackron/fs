@@ -39,12 +39,21 @@ target_compile_features(fszip PRIVATE c_std_90)
 target_compile_options(fszip PRIVATE ${WARNING_FLAGS})
 target_compile_options(fszip PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
+add_library(fssubfs STATIC
+    extras/backends/subfs/fs_subfs.c
+    extras/backends/subfs/fs_subfs.h
+)
+target_compile_features(fssubfs PRIVATE c_std_90)
+target_compile_options(fssubfs PRIVATE ${WARNING_FLAGS})
+target_compile_options(fssubfs PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+
 
 # Tests
 add_executable(fstest tests/fstest.c)
 target_link_libraries(fstest PRIVATE
     fs
     fszip
+    fssubfs
 )
 target_compile_options(fstest PRIVATE ${WARNING_FLAGS})
 target_compile_options(fstest PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
