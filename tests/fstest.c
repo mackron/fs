@@ -346,6 +346,19 @@ static int fstest_archive_io()
         return 1;
     }
 
+    /* These test that loading above the level of the mount point correct results in an error. */
+    /* TODO: Do proper automated tests for these. */
+    fs_mount(pFS, "testvectors", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
+    {
+        fs_file* pFile;
+
+        result = fs_file_open(pFS, "mnt/../testvectors/miniaudio.h", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION /*| FS_ONLY_MOUNTS*/, &pFile);
+        if (result == FS_SUCCESS) {
+            int a = 5; (void)a;
+        }
+    }
+    fs_unmount(pFS, "testvectors");
+
     /* Test archives in archives. */
     {
         fs_file* pFile;

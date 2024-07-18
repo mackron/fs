@@ -46,18 +46,18 @@ size_t bytesRead;
 
 result = fs_file_read(pFS, pBuffer, bytesToRead, &bytesRead);
 if (result != FS_SUCCESS) {
-    // Failed to read file. You can use FS_AT_END to check if reading failed to being at EOF.
+    // Failed to read file. You can use FS_AT_END to check if reading failed due to being at EOF.
 }
 ```
 
 In the code above, the number of bytes actually read is output to a variable. You can use this to
-determine if you've reached the end of the file.
+determine if you've reached the end of the file. You can also check if the result is FS_AT_END.
 
 To do more advanced stuff, such as opening from archives, you'll need to configure the `fs` object
 with a config, which you pass into `fs_init()`:
 
 ```c
-#include "extras/fs_zip.h" // <-- This is where FS_ZIP is declared.
+#include "extras/backends/zip/fs_zip.h" // <-- This is where FS_ZIP is declared.
 
 ...
 
@@ -76,9 +76,12 @@ fs_init(&fsConfig, &pFS);
 
 In the code above we are registering support for ZIP archives (`FS_ZIP`). Whenever a file with a
 "zip" or "pac" extension is found, the library will be able to access the archive. The library will
-determine whether or not a file is an archive based on it's extension. If the extension does not
-match, it'll assume it's not an archive and will skip it. Below is an example of one way you can
-read from an archive:
+determine whether or not a file is an archive based on it's extension. You can use whatever
+extension you would like for a backend, and you can associated multiple extensions to the same
+backend. You can also associated different backends to the same extension, in which case the
+library will use the first one that works. If the extension of a file does not match with one of
+the registered archive types it'll assume it's not an archive and will skip it. Below is an example
+of one way you can read from an archive:
 
 ```c
 result = fs_file_open(pFS, "archive.zip/file-inside-archive.txt", FS_READ, &pFile);
@@ -185,8 +188,9 @@ for the default system backend, and the root directory for archives. There is st
 how to load files from a relative path, however: mounting.
 
 You can mount a physical directory to virtual path, similar in concept to Unix operating systems.
-The difference, however, is that you can mount multiple directories to the same mount point. There
-are separate mount points for reading and writing. Below is an example for mounting for reading:
+The difference, however, is that you can mount multiple directories to the same mount point in
+which case a prioritization system will be used. There are separate mount points for reading and
+writing. Below is an example of mounting for reading:
 
 ```c
 fs_mount(pFS, "/some/actual/path", NULL, FS_MOUNT_PRIORITY_HIGHEST);
@@ -265,6 +269,24 @@ be saved:
 fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile); // Prefixed with "config", so will use the "config" mount point.
 fs_file_open(pFs, "saves/save0.sav", FS_WRITE, &pFile); // Prefixed with "saves", so will use the "saves" mount point.
 ```
+
+By default, you can move outside the mount point with ".." segments. If you want to disable this
+functionality, you can use the `FS_NO_ABOVE_ROOT_NAVIGATION` flag:
+
+```c
+fs_file_open(pFS, "../file.txt", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION, &pFile);
+```
+
+In addition, any mount points that start with a "/" will be considered absolute and will not allow
+any above-root navigation:
+
+```c
+fs_mount(pFS, "/game/data/base", "/gamedata", FS_MOUNT_PRIORITY_HIGHEST);
+```
+
+In the example above, the "/gamedata" mount point starts with a "/", so it will not allow any
+above-root navigation which means you cannot navigate above "/game/data/base" when using this mount
+point.
 
 Note that writing directly into an archive is not supported by this API. To write into an archive,
 the backend itself must support writing, and you will need to manually initialize a `fs` object for
@@ -716,7 +738,7 @@ FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_al
 #define FS_APPEND                   FS_WRITE | 0x0004
 #define FS_TRUNCATE                 FS_WRITE | 0x0008
 
-#define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that known archives are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). */
+#define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
 #define FS_OPAQUE                   0x0010  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
 #define FS_VERBOSE                  0x0020  /* When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt" */
 
@@ -724,6 +746,7 @@ FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_al
 #define FS_IGNORE_MOUNTS            0x0080  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
 #define FS_ONLY_MOUNTS              0x0100  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
 #define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
+#define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
 
 /* Garbage collection policies.*/
@@ -844,8 +867,8 @@ FS_API void fs_free_iterator(fs_iterator* pIterator);
 
 FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
 FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint);
-FS_API fs_result fs_mount_archive(fs* pFS, fs* pArchive, const char* pMountPoint, fs_mount_priority priority);
-FS_API fs_result fs_unmount_archive(fs* pFS, fs* pArchive);   /* Must be matched up with fs_mount_archive(). */
+FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_mount_priority priority);
+FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS);   /* Must be matched up with fs_mount_fs(). */
 
 FS_API fs_result fs_mount_write(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
 FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoint);
@@ -889,8 +912,6 @@ The path API does not do any kind of validation to check if it represents an act
 file system. Likewise, it does not do any validation to check if the path contains invalid
 characters. All it cares about is "/" and "\".
 */
-#define FS_NO_ABOVE_ROOT_NAVIGATION  0x00000001
-
 typedef struct
 {
     const char* pFullPath;

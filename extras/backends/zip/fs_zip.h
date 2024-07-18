@@ -7,17 +7,17 @@ To use this, you'll first need to a fs_stream containing a Zip archive file. You
 easily from fs object.
 
     fs_file* pZipArchiveFile;
-    fs_open(pFS, "archive.zip", FS_READ, &pZipArchiveFile); // Assumes pFS was initialized earlier.
+    fs_file_open(pFS, "archive.zip", FS_READ, &pZipArchiveFile); // Assumes pFS was initialized earlier.
 
     ...
 
     fs* pZip;
-    fs_init(FS_ZIP, NULL, fs_file_stream(pZipArchiveFile), NULL, &pZip);
+    fs_init(FS_ZIP, NULL, fs_file_get_stream(pZipArchiveFile), NULL, &pZip);
 
     ...
 
     fs_file* pFileInsideZip;
-    fs_open(pZip, "file.txt", FS_READ, &pFileInsideZip);
+    fs_file_open(pZip, "file.txt", FS_READ, &pFileInsideZip);
 
     ... now just read from pFileInsideZip like any other file ...
 
