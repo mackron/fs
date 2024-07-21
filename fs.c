@@ -2598,8 +2598,12 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     /*
     This is the lowest level opening function. We never want to look at mounts when opening from here. The input
     file path should already be prefixed with the mount point.
+
+    UPDATE: Actually don't want to explicitly append FS_IGNORE_MOUNTS here because it can affect the behavior of
+    proxy and passthrough style backends. Some backends, particularly FS_SUBFS, will call straight into the owner
+    `fs` object which might depend on those mounts being handled for correct behaviour.
     */
-    openMode |= FS_IGNORE_MOUNTS;
+    /*openMode |= FS_IGNORE_MOUNTS;*/
 
     if (ppFile != NULL) {
         /* Create the directory structure if necessary. */
