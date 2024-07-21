@@ -2701,7 +2701,12 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
         return FS_INVALID_ARGS;
     }
 
-    if (pFilePath == NULL || openMode == 0) {
+    if (pFilePath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* The open mode cannot be 0 when opening a file. It can only be 0 when retrieving info. */
+    if (ppFile != NULL && openMode == 0) {
         return FS_INVALID_ARGS;
     }
 
