@@ -26,6 +26,10 @@ static void fs_subfs_zero_memory_default(void* p, size_t sz)
 #endif
 
 
+/* Bit of a naughty hack. This is defined with FS_API in fs.c, but is not forward declared in fs.h. We can just declare it here. */
+FS_API char* fs_strcpy(char* dst, const char* src);
+
+
 typedef struct fs_subfs
 {
     fs* pOwnerFS;
@@ -154,7 +158,7 @@ static fs_result fs_init_subfs(fs* pFS, const void* pBackendConfig, fs_stream* p
     pSubFS->pRootDir   = (char*)(pSubFS + 1);
     pSubFS->rootDirLen = strlen(pSubFSConfig->pRootDir);
 
-    strcpy(pSubFS->pRootDir, pSubFSConfig->pRootDir);
+    fs_strcpy(pSubFS->pRootDir, pSubFSConfig->pRootDir);
 
     /* Append a trailing slash if necessary. */
     if (pSubFS->pRootDir[pSubFS->rootDirLen - 1] != '/') {
@@ -391,7 +395,7 @@ static fs_iterator* fs_next_subfs(fs_iterator* pIterator)
 
 static void fs_free_iterator_subfs(fs_iterator* pIterator)
 {
-    return fs_free_iterator(pIterator);
+    fs_free_iterator(pIterator);
 }
 
 fs_backend fs_subfs_backend =
