@@ -119,14 +119,14 @@ fs_mount_write(pFS, "/home/user/.local/share/mygame/saves", "saves",  0);
 ```
 
 Here we've mounted two write directories. When you open a file for writing, it looks at the start
-of the file path and checks if it matches and of the mount points. So with the mounts above, we can
-save a config file like so:
+of the file path and checks if it matches any of the mount points. So with the mounts above, you
+can save a config file like so:
 
 ```c
 fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile); // Will save to the "config" mount point because the path starts with "config".
 ```
 
-And then when we want to write a save game, you can use the "saves" mount point:
+And then when you want to write a save game, you can use the "saves" mount point:
 
 ```c
 fs_file_open(pFS, "saves/save1.cfg", FS_WRITE, &pFile); // Will save to the "saves" mount point because the path starts with "saves".
