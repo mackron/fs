@@ -842,14 +842,14 @@ static fs_result fs_backend_mkdir(const fs_backend* pBackend, fs* pFS, const cha
     }
 }
 
-static fs_result fs_backend_info(const fs_backend* pBackend, fs* pFS, const char* pPath, fs_file_info* pInfo)
+static fs_result fs_backend_info(const fs_backend* pBackend, fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     FS_ASSERT(pBackend != NULL);
 
     if (pBackend->info == NULL) {
         return FS_NOT_IMPLEMENTED;
     } else {
-        return pBackend->info(pFS, pPath, pInfo);
+        return pBackend->info(pFS, pPath, openMode, pInfo);
     }
 }
 
@@ -1117,9 +1117,9 @@ static fs_result fs_mkdir_proxy(fs* pFS, const char* pPath)
     return fs_backend_mkdir(fs_proxy_get_backend(pFS), pFS, pPath);
 }
 
-static fs_result fs_info_proxy(fs* pFS, const char* pPath, fs_file_info* pInfo)
+static fs_result fs_info_proxy(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
-    return fs_backend_info(fs_proxy_get_backend(pFS), pFS, pPath, pInfo);
+    return fs_backend_info(fs_proxy_get_backend(pFS), pFS, pPath, openMode, pInfo);
 }
 
 static size_t fs_file_alloc_size_proxy(fs* pFS)
@@ -2647,7 +2647,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         }
     } else {
         if (pInfo != NULL) {
-            result = fs_backend_info(pBackend, pFS, pFilePath, pInfo);
+            result = fs_backend_info(pBackend, pFS, pFilePath, openMode, pInfo);
         } else {
             result = FS_INVALID_ARGS;
         }
@@ -3743,7 +3743,7 @@ FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountP
     openMode = FS_READ | FS_VERBOSE;
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
-    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, pPathToMount, &fileInfo);
+    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, pPathToMount, FS_IGNORE_MOUNTS, &fileInfo);
     if (fileInfo.directory) {
         pNewMountPoint->pArchive = NULL;
         pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
@@ -4219,7 +4219,7 @@ static fs_result fs_mkdir_stdio(fs* pFS, const char* pPath)
     return result;
 }
 
-static fs_result fs_info_stdio(fs* pFS, const char* pPath, fs_file_info* pInfo)
+static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     /* We don't want to use stat() with Win32 because, from what I can tell, there's no way to determine if it's a symbolic link. S_IFLNK does not seem to be defined. */
     #if defined(_WIN32)
@@ -4270,6 +4270,8 @@ static fs_result fs_info_stdio(fs* pFS, const char* pPath, fs_file_info* pInfo)
         *pInfo = fs_file_info_from_stat(&info);
     }
     #endif
+
+    (void)openMode;
 
     return FS_SUCCESS;
 }

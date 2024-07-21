@@ -807,12 +807,12 @@ FS_API fs_config fs_config_init(const fs_backend* pBackend, void* pBackendConfig
 typedef struct fs_backend
 {
     size_t       (* alloc_size     )(const void* pBackendConfig);
-    fs_result    (* init           )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);            /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
+    fs_result    (* init           )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);              /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
     void         (* uninit         )(fs* pFS);
     fs_result    (* remove         )(fs* pFS, const char* pFilePath);
     fs_result    (* rename         )(fs* pFS, const char* pOldName, const char* pNewName);
     fs_result    (* mkdir          )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
-    fs_result    (* info           )(fs* pFS, const char* pPath, fs_file_info* pInfo);
+    fs_result    (* info           )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by proxy of passthrough style backends. */
     size_t       (* file_alloc_size)(fs* pFS);
     fs_result    (* file_open      )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return ENOENT if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
     void         (* file_close     )(fs_file* pFile);
@@ -822,7 +822,7 @@ typedef struct fs_backend
     fs_result    (* file_tell      )(fs_file* pFile, fs_int64* pCursor);
     fs_result    (* file_flush     )(fs_file* pFile);
     fs_result    (* file_info      )(fs_file* pFile, fs_file_info* pInfo);
-    fs_result    (* file_duplicate )(fs_file* pFile, fs_file* pDuplicate);                                /* Duplicate the file handle. */
+    fs_result    (* file_duplicate )(fs_file* pFile, fs_file* pDuplicate);                                  /* Duplicate the file handle. */
     fs_iterator* (* first          )(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen);
     fs_iterator* (* next           )(fs_iterator* pIterator);  /* <-- Must return null when there are no more files. In this case, free_iterator must be called internally. */
     void         (* free_iterator  )(fs_iterator* pIterator);  /* <-- Free the `fs_iterator` object here since `first` and `next` were the ones who allocated it. Also do any uninitialization routines. */

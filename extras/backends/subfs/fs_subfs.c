@@ -245,7 +245,7 @@ static fs_result fs_mkdir_subfs(fs* pFS, const char* pPath)
     return result;
 }
 
-static fs_result fs_info_subfs(fs* pFS, const char* pPath, fs_file_info* pInfo)
+static fs_result fs_info_subfs(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     fs_result result;
     fs_subfs* pSubFS;
@@ -259,7 +259,7 @@ static fs_result fs_info_subfs(fs* pFS, const char* pPath, fs_file_info* pInfo)
         return result;
     }
 
-    result = fs_info(pSubFS->pOwnerFS, subfsPath.pFullPath, 0, pInfo);
+    result = fs_info(pSubFS->pOwnerFS, subfsPath.pFullPath, openMode, pInfo);
     fs_subfs_path_uninit(&subfsPath);
 
     return result;

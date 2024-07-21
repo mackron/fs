@@ -1753,11 +1753,13 @@ static void fs_uninit_zip(fs* pFS)
     return;
 }
 
-static fs_result fs_info_zip(fs* pFS, const char* pPath, fs_file_info* pInfo)
+static fs_result fs_info_zip(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     fs_result result;
     fs_zip* pZip;
     fs_zip_file_info info;
+
+    (void)openMode;
     
     pZip = (fs_zip*)fs_get_backend_data(pFS);
     FS_ZIP_ASSERT(pZip != NULL);
