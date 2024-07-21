@@ -4,8 +4,7 @@ a subdirectory of another fs object. Trying to access anything outside of this r
 will result in an error.
 
 Everything is done in terms of the owner FS object, meaning the owner must be kept alive for the
-life of the subfs object. It also means it will inherit the owner's registered archive types. It
-will never attempt to use the owners mount points.
+life of the subfs object. It also means it will inherit the owner's registered archive types.
 
 The way this works is very simple. Whenever you try to open a file, the path is checked to see if
 it's attempting to access anything outside of the root directory. If it is, an error is returned.

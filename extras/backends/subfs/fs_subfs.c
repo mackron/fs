@@ -259,7 +259,7 @@ static fs_result fs_info_subfs(fs* pFS, const char* pPath, fs_file_info* pInfo)
         return result;
     }
 
-    result = fs_info(pSubFS->pOwnerFS, subfsPath.pFullPath, FS_IGNORE_MOUNTS, pInfo);
+    result = fs_info(pSubFS->pOwnerFS, subfsPath.pFullPath, 0, pInfo);
     fs_subfs_path_uninit(&subfsPath);
 
     return result;
@@ -291,7 +291,7 @@ static fs_result fs_file_open_subfs(fs* pFS, fs_stream* pStream, const char* pFi
     pSubFSFile = (fs_file_subfs*)fs_file_get_backend_data(pFile);
     FS_SUBFS_ASSERT(pSubFSFile != NULL);
 
-    result = fs_file_open(pSubFS->pOwnerFS, subfsPath.pFullPath, (openMode | FS_IGNORE_MOUNTS) & ~FS_ONLY_MOUNTS, &pSubFSFile->pActualFile);
+    result = fs_file_open(pSubFS->pOwnerFS, subfsPath.pFullPath, openMode, &pSubFSFile->pActualFile);
     fs_subfs_path_uninit(&subfsPath);
 
     return result;
