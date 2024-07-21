@@ -160,7 +160,7 @@ include after fs.h:
 #include "extras/backends/zip/fs_zip.h"
 ```
 
-See [archives](examples/archives.c) for an example on how to use archives.
+See examples/archives.c for an example on how to use archives.
 
 You can also use CMake, but support for that is very basic.
 
