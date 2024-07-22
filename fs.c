@@ -5789,7 +5789,7 @@ FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offse
         return FS_INVALID_ARGS;
     }
 
-    if (FS_ABS(offset) > FS_SIZE_MAX) {
+    if ((fs_uint64)FS_ABS(offset) > FS_SIZE_MAX) {
         return FS_INVALID_ARGS;  /* Trying to seek too far. This will never happen on 64-bit builds. */
     }
 
