@@ -5364,6 +5364,12 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
     }
 
 
+    /* Do not include the separator if we have one. */
+    if (basePathLen > 0 && (pBasePath[basePathLen - 1] == '\\' || pBasePath[basePathLen - 1] == '/')) {
+        basePathLen -= 1;
+    }
+
+
     /* Base path. */
     if (pDst != NULL) {
         size_t bytesToCopy = FS_MIN(basePathLen, dstCap);
