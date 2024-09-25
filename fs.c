@@ -886,6 +886,17 @@ static fs_result fs_backend_file_open(const fs_backend* pBackend, fs* pFS, fs_st
     }
 }
 
+static fs_result fs_backend_file_open_handle(const fs_backend* pBackend, fs* pFS, void* hBackendFile, fs_file* pFile)
+{
+    FS_ASSERT(pBackend != NULL);
+
+    if (pBackend->file_open_handle == NULL) {
+        return FS_NOT_IMPLEMENTED;
+    } else {
+        return pBackend->file_open_handle(pFS, hBackendFile, pFile);
+    }
+}
+
 static void fs_backend_file_close(const fs_backend* pBackend, fs_file* pFile)
 {
     FS_ASSERT(pBackend != NULL);
@@ -1148,6 +1159,11 @@ static fs_result fs_file_open_proxy(fs* pFS, fs_stream* pStream, const char* pFi
     return fs_backend_file_open(fs_proxy_get_backend(pFS), pFS, pStream, pFilePath, openMode, pFile);
 }
 
+static fs_result fs_file_open_handle_proxy(fs* pFS, void* hBackendFile, fs_file* pFile)
+{
+    return fs_backend_file_open_handle(fs_proxy_get_backend(pFS), pFS, hBackendFile, pFile);
+}
+
 static void fs_file_close_proxy(fs_file* pFile)
 {
     fs_backend_file_close(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile);
@@ -1228,6 +1244,7 @@ static fs_backend fs_proxy_backend =
     fs_info_proxy,
     fs_file_alloc_size_proxy,
     fs_file_open_proxy,
+    fs_file_open_handle_proxy,
     fs_file_close_proxy,
     fs_file_read_proxy,
     fs_file_write_proxy,
@@ -2987,6 +3004,31 @@ FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_f
     return fs_file_open_or_info(pFS, pFilePath, openMode, ppFile, NULL);
 }
 
+FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file** ppFile)
+{
+    fs_result result;
+
+    if (ppFile == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    *ppFile = NULL;
+
+    result = fs_file_alloc_if_necessary(pFS, ppFile);
+    if (result != FS_SUCCESS) {
+        *ppFile = NULL;
+        return result;
+    }
+
+    result = fs_backend_file_open_handle(fs_get_backend_or_default(pFS), pFS, hBackendFile, *ppFile);
+    if (result != FS_SUCCESS) {
+        fs_free(*ppFile, fs_get_allocation_callbacks(pFS));
+        *ppFile = NULL;
+    }
+
+    return FS_SUCCESS;
+}
+
 static void fs_file_uninit(fs_file* pFile)
 {
     fs_backend_file_close(fs_get_backend_or_default(fs_file_get_fs(pFile)), pFile);
@@ -4436,7 +4478,7 @@ typedef struct fs_file_stdio
 {
     FILE* pFile;
     char openMode[4];   /* For duplication. */
-    fs_bool32 isRegistered; /* When set to true, will not be closed with fs_file_close(). */
+    fs_bool32 isRegisteredOrHandle; /* When set to true, will not be closed with fs_file_close(). */
 } fs_file_stdio;
 
 static size_t fs_file_alloc_size_stdio(fs* pFS)
@@ -4491,7 +4533,7 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
         fs_stdio_registered_file* pRegisteredFile = fs_stdio_find_registered_file(pFS, pPath);
         if (pRegisteredFile != NULL) {
             pFileStdio->pFile = pRegisteredFile->pFile;
-            pFileStdio->isRegistered = FS_TRUE;
+            pFileStdio->isRegisteredOrHandle = FS_TRUE;
             return FS_SUCCESS;
         }
     }
@@ -4546,6 +4588,23 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
     return FS_SUCCESS;
 }
 
+static fs_result fs_file_open_handle_stdio(fs* pFS, void* hBackendFile, fs_file* pFile)
+{
+    fs_file_stdio* pFileStdio;
+
+    FS_UNUSED(pFS);
+
+    pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
+    if (pFileStdio == NULL) {
+        return FS_INVALID_ARGS;
+    }
+    
+    pFileStdio->pFile = (FILE*)hBackendFile;
+    pFileStdio->isRegisteredOrHandle = FS_TRUE;
+
+    return FS_SUCCESS;
+}
+
 static void fs_file_close_stdio(fs_file* pFile)
 {
     fs_file_stdio* pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
@@ -4553,7 +4612,7 @@ static void fs_file_close_stdio(fs_file* pFile)
         return;
     }
 
-    if (!pFileStdio->isRegistered) {
+    if (!pFileStdio->isRegisteredOrHandle) {
         fclose(pFileStdio->pFile);
     }
 }
@@ -5140,6 +5199,7 @@ fs_backend fs_stdio_backend =
     fs_info_stdio,
     fs_file_alloc_size_stdio,
     fs_file_open_stdio,
+    fs_file_open_handle_stdio,
     fs_file_close_stdio,
     fs_file_read_stdio,
     fs_file_write_stdio,

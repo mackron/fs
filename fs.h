@@ -806,27 +806,28 @@ FS_API fs_config fs_config_init(const fs_backend* pBackend, void* pBackendConfig
 
 typedef struct fs_backend
 {
-    size_t       (* alloc_size     )(const void* pBackendConfig);
-    fs_result    (* init           )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);              /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
-    void         (* uninit         )(fs* pFS);
-    fs_result    (* ioctl          )(fs* pFS, int op, void* pArg);                                          /* Optional. */
-    fs_result    (* remove         )(fs* pFS, const char* pFilePath);
-    fs_result    (* rename         )(fs* pFS, const char* pOldName, const char* pNewName);
-    fs_result    (* mkdir          )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
-    fs_result    (* info           )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by proxy of passthrough style backends. */
-    size_t       (* file_alloc_size)(fs* pFS);
-    fs_result    (* file_open      )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return ENOENT if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
-    void         (* file_close     )(fs_file* pFile);
-    fs_result    (* file_read      )(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead);   /* Return 0 on success, or FS_AT_END on end of file. Only return FS_AT_END if *pBytesRead is 0. Return an errno code on error. Implementations must support reading when already at EOF, in which case FS_AT_END should be returned and *pBytesRead should be 0. */
-    fs_result    (* file_write     )(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
-    fs_result    (* file_seek      )(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
-    fs_result    (* file_tell      )(fs_file* pFile, fs_int64* pCursor);
-    fs_result    (* file_flush     )(fs_file* pFile);
-    fs_result    (* file_info      )(fs_file* pFile, fs_file_info* pInfo);
-    fs_result    (* file_duplicate )(fs_file* pFile, fs_file* pDuplicate);                                  /* Duplicate the file handle. */
-    fs_iterator* (* first          )(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen);
-    fs_iterator* (* next           )(fs_iterator* pIterator);  /* <-- Must return null when there are no more files. In this case, free_iterator must be called internally. */
-    void         (* free_iterator  )(fs_iterator* pIterator);  /* <-- Free the `fs_iterator` object here since `first` and `next` were the ones who allocated it. Also do any uninitialization routines. */
+    size_t       (* alloc_size      )(const void* pBackendConfig);
+    fs_result    (* init            )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);              /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
+    void         (* uninit          )(fs* pFS);
+    fs_result    (* ioctl           )(fs* pFS, int op, void* pArg);                                          /* Optional. */
+    fs_result    (* remove          )(fs* pFS, const char* pFilePath);
+    fs_result    (* rename          )(fs* pFS, const char* pOldName, const char* pNewName);
+    fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
+    fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by proxy of passthrough style backends. */
+    size_t       (* file_alloc_size )(fs* pFS);
+    fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return ENOENT if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
+    fs_result    (* file_open_handle)(fs* pFS, void* hBackendFile, fs_file* pFile);                   /* Optional. Open a file from a file handle. Backend-specific. The format of hBackendFile will be specified by the backend. */
+    void         (* file_close      )(fs_file* pFile);
+    fs_result    (* file_read       )(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead);   /* Return 0 on success, or FS_AT_END on end of file. Only return FS_AT_END if *pBytesRead is 0. Return an errno code on error. Implementations must support reading when already at EOF, in which case FS_AT_END should be returned and *pBytesRead should be 0. */
+    fs_result    (* file_write      )(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
+    fs_result    (* file_seek       )(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
+    fs_result    (* file_tell       )(fs_file* pFile, fs_int64* pCursor);
+    fs_result    (* file_flush      )(fs_file* pFile);
+    fs_result    (* file_info       )(fs_file* pFile, fs_file_info* pInfo);
+    fs_result    (* file_duplicate  )(fs_file* pFile, fs_file* pDuplicate);                                  /* Duplicate the file handle. */
+    fs_iterator* (* first           )(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen);
+    fs_iterator* (* next            )(fs_iterator* pIterator);  /* <-- Must return null when there are no more files. In this case, free_iterator must be called internally. */
+    void         (* free_iterator   )(fs_iterator* pIterator);  /* <-- Free the `fs_iterator` object here since `first` and `next` were the ones who allocated it. Also do any uninitialization routines. */
 } fs_backend;
 
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
@@ -849,6 +850,7 @@ FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
 FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
 
 FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile);
+FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file** ppFile);
 FS_API void fs_file_close(fs_file* pFile);
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead); /* Returns 0 on success, FS_AT_END on end of file, or an errno result code on error. Will only return FS_AT_END if *pBytesRead is 0. */
 FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
@@ -877,7 +879,7 @@ FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoin
 
 
 /* Default Backend. */
-extern const fs_backend* FS_STDIO;  /* The default stdio backend. */
+extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
 
 /* ioctl: FS_STDIO_SET_FILE. Assign a FILE* to a path. */
 /* ioctl: FS_STDIO_GET_FILE. Get the FILE* associated with a path. */

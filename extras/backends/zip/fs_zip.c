@@ -1913,6 +1913,15 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     return FS_SUCCESS;
 }
 
+static fs_result fs_file_open_handle_zip(fs* pFS, void* hBackendFile, fs_file* pFile)
+{
+    (void)pFS;
+    (void)hBackendFile;
+    (void)pFile;
+
+    return FS_NOT_IMPLEMENTED;
+}
+
 static void fs_file_close_zip(fs_file* pFile)
 {
     /* Nothing to do. */
@@ -2566,6 +2575,7 @@ fs_backend fs_zip_backend =
     fs_info_zip,
     fs_file_alloc_size_zip,
     fs_file_open_zip,
+    fs_file_open_handle_zip,
     fs_file_close_zip,
     fs_file_read_zip,
     fs_file_write_zip,
