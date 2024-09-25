@@ -27,6 +27,9 @@ add_library(fs STATIC
     fs.c
     fs.h
 )
+
+target_include_directories(fs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 target_compile_features(fs PRIVATE c_std_90)
 target_compile_options(fs PRIVATE ${WARNING_FLAGS})
 target_compile_options(fs PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
@@ -49,43 +52,50 @@ target_compile_options(fssubfs PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
 
 # Tests
-add_executable(fstest tests/fstest.c)
-target_link_libraries(fstest PRIVATE
-    fs
-    fszip
-    fssubfs
-)
-target_compile_options(fstest PRIVATE ${WARNING_FLAGS})
-target_compile_options(fstest PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+if(FS_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(fstest tests/fstest.c)
+    target_link_libraries(fstest PRIVATE
+        fs
+        fszip
+        fssubfs
+    )
+    target_compile_options(fstest PRIVATE ${WARNING_FLAGS})
+    target_compile_options(fstest PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+
+    add_test(NAME fstest COMMAND fstest)
+endif()
 
 
 # Examples
+if(FS_BUILD_EXAMPLES)
+    # hello_world
+    add_executable(hello_world examples/hello_world.c)
+    target_link_libraries(hello_world PRIVATE
+        fs
+    )
+    target_compile_options(hello_world PRIVATE ${WARNING_FLAGS})
+    target_compile_options(hello_world PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
-## hello_world
-add_executable(hello_world examples/hello_world.c)
-target_link_libraries(hello_world PRIVATE
-    fs
-)
-target_compile_options(hello_world PRIVATE ${WARNING_FLAGS})
-target_compile_options(hello_world PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    # archives
+    add_executable(archives examples/archives.c)
+    target_link_libraries(archives PRIVATE
+        fs
+        fszip
+    )
+    target_compile_options(archives PRIVATE ${WARNING_FLAGS})
+    target_compile_options(archives PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
-## archives
-add_executable(archives examples/archives.c)
-target_link_libraries(archives PRIVATE
-    fs
-    fszip
-)
-target_compile_options(archives PRIVATE ${WARNING_FLAGS})
-target_compile_options(archives PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
-
-## mounting
-add_executable(mounting examples/mounting.c)
-target_link_libraries(mounting PRIVATE
-    fs
-    fszip
-)
-target_compile_options(mounting PRIVATE ${WARNING_FLAGS})
-target_compile_options(mounting PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    # mounting
+    add_executable(mounting examples/mounting.c)
+    target_link_libraries(mounting PRIVATE
+        fs
+        fszip
+    )
+    target_compile_options(mounting PRIVATE ${WARNING_FLAGS})
+    target_compile_options(mounting PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+endif()
 
 
 # TODO: Always link with "-static" on Windows when compiling with GCC and Clang, and /MTd or /MT for MSVC. If MSVC, have option "STATIC_CRT" like what libgit2 does.
