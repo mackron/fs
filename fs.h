@@ -516,6 +516,7 @@ see some random tags and stuff in this file. These are just used for doing a dum
 #define fs_h
 
 #include <stddef.h> /* For size_t. */
+#include <stdarg.h> /* For va_list. */
 
 #if defined(__cplusplus)
 extern "C" {
@@ -616,6 +617,16 @@ typedef unsigned int  fs_bool32;
     #define FS_INLINE __inline
 #else
     #define FS_INLINE
+#endif
+
+
+#if defined(__has_attribute)
+    #if __has_attribute(format)
+        #define FS_ATTRIBUTE_FORMAT(fmt, va) __attribute__((format(printf, fmt, va)))
+    #endif
+#endif
+#ifndef FS_ATTRIBUTE_FORMAT
+#define FS_ATTRIBUTE_FORMAT(fmt, va)
 #endif
 
 
@@ -854,6 +865,8 @@ FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file**
 FS_API void fs_file_close(fs_file* pFile);
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead); /* Returns 0 on success, FS_AT_END on end of file, or an errno result code on error. Will only return FS_AT_END if *pBytesRead is 0. */
 FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
+FS_API fs_result fs_file_writef(fs_file* pFile, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(2, 3);
+FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args);
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
 FS_API fs_result fs_file_tell(fs_file* pFile, fs_int64* pCursor);
 FS_API fs_result fs_file_flush(fs_file* pFile);
@@ -1062,6 +1075,14 @@ FS_API void* fs_sorted_search(const void* pKey, const void* pList, size_t count,
 
 FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count);
 /* END fs_utils.h */
+
+
+/* BEG fs_snprintf.h */
+FS_API int fs_vsprintf(char* buf, char const* fmt, va_list va);
+FS_API int fs_vsnprintf(char* buf, size_t count, char const* fmt, va_list va);
+FS_API int fs_sprintf(char* buf, char const* fmt, ...) FS_ATTRIBUTE_FORMAT(2, 3);
+FS_API int fs_snprintf(char* buf, size_t count, char const* fmt, ...) FS_ATTRIBUTE_FORMAT(3, 4);
+/* END fs_snprintf.h */
 
 
 #if defined(__cplusplus)

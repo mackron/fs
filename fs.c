@@ -3110,6 +3110,54 @@ FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToW
     return result;
 }
 
+FS_API fs_result fs_file_writef(fs_file* pFile, const char* fmt, ...)
+{
+    va_list args;
+    fs_result result;
+
+    va_start(args, fmt);
+    result = fs_file_writefv(pFile, fmt, args);
+    va_end(args);
+
+    return result;
+}
+
+FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args)
+{
+    fs_result result;
+    int strLen;
+    char pStrStack[1024];
+
+    if (pFile == NULL || fmt == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args);
+    if (strLen < 0) {
+        return FS_ERROR;    /* Encoding error. */
+    }
+
+    if (strLen < (int)sizeof(pStrStack)) {
+        /* Stack buffer is big enough. Output straight to the file. */
+        result = fs_file_write(pFile, pStrStack, strLen, NULL);
+    } else {
+        /* Stack buffer is not big enough. Allocate space on the heap. */
+        char* pStrHeap = NULL;
+
+        pStrHeap = (char*)fs_malloc(strLen + 1, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+        if (pStrHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        fs_vsnprintf(pStrHeap, strLen + 1, fmt, args);
+        result = fs_file_write(pFile, pStrHeap, strLen, NULL);
+
+        fs_free(pStrHeap, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+    }
+
+    return result;
+}
+
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)
 {
     const fs_backend* pBackend;
@@ -6246,6 +6294,1689 @@ FS_API void* fs_sorted_search(const void* pKey, const void* pList, size_t count,
     }
 }
 /* END fs_utils.c */
+
+
+
+
+/* ==== Amalgamations Below ==== */
+
+/* BEG fs_snprintf.c */
+typedef char* fs_sprintf_callback(const char* buf, void* user, size_t len);
+
+/*
+Disabling unaligned access for safety. TODO: Look at a way to make this configurable. Will require reversing the
+logic in stb_sprintf() which we might be able to do via the amalgamator.
+*/
+#ifndef FS_SPRINTF_NOUNALIGNED
+#define FS_SPRINTF_NOUNALIGNED
+#endif
+
+/* We need to disable the implicit-fallthrough warning on GCC. */
+#if defined(__GNUC__) && (__GNUC__ >= 7 || (__GNUC__ == 6 && __GNUC_MINOR__ >= 1))
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#endif
+
+/* BEG stb_sprintf.c */
+#if defined(__clang__)
+ #if defined(__has_feature) && defined(__has_attribute)
+  #if __has_feature(address_sanitizer)
+   #if __has_attribute(__no_sanitize__)
+    #define FS_ASAN __attribute__((__no_sanitize__("address")))
+   #elif __has_attribute(__no_sanitize_address__)
+    #define FS_ASAN __attribute__((__no_sanitize_address__))
+   #elif __has_attribute(__no_address_safety_analysis__)
+    #define FS_ASAN __attribute__((__no_address_safety_analysis__))
+   #endif
+  #endif
+ #endif
+#elif defined(__GNUC__) && (__GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8))
+ #if defined(__SANITIZE_ADDRESS__) && __SANITIZE_ADDRESS__
+  #define FS_ASAN __attribute__((__no_sanitize_address__))
+ #endif
+#elif defined(_MSC_VER)
+ #if defined(__SANITIZE_ADDRESS__) && __SANITIZE_ADDRESS__
+  #define FS_ASAN __declspec(no_sanitize_address)
+ #endif
+#endif
+
+#ifndef FS_ASAN
+#define FS_ASAN
+#endif
+
+#ifndef FS_API_SPRINTF_DEF
+#define FS_API_SPRINTF_DEF FS_API FS_ASAN
+#endif
+
+#ifndef FS_SPRINTF_MIN
+#define FS_SPRINTF_MIN 512 
+#endif
+
+#ifndef FS_SPRINTF_MSVC_MODE 
+#if defined(_MSC_VER) && (_MSC_VER < 1900)
+#define FS_SPRINTF_MSVC_MODE
+#endif
+#endif
+
+#ifdef FS_SPRINTF_NOUNALIGNED 
+#define FS_UNALIGNED(code)
+#else
+#define FS_UNALIGNED(code) code
+#endif
+
+#ifndef FS_SPRINTF_NOFLOAT
+
+static fs_int32 fs_real_to_str(char const* *start, fs_uint32 *len, char* out, fs_int32 *decimal_pos, double value, fs_uint32 frac_digits);
+static fs_int32 fs_real_to_parts(fs_int64 *bits, fs_int32 *expo, double value);
+#define FS_SPECIAL 0x7000
+#endif
+
+static char fs_period = '.';
+static char fs_comma = ',';
+static struct
+{
+   short temp; 
+   char pair[201];
+} fs_digitpair =
+{
+  0,
+   "00010203040506070809101112131415161718192021222324"
+   "25262728293031323334353637383940414243444546474849"
+   "50515253545556575859606162636465666768697071727374"
+   "75767778798081828384858687888990919293949596979899"
+};
+
+FS_API_SPRINTF_DEF void fs_set_sprintf_separators(char pcomma, char pperiod)
+{
+   fs_period = pperiod;
+   fs_comma = pcomma;
+}
+
+#define FS_LEFTJUST 1
+#define FS_LEADINGPLUS 2
+#define FS_LEADINGSPACE 4
+#define FS_LEADING_0X 8
+#define FS_LEADINGZERO 16
+#define FS_INTMAX 32
+#define FS_TRIPLET_COMMA 64
+#define FS_NEGATIVE 128
+#define FS_METRIC_SUFFIX 256
+#define FS_HALFWIDTH 512
+#define FS_METRIC_NOSPACE 1024
+#define FS_METRIC_1024 2048
+#define FS_METRIC_JEDEC 4096
+
+static void fs_lead_sign(fs_uint32 fl, char* sign)
+{
+   sign[0] = 0;
+   if (fl & FS_NEGATIVE) {
+      sign[0] = 1;
+      sign[1] = '-';
+   } else if (fl & FS_LEADINGSPACE) {
+      sign[0] = 1;
+      sign[1] = ' ';
+   } else if (fl & FS_LEADINGPLUS) {
+      sign[0] = 1;
+      sign[1] = '+';
+   }
+}
+
+static FS_ASAN fs_uint32 fs_strlen_limited(char const* s, fs_uint32 limit)
+{
+   char const*  sn = s;
+
+   
+   for (;;) {
+      if (((fs_uintptr)sn & 3) == 0)
+         break;
+
+      if (!limit || *sn == 0)
+         return (fs_uint32)(sn - s);
+
+      ++sn;
+      --limit;
+   }
+
+   
+   
+   
+   
+   
+   while (limit >= 4) {
+      fs_uint32 v = *(fs_uint32 *)sn;
+      
+      if ((v - 0x01010101) & (~v) & 0x80808080UL)
+         break;
+
+      sn += 4;
+      limit -= 4;
+   }
+
+   
+   while (limit && *sn) {
+      ++sn;
+      --limit;
+   }
+
+   return (fs_uint32)(sn - s);
+}
+
+FS_API_SPRINTF_DEF int fs_vsprintfcb(fs_sprintf_callback* callback, void* user, char* buf, char const* fmt, va_list va)
+{
+   static char hex[] = "0123456789abcdefxp";
+   static char hexu[] = "0123456789ABCDEFXP";
+   char* bf;
+   char const* f;
+   int tlen = 0;
+
+   bf = buf;
+   f = fmt;
+   for (;;) {
+      fs_int32 fw, pr, tz;
+      fs_uint32 fl;
+
+      
+      #define fs_chk_cb_bufL(bytes)                        \
+         {                                                     \
+            int len = (int)(bf - buf);                         \
+            if ((len + (bytes)) >= FS_SPRINTF_MIN) {          \
+               tlen += len;                                    \
+               if (0 == (bf = buf = callback(buf, user, len))) \
+                  goto done;                                   \
+            }                                                  \
+         }
+      #define fs_chk_cb_buf(bytes)    \
+         {                                \
+            if (callback) {               \
+               fs_chk_cb_bufL(bytes); \
+            }                             \
+         }
+      #define fs_flush_cb()                      \
+         {                                           \
+            fs_chk_cb_bufL(FS_SPRINTF_MIN - 1); \
+         } 
+      #define fs_cb_buf_clamp(cl, v)                \
+         cl = v;                                        \
+         if (callback) {                                \
+            int lg = FS_SPRINTF_MIN - (int)(bf - buf); \
+            if (cl > lg)                                \
+               cl = lg;                                 \
+         }
+
+      
+      for (;;) {
+         while (((fs_uintptr)f) & 3) {
+         schk1:
+            if (f[0] == '%')
+               goto scandd;
+         schk2:
+            if (f[0] == 0)
+               goto endfmt;
+            fs_chk_cb_buf(1);
+            *bf++ = f[0];
+            ++f;
+         }
+         for (;;) {
+            
+            
+            
+            fs_uint32 v, c;
+            v = *(fs_uint32 *)f;
+            c = (~v) & 0x80808080;
+            if (((v ^ 0x25252525) - 0x01010101) & c)
+               goto schk1;
+            if ((v - 0x01010101) & c)
+               goto schk2;
+            if (callback)
+               if ((FS_SPRINTF_MIN - (int)(bf - buf)) < 4)
+                  goto schk1;
+            #ifdef FS_SPRINTF_NOUNALIGNED
+                if(((fs_uintptr)bf) & 3) {
+                    bf[0] = f[0];
+                    bf[1] = f[1];
+                    bf[2] = f[2];
+                    bf[3] = f[3];
+                } else
+            #endif
+            {
+                *(fs_uint32 *)bf = v;
+            }
+            bf += 4;
+            f += 4;
+         }
+      }
+   scandd:
+
+      ++f;
+
+      
+      fw = 0;
+      pr = -1;
+      fl = 0;
+      tz = 0;
+
+      
+      for (;;) {
+         switch (f[0]) {
+         
+         case '-':
+            fl |= FS_LEFTJUST;
+            ++f;
+            continue;
+         
+         case '+':
+            fl |= FS_LEADINGPLUS;
+            ++f;
+            continue;
+         
+         case ' ':
+            fl |= FS_LEADINGSPACE;
+            ++f;
+            continue;
+         
+         case '#':
+            fl |= FS_LEADING_0X;
+            ++f;
+            continue;
+         
+         case '\'':
+            fl |= FS_TRIPLET_COMMA;
+            ++f;
+            continue;
+         
+         case '$':
+            if (fl & FS_METRIC_SUFFIX) {
+               if (fl & FS_METRIC_1024) {
+                  fl |= FS_METRIC_JEDEC;
+               } else {
+                  fl |= FS_METRIC_1024;
+               }
+            } else {
+               fl |= FS_METRIC_SUFFIX;
+            }
+            ++f;
+            continue;
+         
+         case '_':
+            fl |= FS_METRIC_NOSPACE;
+            ++f;
+            continue;
+         
+         case '0':
+            fl |= FS_LEADINGZERO;
+            ++f;
+            goto flags_done;
+         default: goto flags_done;
+         }
+      }
+   flags_done:
+
+      
+      if (f[0] == '*') {
+         fw = va_arg(va, fs_uint32);
+         ++f;
+      } else {
+         while ((f[0] >= '0') && (f[0] <= '9')) {
+            fw = fw * 10 + f[0] - '0';
+            f++;
+         }
+      }
+      
+      if (f[0] == '.') {
+         ++f;
+         if (f[0] == '*') {
+            pr = va_arg(va, fs_uint32);
+            ++f;
+         } else {
+            pr = 0;
+            while ((f[0] >= '0') && (f[0] <= '9')) {
+               pr = pr * 10 + f[0] - '0';
+               f++;
+            }
+         }
+      }
+
+      
+      switch (f[0]) {
+      
+      case 'h':
+         fl |= FS_HALFWIDTH;
+         ++f;
+         if (f[0] == 'h')
+            ++f;  
+         break;
+      
+      case 'l':
+         fl |= ((sizeof(long) == 8) ? FS_INTMAX : 0);
+         ++f;
+         if (f[0] == 'l') {
+            fl |= FS_INTMAX;
+            ++f;
+         }
+         break;
+      
+      case 'j':
+         fl |= (sizeof(size_t) == 8) ? FS_INTMAX : 0;
+         ++f;
+         break;
+      
+      case 'z':
+         fl |= (sizeof(ptrdiff_t) == 8) ? FS_INTMAX : 0;
+         ++f;
+         break;
+      case 't':
+         fl |= (sizeof(ptrdiff_t) == 8) ? FS_INTMAX : 0;
+         ++f;
+         break;
+      
+      case 'I':
+         if ((f[1] == '6') && (f[2] == '4')) {
+            fl |= FS_INTMAX;
+            f += 3;
+         } else if ((f[1] == '3') && (f[2] == '2')) {
+            f += 3;
+         } else {
+            fl |= ((sizeof(void* ) == 8) ? FS_INTMAX : 0);
+            ++f;
+         }
+         break;
+      default: break;
+      }
+
+      
+      switch (f[0]) {
+         #define FS_NUMSZ 512 
+         char num[FS_NUMSZ];
+         char lead[8];
+         char tail[8];
+         char* s;
+         char const* h;
+         fs_uint32 l, n, cs;
+         fs_uint64 n64;
+#ifndef FS_SPRINTF_NOFLOAT
+         double fv;
+#endif
+         fs_int32 dp;
+         char const* sn;
+
+      case 's':
+         
+         s = va_arg(va, char* );
+         if (s == 0)
+            s = (char* )"null";
+         
+         
+         l = fs_strlen_limited(s, (pr >= 0) ? (fs_uint32)pr : ~0u);
+         lead[0] = 0;
+         tail[0] = 0;
+         pr = 0;
+         dp = 0;
+         cs = 0;
+         
+         goto scopy;
+
+      case 'c': 
+         
+         s = num + FS_NUMSZ - 1;
+         *s = (char)va_arg(va, int);
+         l = 1;
+         lead[0] = 0;
+         tail[0] = 0;
+         pr = 0;
+         dp = 0;
+         cs = 0;
+         goto scopy;
+
+      case 'n': 
+      {
+         int *d = va_arg(va, int *);
+         *d = tlen + (int)(bf - buf);
+      } break;
+
+#ifdef FS_SPRINTF_NOFLOAT
+      case 'A':              
+      case 'a':              
+      case 'G':              
+      case 'g':              
+      case 'E':              
+      case 'e':              
+      case 'f':              
+         va_arg(va, double); 
+         s = (char* )"No float";
+         l = 8;
+         lead[0] = 0;
+         tail[0] = 0;
+         pr = 0;
+         cs = 0;
+         FS_UNUSED(dp);
+         goto scopy;
+#else
+      case 'A': 
+      case 'a': 
+         h = (f[0] == 'A') ? hexu : hex;
+         fv = va_arg(va, double);
+         if (pr == -1)
+            pr = 6; 
+         
+         if (fs_real_to_parts((fs_int64 *)&n64, &dp, fv))
+            fl |= FS_NEGATIVE;
+
+         s = num + 64;
+
+         fs_lead_sign(fl, lead);
+
+         if (dp == -1023)
+            dp = (n64) ? -1022 : 0;
+         else
+            n64 |= (((fs_uint64)1) << 52);
+         n64 <<= (64 - 56);
+         if (pr < 15)
+            n64 += ((((fs_uint64)8) << 56) >> (pr * 4));
+
+
+#ifdef FS_SPRINTF_MSVC_MODE
+         *s++ = '0';
+         *s++ = 'x';
+#else
+         lead[1 + lead[0]] = '0';
+         lead[2 + lead[0]] = 'x';
+         lead[0] += 2;
+#endif
+         *s++ = h[(n64 >> 60) & 15];
+         n64 <<= 4;
+         if (pr)
+            *s++ = fs_period;
+         sn = s;
+
+         
+         n = pr;
+         if (n > 13)
+            n = 13;
+         if (pr > (fs_int32)n)
+            tz = pr - n;
+         pr = 0;
+         while (n--) {
+            *s++ = h[(n64 >> 60) & 15];
+            n64 <<= 4;
+         }
+
+         
+         tail[1] = h[17];
+         if (dp < 0) {
+            tail[2] = '-';
+            dp = -dp;
+         } else
+            tail[2] = '+';
+         n = (dp >= 1000) ? 6 : ((dp >= 100) ? 5 : ((dp >= 10) ? 4 : 3));
+         tail[0] = (char)n;
+         for (;;) {
+            tail[n] = '0' + dp % 10;
+            if (n <= 3)
+               break;
+            --n;
+            dp /= 10;
+         }
+
+         dp = (int)(s - sn);
+         l = (int)(s - (num + 64));
+         s = num + 64;
+         cs = 1 + (3 << 24);
+         goto scopy;
+
+      case 'G': 
+      case 'g': 
+         h = (f[0] == 'G') ? hexu : hex;
+         fv = va_arg(va, double);
+         if (pr == -1)
+            pr = 6;
+         else if (pr == 0)
+            pr = 1; 
+         
+         if (fs_real_to_str(&sn, &l, num, &dp, fv, (pr - 1) | 0x80000000))
+            fl |= FS_NEGATIVE;
+
+         
+         n = pr;
+         if (l > (fs_uint32)pr)
+            l = pr;
+         while ((l > 1) && (pr) && (sn[l - 1] == '0')) {
+            --pr;
+            --l;
+         }
+
+         
+         if ((dp <= -4) || (dp > (fs_int32)n)) {
+            if (pr > (fs_int32)l)
+               pr = l - 1;
+            else if (pr)
+               --pr; 
+            goto doexpfromg;
+         }
+         
+         if (dp > 0) {
+            pr = (dp < (fs_int32)l) ? l - dp : 0;
+         } else {
+            pr = -dp + ((pr > (fs_int32)l) ? (fs_int32) l : pr);
+         }
+         goto dofloatfromg;
+
+      case 'E': 
+      case 'e': 
+         h = (f[0] == 'E') ? hexu : hex;
+         fv = va_arg(va, double);
+         if (pr == -1)
+            pr = 6; 
+         
+         if (fs_real_to_str(&sn, &l, num, &dp, fv, pr | 0x80000000))
+            fl |= FS_NEGATIVE;
+      doexpfromg:
+         tail[0] = 0;
+         fs_lead_sign(fl, lead);
+         if (dp == FS_SPECIAL) {
+            s = (char* )sn;
+            cs = 0;
+            pr = 0;
+            goto scopy;
+         }
+         s = num + 64;
+         
+         *s++ = sn[0];
+
+         if (pr)
+            *s++ = fs_period;
+
+         
+         if ((l - 1) > (fs_uint32)pr)
+            l = pr + 1;
+         for (n = 1; n < l; n++)
+            *s++ = sn[n];
+         
+         tz = pr - (l - 1);
+         pr = 0;
+         
+         tail[1] = h[0xe];
+         dp -= 1;
+         if (dp < 0) {
+            tail[2] = '-';
+            dp = -dp;
+         } else
+            tail[2] = '+';
+#ifdef FS_SPRINTF_MSVC_MODE
+         n = 5;
+#else
+         n = (dp >= 100) ? 5 : 4;
+#endif
+         tail[0] = (char)n;
+         for (;;) {
+            tail[n] = '0' + dp % 10;
+            if (n <= 3)
+               break;
+            --n;
+            dp /= 10;
+         }
+         cs = 1 + (3 << 24); 
+         goto flt_lead;
+
+      case 'f': 
+         fv = va_arg(va, double);
+      doafloat:
+         
+         if (fl & FS_METRIC_SUFFIX) {
+            double divisor;
+            divisor = 1000.0f;
+            if (fl & FS_METRIC_1024)
+               divisor = 1024.0;
+            while (fl < 0x4000000) {
+               if ((fv < divisor) && (fv > -divisor))
+                  break;
+               fv /= divisor;
+               fl += 0x1000000;
+            }
+         }
+         if (pr == -1)
+            pr = 6; 
+         
+         if (fs_real_to_str(&sn, &l, num, &dp, fv, pr))
+            fl |= FS_NEGATIVE;
+      dofloatfromg:
+         tail[0] = 0;
+         fs_lead_sign(fl, lead);
+         if (dp == FS_SPECIAL) {
+            s = (char* )sn;
+            cs = 0;
+            pr = 0;
+            goto scopy;
+         }
+         s = num + 64;
+
+         
+         if (dp <= 0) {
+            fs_int32 i;
+            
+            *s++ = '0';
+            if (pr)
+               *s++ = fs_period;
+            n = -dp;
+            if ((fs_int32)n > pr)
+               n = pr;
+            i = n;
+            while (i) {
+               if ((((fs_uintptr)s) & 3) == 0)
+                  break;
+               *s++ = '0';
+               --i;
+            }
+            while (i >= 4) {
+               *(fs_uint32 *)s = 0x30303030;
+               s += 4;
+               i -= 4;
+            }
+            while (i) {
+               *s++ = '0';
+               --i;
+            }
+            if ((fs_int32)(l + n) > pr)
+               l = pr - n;
+            i = l;
+            while (i) {
+               *s++ = *sn++;
+               --i;
+            }
+            tz = pr - (n + l);
+            cs = 1 + (3 << 24); 
+         } else {
+            cs = (fl & FS_TRIPLET_COMMA) ? ((600 - (fs_uint32)dp) % 3) : 0;
+            if ((fs_uint32)dp >= l) {
+               
+               n = 0;
+               for (;;) {
+                  if ((fl & FS_TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = fs_comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= l)
+                        break;
+                  }
+               }
+               if (n < (fs_uint32)dp) {
+                  n = dp - n;
+                  if ((fl & FS_TRIPLET_COMMA) == 0) {
+                     while (n) {
+                        if ((((fs_uintptr)s) & 3) == 0)
+                           break;
+                        *s++ = '0';
+                        --n;
+                     }
+                     while (n >= 4) {
+                        *(fs_uint32 *)s = 0x30303030;
+                        s += 4;
+                        n -= 4;
+                     }
+                  }
+                  while (n) {
+                     if ((fl & FS_TRIPLET_COMMA) && (++cs == 4)) {
+                        cs = 0;
+                        *s++ = fs_comma;
+                     } else {
+                        *s++ = '0';
+                        --n;
+                     }
+                  }
+               }
+               cs = (int)(s - (num + 64)) + (3 << 24); 
+               if (pr) {
+                  *s++ = fs_period;
+                  tz = pr;
+               }
+            } else {
+               
+               n = 0;
+               for (;;) {
+                  if ((fl & FS_TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = fs_comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= (fs_uint32)dp)
+                        break;
+                  }
+               }
+               cs = (int)(s - (num + 64)) + (3 << 24); 
+               if (pr)
+                  *s++ = fs_period;
+               if ((l - dp) > (fs_uint32)pr)
+                  l = pr + dp;
+               while (n < l) {
+                  *s++ = sn[n];
+                  ++n;
+               }
+               tz = pr - (l - dp);
+            }
+         }
+         pr = 0;
+
+         
+         if (fl & FS_METRIC_SUFFIX) {
+            char idx;
+            idx = 1;
+            if (fl & FS_METRIC_NOSPACE)
+               idx = 0;
+            tail[0] = idx;
+            tail[1] = ' ';
+            {
+               if (fl >> 24) { 
+                  if (fl & FS_METRIC_1024)
+                     tail[idx + 1] = "_KMGT"[fl >> 24];
+                  else
+                     tail[idx + 1] = "_kMGT"[fl >> 24];
+                  idx++;
+                  
+                  if (fl & FS_METRIC_1024 && !(fl & FS_METRIC_JEDEC)) {
+                     tail[idx + 1] = 'i';
+                     idx++;
+                  }
+                  tail[0] = idx;
+               }
+            }
+         };
+
+      flt_lead:
+         
+         l = (fs_uint32)(s - (num + 64));
+         s = num + 64;
+         goto scopy;
+#endif
+
+      case 'B': 
+      case 'b': 
+         h = (f[0] == 'B') ? hexu : hex;
+         lead[0] = 0;
+         if (fl & FS_LEADING_0X) {
+            lead[0] = 2;
+            lead[1] = '0';
+            lead[2] = h[0xb];
+         }
+         l = (8 << 4) | (1 << 8);
+         goto radixnum;
+
+      case 'o': 
+         h = hexu;
+         lead[0] = 0;
+         if (fl & FS_LEADING_0X) {
+            lead[0] = 1;
+            lead[1] = '0';
+         }
+         l = (3 << 4) | (3 << 8);
+         goto radixnum;
+
+      case 'p': 
+         fl |= (sizeof(void* ) == 8) ? FS_INTMAX : 0;
+         pr = sizeof(void* ) * 2;
+         fl &= ~FS_LEADINGZERO; 
+                                    
+
+      case 'X': 
+      case 'x': 
+         h = (f[0] == 'X') ? hexu : hex;
+         l = (4 << 4) | (4 << 8);
+         lead[0] = 0;
+         if (fl & FS_LEADING_0X) {
+            lead[0] = 2;
+            lead[1] = '0';
+            lead[2] = h[16];
+         }
+      radixnum:
+         
+         if (fl & FS_INTMAX)
+            n64 = va_arg(va, fs_uint64);
+         else
+            n64 = va_arg(va, fs_uint32);
+
+         s = num + FS_NUMSZ;
+         dp = 0;
+         
+         tail[0] = 0;
+         if (n64 == 0) {
+            lead[0] = 0;
+            if (pr == 0) {
+               l = 0;
+               cs = 0;
+               goto scopy;
+            }
+         }
+         
+         for (;;) {
+            *--s = h[n64 & ((1 << (l >> 8)) - 1)];
+            n64 >>= (l >> 8);
+            if (!((n64) || ((fs_int32)((num + FS_NUMSZ) - s) < pr)))
+               break;
+            if (fl & FS_TRIPLET_COMMA) {
+               ++l;
+               if ((l & 15) == ((l >> 4) & 15)) {
+                  l &= ~15;
+                  *--s = fs_comma;
+               }
+            }
+         };
+         
+         cs = (fs_uint32)((num + FS_NUMSZ) - s) + ((((l >> 4) & 15)) << 24);
+         
+         l = (fs_uint32)((num + FS_NUMSZ) - s);
+         
+         goto scopy;
+
+      case 'u': 
+      case 'i':
+      case 'd': 
+         
+         if (fl & FS_INTMAX) {
+            fs_int64 i64 = va_arg(va, fs_int64);
+            n64 = (fs_uint64)i64;
+            if ((f[0] != 'u') && (i64 < 0)) {
+               n64 = (fs_uint64)-i64;
+               fl |= FS_NEGATIVE;
+            }
+         } else {
+            fs_int32 i = va_arg(va, fs_int32);
+            n64 = (fs_uint32)i;
+            if ((f[0] != 'u') && (i < 0)) {
+               n64 = (fs_uint32)-i;
+               fl |= FS_NEGATIVE;
+            }
+         }
+
+#ifndef FS_SPRINTF_NOFLOAT
+         if (fl & FS_METRIC_SUFFIX) {
+            if (n64 < 1024)
+               pr = 0;
+            else if (pr == -1)
+               pr = 1;
+            fv = (double)(fs_int64)n64;
+            goto doafloat;
+         }
+#endif
+
+         
+         s = num + FS_NUMSZ;
+         l = 0;
+
+         for (;;) {
+            
+            char* o = s - 8;
+            if (n64 >= 100000000) {
+               n = (fs_uint32)(n64 % 100000000);
+               n64 /= 100000000;
+            } else {
+               n = (fs_uint32)n64;
+               n64 = 0;
+            }
+            if ((fl & FS_TRIPLET_COMMA) == 0) {
+               do {
+                  s -= 2;
+                  *(fs_uint16 *)s = *(fs_uint16 *)&fs_digitpair.pair[(n % 100) * 2];
+                  n /= 100;
+               } while (n);
+            }
+            while (n) {
+               if ((fl & FS_TRIPLET_COMMA) && (l++ == 3)) {
+                  l = 0;
+                  *--s = fs_comma;
+                  --o;
+               } else {
+                  *--s = (char)(n % 10) + '0';
+                  n /= 10;
+               }
+            }
+            if (n64 == 0) {
+               if ((s[0] == '0') && (s != (num + FS_NUMSZ)))
+                  ++s;
+               break;
+            }
+            while (s != o)
+               if ((fl & FS_TRIPLET_COMMA) && (l++ == 3)) {
+                  l = 0;
+                  *--s = fs_comma;
+                  --o;
+               } else {
+                  *--s = '0';
+               }
+         }
+
+         tail[0] = 0;
+         fs_lead_sign(fl, lead);
+
+         
+         l = (fs_uint32)((num + FS_NUMSZ) - s);
+         if (l == 0) {
+            *--s = '0';
+            l = 1;
+         }
+         cs = l + (3 << 24);
+         if (pr < 0)
+            pr = 0;
+
+      scopy:
+         
+         if (pr < (fs_int32)l)
+            pr = l;
+         n = pr + lead[0] + tail[0] + tz;
+         if (fw < (fs_int32)n)
+            fw = n;
+         fw -= n;
+         pr -= l;
+
+         
+         if ((fl & FS_LEFTJUST) == 0) {
+            if (fl & FS_LEADINGZERO) 
+            {
+               pr = (fw > pr) ? fw : pr;
+               fw = 0;
+            } else {
+               fl &= ~FS_TRIPLET_COMMA; 
+            }
+         }
+
+         
+         if (fw + pr) {
+            fs_int32 i;
+            fs_uint32 c;
+
+            
+            if ((fl & FS_LEFTJUST) == 0)
+               while (fw > 0) {
+                  fs_cb_buf_clamp(i, fw);
+                  fw -= i;
+                  while (i) {
+                     if ((((fs_uintptr)bf) & 3) == 0)
+                        break;
+                     *bf++ = ' ';
+                     --i;
+                  }
+                  while (i >= 4) {
+                     *(fs_uint32 *)bf = 0x20202020;
+                     bf += 4;
+                     i -= 4;
+                  }
+                  while (i) {
+                     *bf++ = ' ';
+                     --i;
+                  }
+                  fs_chk_cb_buf(1);
+               }
+
+            
+            sn = lead + 1;
+            while (lead[0]) {
+               fs_cb_buf_clamp(i, lead[0]);
+               lead[0] -= (char)i;
+               while (i) {
+                  *bf++ = *sn++;
+                  --i;
+               }
+               fs_chk_cb_buf(1);
+            }
+
+            
+            c = cs >> 24;
+            cs &= 0xffffff;
+            cs = (fl & FS_TRIPLET_COMMA) ? ((fs_uint32)(c - ((pr + cs) % (c + 1)))) : 0;
+            while (pr > 0) {
+               fs_cb_buf_clamp(i, pr);
+               pr -= i;
+               if ((fl & FS_TRIPLET_COMMA) == 0) {
+                  while (i) {
+                     if ((((fs_uintptr)bf) & 3) == 0)
+                        break;
+                     *bf++ = '0';
+                     --i;
+                  }
+                  while (i >= 4) {
+                     *(fs_uint32 *)bf = 0x30303030;
+                     bf += 4;
+                     i -= 4;
+                  }
+               }
+               while (i) {
+                  if ((fl & FS_TRIPLET_COMMA) && (cs++ == c)) {
+                     cs = 0;
+                     *bf++ = fs_comma;
+                  } else
+                     *bf++ = '0';
+                  --i;
+               }
+               fs_chk_cb_buf(1);
+            }
+         }
+
+         
+         sn = lead + 1;
+         while (lead[0]) {
+            fs_int32 i;
+            fs_cb_buf_clamp(i, lead[0]);
+            lead[0] -= (char)i;
+            while (i) {
+               *bf++ = *sn++;
+               --i;
+            }
+            fs_chk_cb_buf(1);
+         }
+
+         
+         n = l;
+         while (n) {
+            fs_int32 i;
+            fs_cb_buf_clamp(i, n);
+            n -= i;
+            FS_UNALIGNED(while (i >= 4) {
+               *(fs_uint32 volatile *)bf = *(fs_uint32 volatile *)s;
+               bf += 4;
+               s += 4;
+               i -= 4;
+            })
+            while (i) {
+               *bf++ = *s++;
+               --i;
+            }
+            fs_chk_cb_buf(1);
+         }
+
+         
+         while (tz) {
+            fs_int32 i;
+            fs_cb_buf_clamp(i, tz);
+            tz -= i;
+            while (i) {
+               if ((((fs_uintptr)bf) & 3) == 0)
+                  break;
+               *bf++ = '0';
+               --i;
+            }
+            while (i >= 4) {
+               *(fs_uint32 *)bf = 0x30303030;
+               bf += 4;
+               i -= 4;
+            }
+            while (i) {
+               *bf++ = '0';
+               --i;
+            }
+            fs_chk_cb_buf(1);
+         }
+
+         
+         sn = tail + 1;
+         while (tail[0]) {
+            fs_int32 i;
+            fs_cb_buf_clamp(i, tail[0]);
+            tail[0] -= (char)i;
+            while (i) {
+               *bf++ = *sn++;
+               --i;
+            }
+            fs_chk_cb_buf(1);
+         }
+
+         
+         if (fl & FS_LEFTJUST)
+            if (fw > 0) {
+               while (fw) {
+                  fs_int32 i;
+                  fs_cb_buf_clamp(i, fw);
+                  fw -= i;
+                  while (i) {
+                     if ((((fs_uintptr)bf) & 3) == 0)
+                        break;
+                     *bf++ = ' ';
+                     --i;
+                  }
+                  while (i >= 4) {
+                     *(fs_uint32 *)bf = 0x20202020;
+                     bf += 4;
+                     i -= 4;
+                  }
+                  while (i--)
+                     *bf++ = ' ';
+                  fs_chk_cb_buf(1);
+               }
+            }
+         break;
+
+      default: 
+         s = num + FS_NUMSZ - 1;
+         *s = f[0];
+         l = 1;
+         fw = fl = 0;
+         lead[0] = 0;
+         tail[0] = 0;
+         pr = 0;
+         dp = 0;
+         cs = 0;
+         goto scopy;
+      }
+      ++f;
+   }
+endfmt:
+
+   if (!callback)
+      *bf = 0;
+   else
+      fs_flush_cb();
+
+done:
+   return tlen + (int)(bf - buf);
+}
+
+
+#undef FS_LEFTJUST
+#undef FS_LEADINGPLUS
+#undef FS_LEADINGSPACE
+#undef FS_LEADING_0X
+#undef FS_LEADINGZERO
+#undef FS_INTMAX
+#undef FS_TRIPLET_COMMA
+#undef FS_NEGATIVE
+#undef FS_METRIC_SUFFIX
+#undef FS_NUMSZ
+#undef fs_chk_cb_bufL
+#undef fs_chk_cb_buf
+#undef fs_flush_cb
+#undef fs_cb_buf_clamp
+
+
+
+
+FS_API_SPRINTF_DEF int fs_sprintf(char* buf, char const* fmt, ...)
+{
+   int result;
+   va_list va;
+   va_start(va, fmt);
+   result = fs_vsprintfcb(0, 0, buf, fmt, va);
+   va_end(va);
+   return result;
+}
+
+typedef struct fs_sprintf_context {
+   char* buf;
+   size_t count;
+   size_t length;
+   char tmp[FS_SPRINTF_MIN];
+} fs_sprintf_context;
+
+static char* fs_clamp_callback(const char* buf, void* user, size_t len)
+{
+   fs_sprintf_context *c = (fs_sprintf_context *)user;
+   c->length += len;
+
+   if (len > c->count)
+      len = c->count;
+
+   if (len) {
+      if (buf != c->buf) {
+         const char* s, *se;
+         char* d;
+         d = c->buf;
+         s = buf;
+         se = buf + len;
+         do {
+            *d++ = *s++;
+         } while (s < se);
+      }
+      c->buf += len;
+      c->count -= len;
+   }
+
+   if (c->count <= 0)
+      return c->tmp;
+   return (c->count >= FS_SPRINTF_MIN) ? c->buf : c->tmp; 
+}
+
+static char*  fs_count_clamp_callback( const char*  buf, void*  user, size_t len )
+{
+   fs_sprintf_context * c = (fs_sprintf_context*)user;
+   (void) sizeof(buf);
+
+   c->length += len;
+   return c->tmp; 
+}
+
+FS_API_SPRINTF_DEF int fs_vsnprintf( char*  buf, size_t count, char const*  fmt, va_list va )
+{
+   fs_sprintf_context c;
+
+   if ( (count == 0) && !buf )
+   {
+      c.length = 0;
+
+      fs_vsprintfcb( fs_count_clamp_callback, &c, c.tmp, fmt, va );
+   }
+   else
+   {
+      size_t l;
+
+      c.buf = buf;
+      c.count = count;
+      c.length = 0;
+
+      fs_vsprintfcb( fs_clamp_callback, &c, fs_clamp_callback(0,&c,0), fmt, va );
+
+      
+      l = (size_t)( c.buf - buf );
+      if ( l >= count ) 
+         l = count - 1;
+      buf[l] = 0;
+   }
+
+   return (int)c.length;
+}
+
+FS_API_SPRINTF_DEF int fs_snprintf(char* buf, size_t count, char const* fmt, ...)
+{
+   int result;
+   va_list va;
+   va_start(va, fmt);
+
+   result = fs_vsnprintf(buf, count, fmt, va);
+   va_end(va);
+
+   return result;
+}
+
+FS_API_SPRINTF_DEF int fs_vsprintf(char* buf, char const* fmt, va_list va)
+{
+   return fs_vsprintfcb(0, 0, buf, fmt, va);
+}
+
+
+
+
+#ifndef FS_SPRINTF_NOFLOAT
+
+
+#define FS_COPYFP(dest, src)                   \
+   {                                               \
+      int cn;                                      \
+      for (cn = 0; cn < 8; cn++)                   \
+         ((char* )&dest)[cn] = ((char* )&src)[cn]; \
+   }
+
+
+static fs_int32 fs_real_to_parts(fs_int64 *bits, fs_int32 *expo, double value)
+{
+   double d;
+   fs_int64 b = 0;
+
+   
+   d = value;
+
+   FS_COPYFP(b, d);
+
+   *bits = b & ((((fs_uint64)1) << 52) - 1);
+   *expo = (fs_int32)(((b >> 52) & 2047) - 1023);
+
+   return (fs_int32)((fs_uint64) b >> 63);
+}
+
+static double const fs_bot[23] = {
+   1e+000, 1e+001, 1e+002, 1e+003, 1e+004, 1e+005, 1e+006, 1e+007, 1e+008, 1e+009, 1e+010, 1e+011,
+   1e+012, 1e+013, 1e+014, 1e+015, 1e+016, 1e+017, 1e+018, 1e+019, 1e+020, 1e+021, 1e+022
+};
+static double const fs_negbot[22] = {
+   1e-001, 1e-002, 1e-003, 1e-004, 1e-005, 1e-006, 1e-007, 1e-008, 1e-009, 1e-010, 1e-011,
+   1e-012, 1e-013, 1e-014, 1e-015, 1e-016, 1e-017, 1e-018, 1e-019, 1e-020, 1e-021, 1e-022
+};
+static double const fs_negboterr[22] = {
+   -5.551115123125783e-018,  -2.0816681711721684e-019, -2.0816681711721686e-020, -4.7921736023859299e-021, -8.1803053914031305e-022, 4.5251888174113741e-023,
+   4.5251888174113739e-024,  -2.0922560830128471e-025, -6.2281591457779853e-026, -3.6432197315497743e-027, 6.0503030718060191e-028,  2.0113352370744385e-029,
+   -3.0373745563400371e-030, 1.1806906454401013e-032,  -7.7705399876661076e-032, 2.0902213275965398e-033,  -7.1542424054621921e-034, -7.1542424054621926e-035,
+   2.4754073164739869e-036,  5.4846728545790429e-037,  9.2462547772103625e-038,  -4.8596774326570872e-039
+};
+static double const fs_top[13] = {
+   1e+023, 1e+046, 1e+069, 1e+092, 1e+115, 1e+138, 1e+161, 1e+184, 1e+207, 1e+230, 1e+253, 1e+276, 1e+299
+};
+static double const fs_negtop[13] = {
+   1e-023, 1e-046, 1e-069, 1e-092, 1e-115, 1e-138, 1e-161, 1e-184, 1e-207, 1e-230, 1e-253, 1e-276, 1e-299
+};
+static double const fs_toperr[13] = {
+   8388608,
+   6.8601809640529717e+028,
+   -7.253143638152921e+052,
+   -4.3377296974619174e+075,
+   -1.5559416129466825e+098,
+   -3.2841562489204913e+121,
+   -3.7745893248228135e+144,
+   -1.7356668416969134e+167,
+   -3.8893577551088374e+190,
+   -9.9566444326005119e+213,
+   6.3641293062232429e+236,
+   -5.2069140800249813e+259,
+   -5.2504760255204387e+282
+};
+static double const fs_negtoperr[13] = {
+   3.9565301985100693e-040,  -2.299904345391321e-063,  3.6506201437945798e-086,  1.1875228833981544e-109,
+   -5.0644902316928607e-132, -6.7156837247865426e-155, -2.812077463003139e-178,  -5.7778912386589953e-201,
+   7.4997100559334532e-224,  -4.6439668915134491e-247, -6.3691100762962136e-270, -9.436808465446358e-293,
+   8.0970921678014997e-317
+};
+
+#if defined(_MSC_VER) && (_MSC_VER <= 1200)
+static fs_uint64 const fs_powten[20] = {
+   1,
+   10,
+   100,
+   1000,
+   10000,
+   100000,
+   1000000,
+   10000000,
+   100000000,
+   1000000000,
+   10000000000,
+   100000000000,
+   1000000000000,
+   10000000000000,
+   100000000000000,
+   1000000000000000,
+   10000000000000000,
+   100000000000000000,
+   1000000000000000000,
+   10000000000000000000U
+};
+#define fs_tento19th ((fs_uint64)1000000000000000000)
+#else
+static fs_uint64 const fs_powten[20] = {
+   1,
+   10,
+   100,
+   1000,
+   10000,
+   100000,
+   1000000,
+   10000000,
+   100000000,
+   1000000000,
+   10000000000ULL,
+   100000000000ULL,
+   1000000000000ULL,
+   10000000000000ULL,
+   100000000000000ULL,
+   1000000000000000ULL,
+   10000000000000000ULL,
+   100000000000000000ULL,
+   1000000000000000000ULL,
+   10000000000000000000ULL
+};
+#define fs_tento19th (1000000000000000000ULL)
+#endif
+
+#define fs_ddmulthi(oh, ol, xh, yh)                            \
+   {                                                               \
+      double ahi = 0, alo, bhi = 0, blo;                           \
+      fs_int64 bt;                                             \
+      oh = xh * yh;                                                \
+      FS_COPYFP(bt, xh);                                       \
+      bt &= ((~(fs_uint64)0) << 27);                           \
+      FS_COPYFP(ahi, bt);                                      \
+      alo = xh - ahi;                                              \
+      FS_COPYFP(bt, yh);                                       \
+      bt &= ((~(fs_uint64)0) << 27);                           \
+      FS_COPYFP(bhi, bt);                                      \
+      blo = yh - bhi;                                              \
+      ol = ((ahi * bhi - oh) + ahi * blo + alo * bhi) + alo * blo; \
+   }
+
+#define fs_ddtoS64(ob, xh, xl)          \
+   {                                        \
+      double ahi = 0, alo, vh, t;           \
+      ob = (fs_int64)xh;                \
+      vh = (double)ob;                      \
+      ahi = (xh - vh);                      \
+      t = (ahi - xh);                       \
+      alo = (xh - (ahi - t)) - (vh + t);    \
+      ob += (fs_int64)(ahi + alo + xl); \
+   }
+
+#define fs_ddrenorm(oh, ol) \
+   {                            \
+      double s;                 \
+      s = oh + ol;              \
+      ol = ol - (s - oh);       \
+      oh = s;                   \
+   }
+
+#define fs_ddmultlo(oh, ol, xh, xl, yh, yl) ol = ol + (xh * yl + xl * yh);
+
+#define fs_ddmultlos(oh, ol, xh, yl) ol = ol + (xh * yl);
+
+static void fs_raise_to_power10(double *ohi, double *olo, double d, fs_int32 power) 
+{
+   double ph, pl;
+   if ((power >= 0) && (power <= 22)) {
+      fs_ddmulthi(ph, pl, d, fs_bot[power]);
+   } else {
+      fs_int32 e, et, eb;
+      double p2h, p2l;
+
+      e = power;
+      if (power < 0)
+         e = -e;
+      et = (e * 0x2c9) >> 14; 
+      if (et > 13)
+         et = 13;
+      eb = e - (et * 23);
+
+      ph = d;
+      pl = 0.0;
+      if (power < 0) {
+         if (eb) {
+            --eb;
+            fs_ddmulthi(ph, pl, d, fs_negbot[eb]);
+            fs_ddmultlos(ph, pl, d, fs_negboterr[eb]);
+         }
+         if (et) {
+            fs_ddrenorm(ph, pl);
+            --et;
+            fs_ddmulthi(p2h, p2l, ph, fs_negtop[et]);
+            fs_ddmultlo(p2h, p2l, ph, pl, fs_negtop[et], fs_negtoperr[et]);
+            ph = p2h;
+            pl = p2l;
+         }
+      } else {
+         if (eb) {
+            e = eb;
+            if (eb > 22)
+               eb = 22;
+            e -= eb;
+            fs_ddmulthi(ph, pl, d, fs_bot[eb]);
+            if (e) {
+               fs_ddrenorm(ph, pl);
+               fs_ddmulthi(p2h, p2l, ph, fs_bot[e]);
+               fs_ddmultlos(p2h, p2l, fs_bot[e], pl);
+               ph = p2h;
+               pl = p2l;
+            }
+         }
+         if (et) {
+            fs_ddrenorm(ph, pl);
+            --et;
+            fs_ddmulthi(p2h, p2l, ph, fs_top[et]);
+            fs_ddmultlo(p2h, p2l, ph, pl, fs_top[et], fs_toperr[et]);
+            ph = p2h;
+            pl = p2l;
+         }
+      }
+   }
+   fs_ddrenorm(ph, pl);
+   *ohi = ph;
+   *olo = pl;
+}
+
+
+
+
+
+static fs_int32 fs_real_to_str(char const* *start, fs_uint32 *len, char* out, fs_int32 *decimal_pos, double value, fs_uint32 frac_digits)
+{
+   double d;
+   fs_int64 bits = 0;
+   fs_int32 expo, e, ng, tens;
+
+   d = value;
+   FS_COPYFP(bits, d);
+   expo = (fs_int32)((bits >> 52) & 2047);
+   ng = (fs_int32)((fs_uint64) bits >> 63);
+   if (ng)
+      d = -d;
+
+   if (expo == 2047) 
+   {
+      *start = (bits & ((((fs_uint64)1) << 52) - 1)) ? "NaN" : "Inf";
+      *decimal_pos = FS_SPECIAL;
+      *len = 3;
+      return ng;
+   }
+
+   if (expo == 0) 
+   {
+      if (((fs_uint64) bits << 1) == 0) 
+      {
+         *decimal_pos = 1;
+         *start = out;
+         out[0] = '0';
+         *len = 1;
+         return ng;
+      }
+      
+      {
+         fs_int64 v = ((fs_uint64)1) << 51;
+         while ((bits & v) == 0) {
+            --expo;
+            v >>= 1;
+         }
+      }
+   }
+
+   
+   {
+      double ph, pl;
+
+      
+      tens = expo - 1023;
+      tens = (tens < 0) ? ((tens * 617) / 2048) : (((tens * 1233) / 4096) + 1);
+
+      
+      fs_raise_to_power10(&ph, &pl, d, 18 - tens);
+
+      
+      fs_ddtoS64(bits, ph, pl);
+
+      
+      if (((fs_uint64)bits) >= fs_tento19th)
+         ++tens;
+   }
+
+   
+   frac_digits = (frac_digits & 0x80000000) ? ((frac_digits & 0x7ffffff) + 1) : (tens + frac_digits);
+   if ((frac_digits < 24)) {
+      fs_uint32 dg = 1;
+      if ((fs_uint64)bits >= fs_powten[9])
+         dg = 10;
+      while ((fs_uint64)bits >= fs_powten[dg]) {
+         ++dg;
+         if (dg == 20)
+            goto noround;
+      }
+      if (frac_digits < dg) {
+         fs_uint64 r;
+         
+         e = dg - frac_digits;
+         if ((fs_uint32)e >= 24)
+            goto noround;
+         r = fs_powten[e];
+         bits = bits + (r / 2);
+         if ((fs_uint64)bits >= fs_powten[dg])
+            ++tens;
+         bits /= r;
+      }
+   noround:;
+   }
+
+   
+   if (bits) {
+      fs_uint32 n;
+      for (;;) {
+         if (bits <= 0xffffffff)
+            break;
+         if (bits % 1000)
+            goto donez;
+         bits /= 1000;
+      }
+      n = (fs_uint32)bits;
+      while ((n % 1000) == 0)
+         n /= 1000;
+      bits = n;
+   donez:;
+   }
+
+   
+   out += 64;
+   e = 0;
+   for (;;) {
+      fs_uint32 n;
+      char* o = out - 8;
+      
+      if (bits >= 100000000) {
+         n = (fs_uint32)(bits % 100000000);
+         bits /= 100000000;
+      } else {
+         n = (fs_uint32)bits;
+         bits = 0;
+      }
+      while (n) {
+         out -= 2;
+         *(fs_uint16 *)out = *(fs_uint16 *)&fs_digitpair.pair[(n % 100) * 2];
+         n /= 100;
+         e += 2;
+      }
+      if (bits == 0) {
+         if ((e) && (out[0] == '0')) {
+            ++out;
+            --e;
+         }
+         break;
+      }
+      while (out != o) {
+         *--out = '0';
+         ++e;
+      }
+   }
+
+   *decimal_pos = tens;
+   *start = out;
+   *len = e;
+   return ng;
+}
+
+#undef fs_ddmulthi
+#undef fs_ddrenorm
+#undef fs_ddmultlo
+#undef fs_ddmultlos
+#undef FS_SPECIAL
+#undef FS_COPYFP
+
+#endif 
+
+
+#undef FS_UNALIGNED
+/* END stb_sprintf.c */
+
+#if defined(__GNUC__) && (__GNUC__ >= 7 || (__GNUC__ == 6 && __GNUC_MINOR__ >= 1))
+    #pragma GCC diagnostic pop
+#endif
+/* END fs_snprintf.c */
+
 
 #endif  /* fs_c */
 
