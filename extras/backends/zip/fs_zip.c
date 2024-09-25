@@ -1753,6 +1753,18 @@ static void fs_uninit_zip(fs* pFS)
     return;
 }
 
+static fs_result fs_ioctl_zip(fs* pFS, int op, void* pArg)
+{
+    fs_zip* pZip = (fs_zip*)fs_get_backend_data(pFS);
+    FS_ZIP_ASSERT(pZip != NULL);
+
+    (void)pZip;
+    (void)op;
+    (void)pArg;
+
+    return FS_NOT_IMPLEMENTED;
+}
+
 static fs_result fs_info_zip(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     fs_result result;
@@ -2547,6 +2559,7 @@ fs_backend fs_zip_backend =
     fs_alloc_size_zip,
     fs_init_zip,
     fs_uninit_zip,
+    fs_ioctl_zip,
     NULL,   /* remove */
     NULL,   /* rename */
     NULL,   /* mkdir */

@@ -809,6 +809,7 @@ typedef struct fs_backend
     size_t       (* alloc_size     )(const void* pBackendConfig);
     fs_result    (* init           )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);              /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
     void         (* uninit         )(fs* pFS);
+    fs_result    (* ioctl          )(fs* pFS, int op, void* pArg);                                          /* Optional. */
     fs_result    (* remove         )(fs* pFS, const char* pFilePath);
     fs_result    (* rename         )(fs* pFS, const char* pOldName, const char* pNewName);
     fs_result    (* mkdir          )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
@@ -830,6 +831,7 @@ typedef struct fs_backend
 
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
 FS_API void fs_uninit(fs* pFS);
+FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath);
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath);  /* Does not consider mounts. Returns FS_SUCCESS if directory already exists. */
@@ -876,6 +878,19 @@ FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoin
 
 /* Default Backend. */
 extern const fs_backend* FS_STDIO;  /* The default stdio backend. */
+
+/* ioctl: FS_STDIO_SET_FILE. Assign a FILE* to a path. */
+/* ioctl: FS_STDIO_GET_FILE. Get the FILE* associated with a path. */
+#define FS_STDIO_SET_FILE 0x00000001
+#define FS_STDIO_GET_FILE 0x00000002 
+
+typedef struct fs_stdio_file_args
+{
+    const char* pPath;
+    void* pFile;    /* Set this to a FILE* object. */
+} fs_stdio_set_file_args, fs_stdio_get_file_args;
+#define FS
+
 /* END fs.h */
 
 
