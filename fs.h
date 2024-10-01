@@ -891,6 +891,29 @@ FS_API fs_result fs_mount_write(fs* pFS, const char* pPathToMount, const char* p
 FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoint);
 
 
+/*
+Helper functions for reading the entire contents of a file, starting from the current cursor position. Free
+the returned pointer with fs_free(), using the same allocation callbacks as the fs object. You can use
+fs_get_allocation_callbacks() if necessary, like so:
+
+    fs_free(pFileData, fs_get_allocation_callbacks(pFS));
+
+The format (FS_FORMAT_TEXT or FS_FORMAT_BINARY) is used to determine whether or not a null terminator should be
+appended to the end of the data.
+
+For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
+in fixed sized chunks.
+*/
+typedef enum fs_format
+{
+    FS_FORMAT_TEXT,
+    FS_FORMAT_BINARY
+} fs_format;
+
+FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize);
+FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format format, void** ppData, size_t* pDataSize);
+
+
 /* Default Backend. */
 extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
 

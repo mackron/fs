@@ -4034,6 +4034,103 @@ FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoin
     return FS_SUCCESS;
 }
 
+FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize)
+{
+    fs_result result = FS_SUCCESS;
+    size_t dataSize = 0;
+    size_t dataCap  = 0;
+    void* pData = NULL;
+
+    if (pDataSize != NULL) {
+        *pDataSize = 0;
+    }
+
+    if (pFile == NULL || ppData == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* Read in a loop into a dynamically increasing buffer. */
+    for (;;) {
+        size_t chunkSize = 4096;
+        size_t bytesRead;
+
+        if (dataSize + chunkSize > dataCap) {
+            void* pNewData;
+            size_t newCap = dataCap * 2;
+            if (newCap == 0) {
+                newCap = chunkSize;
+            }
+
+            pNewData = fs_realloc(pData, newCap, fs_get_allocation_callbacks(pFile->pFS));
+            if (pNewData == NULL) {
+                fs_free(pData, fs_get_allocation_callbacks(pFile->pFS));
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pData = pNewData;
+            dataCap = newCap;
+        }
+
+        /* At this point there should be enough data in the buffer for the next chunk. */
+        result = fs_file_read(pFile, FS_OFFSET_PTR(pData, dataSize), chunkSize, &bytesRead);
+        dataSize += bytesRead;
+
+        if (result != FS_SUCCESS || bytesRead < chunkSize) {
+            break;
+        }
+    }
+
+    /* If we're opening in text mode, we need to append a null terminator. */
+    if (format == FS_FORMAT_TEXT) {
+        if (dataSize >= dataCap) {
+            void* pNewData;
+            pNewData = fs_realloc(pData, dataSize + 1, fs_get_allocation_callbacks(pFile->pFS));
+            if (pNewData == NULL) {
+                fs_free(pData, fs_get_allocation_callbacks(pFile->pFS));
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pData = pNewData;
+        }
+
+        ((char*)pData)[dataSize] = '\0';
+    }
+
+    *ppData = pData;
+
+    if (pDataSize != NULL) {
+        *pDataSize = dataSize;
+    }
+
+    /* Make sure the caller is aware of any errors. */
+    if (result != FS_SUCCESS && result != FS_AT_END) {
+        return result;
+    } else {
+        return FS_SUCCESS;
+    }
+}
+
+FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format format, void** ppData, size_t* pDataSize)
+{
+    fs_result result;
+    fs_file* pFile;
+
+    if (pFS == NULL || pFilePath == NULL || ppData == NULL || pDataSize == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    result = fs_file_open(pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    result = fs_file_read_to_end(pFile, format, ppData, pDataSize);
+
+    fs_file_close(pFile);
+
+    return result;
+}
+
 
 
 /******************************************************************************
