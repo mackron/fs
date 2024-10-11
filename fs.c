@@ -4457,7 +4457,7 @@ static fs_result fs_ioctl_stdio(fs* pFS, int op, void* pArgs)
     {
         case FS_STDIO_SET_FILE:
         {
-            fs_stdio_file_args* pArgsFile = (fs_stdio_file_args*)pArgs;
+            fs_stdio_set_file_args* pArgsFile = (fs_stdio_set_file_args*)pArgs;
             fs_stdio_registered_file* pExistingFile;
 
             /* If the file already exists, replace it. */
@@ -4473,7 +4473,7 @@ static fs_result fs_ioctl_stdio(fs* pFS, int op, void* pArgs)
 
         case FS_STDIO_GET_FILE:
         {
-            fs_stdio_file_args* pArgsFile = (fs_stdio_file_args*)pArgs;
+            fs_stdio_get_file_args* pArgsFile = (fs_stdio_get_file_args*)pArgs;
             fs_stdio_registered_file* pExistingFile;
 
             pArgsFile->pFile = NULL;
