@@ -687,6 +687,71 @@ FS_API fs_result fs_stream_write(fs_stream* pStream, const void* pSrc, size_t by
     return result;
 }
 
+FS_API fs_result fs_stream_writef(fs_stream* pStream, const char* fmt, ...)
+{
+    va_list args;
+    fs_result result;
+
+    va_start(args, fmt);
+    result = fs_stream_writefv(pStream, fmt, args);
+    va_end(args);
+
+    return result;
+}
+
+FS_API fs_result fs_stream_writef_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, ...)
+{
+    va_list args;
+    fs_result result;
+
+    va_start(args, fmt);
+    result = fs_stream_writefv_ex(pStream, pAllocationCallbacks, fmt, args);
+    va_end(args);
+
+    return result;
+}
+
+FS_API fs_result fs_stream_writefv(fs_stream* pStream, const char* fmt, va_list args)
+{
+    return fs_stream_writefv_ex(pStream, NULL, fmt, args);
+}
+
+FS_API fs_result fs_stream_writefv_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, va_list args)
+{
+    fs_result result;
+    int strLen;
+    char pStrStack[1024];
+
+    if (pStream == NULL || fmt == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args);
+    if (strLen < 0) {
+        return FS_ERROR;    /* Encoding error. */
+    }
+
+    if (strLen < (int)sizeof(pStrStack)) {
+        /* Stack buffer is big enough. Output straight to the file. */
+        result = fs_stream_write(pStream, pStrStack, strLen, NULL);
+    } else {
+        /* Stack buffer is not big enough. Allocate space on the heap. */
+        char* pStrHeap = NULL;
+
+        pStrHeap = (char*)fs_malloc(strLen + 1, pAllocationCallbacks);
+        if (pStrHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        fs_vsnprintf(pStrHeap, strLen + 1, fmt, args);
+        result = fs_stream_write(pStream, pStrHeap, strLen, NULL);
+
+        fs_free(pStrHeap, pAllocationCallbacks);
+    }
+
+    return result;
+}
+
 FS_API fs_result fs_stream_seek(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin)
 {
     if (pStream == NULL) {
@@ -3201,38 +3266,7 @@ FS_API fs_result fs_file_writef(fs_file* pFile, const char* fmt, ...)
 
 FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args)
 {
-    fs_result result;
-    int strLen;
-    char pStrStack[1024];
-
-    if (pFile == NULL || fmt == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args);
-    if (strLen < 0) {
-        return FS_ERROR;    /* Encoding error. */
-    }
-
-    if (strLen < (int)sizeof(pStrStack)) {
-        /* Stack buffer is big enough. Output straight to the file. */
-        result = fs_file_write(pFile, pStrStack, strLen, NULL);
-    } else {
-        /* Stack buffer is not big enough. Allocate space on the heap. */
-        char* pStrHeap = NULL;
-
-        pStrHeap = (char*)fs_malloc(strLen + 1, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
-        if (pStrHeap == NULL) {
-            return FS_OUT_OF_MEMORY;
-        }
-
-        fs_vsnprintf(pStrHeap, strLen + 1, fmt, args);
-        result = fs_file_write(pFile, pStrHeap, strLen, NULL);
-
-        fs_free(pStrHeap, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
-    }
-
-    return result;
+    return fs_stream_writefv(fs_file_get_stream(pFile), fmt, args);
 }
 
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)

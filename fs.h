@@ -721,6 +721,10 @@ struct fs_stream
 FS_API fs_result fs_stream_init(const fs_stream_vtable* pVTable, fs_stream* pStream);
 FS_API fs_result fs_stream_read(fs_stream* pStream, void* pDst, size_t bytesToRead, size_t* pBytesRead);
 FS_API fs_result fs_stream_write(fs_stream* pStream, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
+FS_API fs_result fs_stream_writef(fs_stream* pStream, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(2, 3);
+FS_API fs_result fs_stream_writef_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(3, 4);
+FS_API fs_result fs_stream_writefv(fs_stream* pStream, const char* fmt, va_list args);
+FS_API fs_result fs_stream_writefv_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, va_list args);
 FS_API fs_result fs_stream_seek(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin);
 FS_API fs_result fs_stream_tell(fs_stream* pStream, fs_int64* pCursor);
 
