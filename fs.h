@@ -738,6 +738,25 @@ Deletes a duplicated stream.
 Do not use this for a stream that was not duplicated with `fs_stream_duplicate()`.
 */
 FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_allocation_callbacks* pAllocationCallbacks);
+
+
+/*
+Helper functions for reading the entire contents of a stream, starting from the current cursor position. Free
+the returned pointer with fs_free().
+
+The format (FS_FORMAT_TEXT or FS_FORMAT_BINARY) is used to determine whether or not a null terminator should be
+appended to the end of the data.
+
+For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
+in fixed sized chunks.
+*/
+typedef enum fs_format
+{
+    FS_FORMAT_TEXT,
+    FS_FORMAT_BINARY
+} fs_format;
+
+FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, const fs_allocation_callbacks* pAllocationCallbacks, void** ppData, size_t* pDataSize);
 /* END fs_stream.h */
 
 
@@ -890,7 +909,6 @@ FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS);   /* Must be matched up w
 FS_API fs_result fs_mount_write(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
 FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoint);
 
-
 /*
 Helper functions for reading the entire contents of a file, starting from the current cursor position. Free
 the returned pointer with fs_free(), using the same allocation callbacks as the fs object. You can use
@@ -904,12 +922,6 @@ appended to the end of the data.
 For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
 in fixed sized chunks.
 */
-typedef enum fs_format
-{
-    FS_FORMAT_TEXT,
-    FS_FORMAT_BINARY
-} fs_format;
-
 FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize);
 FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format format, void** ppData, size_t* pDataSize);
 
