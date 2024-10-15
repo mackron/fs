@@ -3974,7 +3974,7 @@ FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountP
     openMode = FS_READ | FS_VERBOSE;
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
-    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, pPathToMount, FS_IGNORE_MOUNTS, &fileInfo);
+    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pPathToMount[0] != '\0') ? pPathToMount : ".", FS_IGNORE_MOUNTS, &fileInfo);
     if (result != FS_SUCCESS) {
         return result;
     }
