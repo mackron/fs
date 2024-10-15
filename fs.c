@@ -4171,6 +4171,27 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
     return result;
 }
 
+FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pData, size_t dataSize)
+{
+    fs_result result;
+    fs_file* pFile;
+
+    if (pFS == NULL || pFilePath == NULL || pData == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    result = fs_file_open(pFS, pFilePath, FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    result = fs_file_write(pFile, pData, dataSize, NULL);
+
+    fs_file_close(pFile);
+
+    return result;
+}
+
 
 
 /******************************************************************************
