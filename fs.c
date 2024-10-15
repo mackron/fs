@@ -4184,7 +4184,7 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
         return FS_INVALID_ARGS;
     }
 
-    result = fs_file_open(pFS, pFilePath, FS_WRITE, &pFile);
+    result = fs_file_open(pFS, pFilePath, FS_TRUNCATE, &pFile);
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -4713,18 +4713,18 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
     if ((openMode & FS_WRITE) != 0) {
         if ((openMode & FS_READ) != 0) {
             /* Read and write. */
-            if ((openMode & FS_APPEND) != 0) {
+            if ((openMode & FS_APPEND) == FS_APPEND) {
                 pFileStdio->openMode[0] = 'a'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, appending. */
-            } else if ((openMode & FS_TRUNCATE) != 0) {
+            } else if ((openMode & FS_TRUNCATE) == FS_TRUNCATE) {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, truncating. */
             } else {
                 pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, overwriting. */
             }
         } else {
             /* Write-only. */
-            if ((openMode & FS_APPEND) != 0) {
+            if ((openMode & FS_APPEND) == FS_APPEND) {
                 pFileStdio->openMode[0] = 'a'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, appending. */
-            } else if ((openMode & FS_TRUNCATE) != 0) {
+            } else if ((openMode & FS_TRUNCATE) == FS_TRUNCATE) {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, truncating. */
             } else {
                 pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Write-only, overwriting. Need to use the "+" option here because there does not appear to be an option for a write-only overwrite mode. */
