@@ -5805,37 +5805,42 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
     }
 
 
-    /* Base path. */
-    if (pDst != NULL) {
-        size_t bytesToCopy = FS_MIN(basePathLen, dstCap);
-        
-        if (bytesToCopy > 0) {
-            if (bytesToCopy == dstCap) {
-                bytesToCopy -= 1;   /* Need to leave room for the null terminator. */
+    /*
+    We don't want to be appending a separator if the base path is empty. Otherwise we'll end up with
+    a leading slash.
+    */
+    if (basePathLen > 0) {
+        /* Base path. */
+        if (pDst != NULL) {
+            size_t bytesToCopy = FS_MIN(basePathLen, dstCap);
+            
+            if (bytesToCopy > 0) {
+                if (bytesToCopy == dstCap) {
+                    bytesToCopy -= 1;   /* Need to leave room for the null terminator. */
+                }
+
+                /* Don't move the base path if we're appending in-place. */
+                if (pDst != pBasePath) {
+                    FS_COPY_MEMORY(pDst, pBasePath, FS_MIN(basePathLen, dstCap));
+                }
             }
 
-            /* Don't move the base path if we're appending in-place. */
-            if (pDst != pBasePath) {
-                FS_COPY_MEMORY(pDst, pBasePath, FS_MIN(basePathLen, dstCap));
+            pDst   += bytesToCopy;
+            dstCap -= bytesToCopy;
+        }
+        dstLen += basePathLen;
+
+        /* Separator. */
+        if (pDst != NULL) {
+            if (dstCap > 1) {   /* Need to leave room for the separator. */
+                pDst[0] = '/';
+                pDst += 1;
+                dstCap -= 1;
             }
         }
-
-        pDst   += bytesToCopy;
-        dstCap -= bytesToCopy;
+        dstLen += 1;    
     }
-    dstLen += basePathLen;
-
-
-    /* Separator. */
-    if (pDst != NULL) {
-        if (dstCap > 1) {   /* Need to leave room for the separator. */
-            pDst[0] = '/';
-            pDst += 1;
-            dstCap -= 1;
-        }
-    }
-    dstLen += 1;
-
+    
 
     /* Path to append. */
     if (pDst != NULL) {
