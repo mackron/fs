@@ -305,7 +305,7 @@ static void fs_free_default(void* p, void* pUserData)
 }
 
 
-static fs_allocation_callbacks fs_allocation_callbacks_init_default()
+static fs_allocation_callbacks fs_allocation_callbacks_init_default(void)
 {
     fs_allocation_callbacks allocationCallbacks;
 
