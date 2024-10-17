@@ -522,6 +522,7 @@ see some random tags and stuff in this file. These are just used for doing a dum
 extern "C" {
 #endif
 
+/* BEG fs_compiler_compat.h */
 #if defined(SIZE_MAX)
     #define FS_SIZE_MAX  SIZE_MAX
 #else
@@ -574,7 +575,7 @@ extern "C" {
             #pragma GCC diagnostic pop
         #endif
     #endif
-#endif  /* MA_USE_STDINT */
+#endif  /* FS_USE_STDINT */
 
 #if FS_SIZEOF_PTR == 8
     typedef unsigned long long fs_uintptr;
@@ -631,8 +632,10 @@ typedef unsigned int  fs_bool32;
 
 
 #define FS_NULL_TERMINATED  ((size_t)-1)
+/* END fs_compiler_compat.h */
 
 
+/* BEG fs_result.h */
 typedef enum fs_result
 {
     /* Compression Non-Error Result Codes. */
@@ -658,6 +661,8 @@ typedef enum fs_result
     FS_CHECKSUM_MISMATCH   = -100,
     FS_NO_BACKEND          = -101
 } fs_result;
+/* END fs_result.h */
+
 
 /* BEG fs_allocation_callbacks.h */
 typedef struct fs_allocation_callbacks
