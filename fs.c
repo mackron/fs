@@ -846,6 +846,9 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
     size_t dataCap  = 0;
     void* pData = NULL;
 
+    if (ppData != NULL) {
+        *ppData = NULL;
+    }
     if (pDataSize != NULL) {
         *pDataSize = 0;
     }
