@@ -648,6 +648,8 @@ typedef enum fs_result
     FS_INVALID_ARGS        = -2,
     FS_INVALID_OPERATION   = -3,
     FS_OUT_OF_MEMORY       = -4,
+    FS_OUT_OF_RANGE        = -5,
+    FS_ACCESS_DENIED       = -6,
     FS_DOES_NOT_EXIST      = -7,
     FS_ALREADY_EXISTS      = -8,
     FS_INVALID_FILE        = -10,
