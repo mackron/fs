@@ -422,9 +422,10 @@ not need any additional data, it can return 0. The backend can access this data 
 The `file_open` function is where the backend should open the file. If the `fs` object that owns
 the file was initialized with a stream, i.e. it's an archive, the stream will be non-null. You
 should store this pointer for later use in `file_read`, etc. The `openMode` parameter will be a
-combination of `FS_READ`, `FS_WRITE`, `FS_APPEND` and `FS_TRUNCATE`. You should ignore the
-`FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist, the backend
-should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return `FS_IS_DIRECTORY`.
+combination of `FS_READ`, `FS_WRITE`, `FS_TRUNCATE`, `FS_APPEND` and `FS_OVERWRITE`. When opening
+in write mode (`FS_WRITE`), it will default to truncate mode. You should ignore the `FS_OPAQUE`,
+`FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist, the backend should return
+`FS_DOES_NOT_EXIST`. If the file is a directory, it should return `FS_IS_DIRECTORY`.
 
 The file should be closed with `file_close`. This is where the backend should release any resources
 associated with the file. The stream should not be closed here - it'll be cleaned up at a higher
@@ -777,7 +778,8 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_READ                     0x0001
 #define FS_WRITE                    0x0002
 #define FS_APPEND                   (FS_WRITE | 0x0004)
-#define FS_TRUNCATE                 (FS_WRITE | 0x0008)
+#define FS_OVERWRITE                (FS_WRITE | 0x0008)
+#define FS_TRUNCATE                 (FS_WRITE)
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
 #define FS_OPAQUE                   0x0010  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
@@ -877,7 +879,7 @@ FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath);
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath);  /* Does not consider mounts. Returns FS_SUCCESS if directory already exists. */
-FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_APPEND, and FS_TRUNCATE are ignored. */
+FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_OVERWRITE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
 FS_API void* fs_get_backend_data(fs* pFS);    /* For use by the backend. Will be the size returned by the alloc_size() function in the vtable. */
