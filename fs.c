@@ -1478,6 +1478,8 @@ typedef struct fs_file
 } fs_file;
 
 
+static void fs_gc_archives_nolock(fs* pFS, int policy); /* Defined further down in the file. */
+
 
 static size_t fs_mount_point_size(size_t pathLen, size_t mountPointLen)
 {
@@ -1836,7 +1838,7 @@ static fs_result fs_remove_opened_archive(fs* pFS, fs_opened_archive* pOpenedArc
     FS_ASSERT(((fs_uintptr)pOpenedArchive + openedArchiveSize) >  ((fs_uintptr)pFS->pOpenedArchives));
     FS_ASSERT(((fs_uintptr)pOpenedArchive + openedArchiveSize) <= ((fs_uintptr)pFS->pOpenedArchives + pFS->openedArchivesSize));
 
-    FS_MOVE_MEMORY(pOpenedArchive, pOpenedArchive + openedArchiveSize, (size_t)((((fs_uintptr)pFS->pOpenedArchives + pFS->openedArchivesSize)) - ((fs_uintptr)pOpenedArchive + openedArchiveSize)));
+    FS_MOVE_MEMORY(pOpenedArchive, FS_OFFSET_PTR(pOpenedArchive, openedArchiveSize), (size_t)((((fs_uintptr)pFS->pOpenedArchives + pFS->openedArchivesSize)) - ((fs_uintptr)pOpenedArchive + openedArchiveSize)));
     pFS->openedArchivesSize -= openedArchiveSize;
 
     return FS_SUCCESS;
@@ -1966,6 +1968,25 @@ FS_API void fs_uninit(fs* pFS)
     if (pFS == NULL) {
         return;
     }
+
+    /*
+    We'll first garbage collect all archives. This should uninitialize any archives that are
+    still open but have no references. After this call any archives that are still being
+    referenced will remain open. Not quite sure what to do in this situation, but for now
+    I'll check if any archives are still open and throw an assert. Not sure if this is
+    overly aggressive - feedback welcome.
+    */
+    fs_gc_archives_nolock(pFS, FS_GC_FULL); /* <-- Need to use the _nolock version because this will call into fs_close_archive() which will also be locking. */
+
+    /* The caller has a bug if there are still outstanding archives. */
+    #if !defined(FS_NO_OPENED_FILES_ASSERT)
+    {
+        if (pFS->openedArchivesSize > 0) {
+            FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. Define `FS_NO_OPENED_FILES_ASSERT` to workaround the assert. */
+        }
+    }
+    #endif
+
 
     if (pFS->pBackend->uninit != NULL) {
         pFS->pBackend->uninit(pFS);
