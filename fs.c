@@ -4497,6 +4497,10 @@ static fs_stdio_registered_file* fs_stdio_find_registered_file(fs* pFS, const ch
     size_t iFile;
     fs_stdio_registered_file* pCurrentFile;
 
+    if (pFS == NULL) {
+        return NULL;
+    }
+
     FS_ASSERT(pStdio != NULL);
 
     pCurrentFile = pStdio->pRegisteredFiles;
@@ -4514,7 +4518,6 @@ static fs_stdio_registered_file* fs_stdio_find_registered_file(fs* pFS, const ch
 
 static fs_result fs_ioctl_stdio(fs* pFS, int op, void* pArgs)
 {
-    FS_UNUSED(pFS);
     FS_UNUSED(op);
     FS_UNUSED(pArgs);
 
@@ -4702,7 +4705,6 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
     fs_file_stdio* pFileStdio;
     int result;
 
-    FS_UNUSED(pFS);
     FS_UNUSED(pStream);
 
     pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
