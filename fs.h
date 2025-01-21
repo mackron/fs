@@ -237,10 +237,10 @@ again. With this set up, any file that is loaded from the "assets" mount point w
 from "mod2.zip", and if it doesn't exist there, "mod1.zip", and if not there, finally "base.zip".
 You could use this set up to support simple modding prioritization in a game, for example.
 
-When opening a file, mounts always take priority over the backend's default search path. If the
-file cannot be opened from any mounts, it will attempt to open the file from the backend's default
-search path. When opening in transparent mode with `FS_TRANSPARENT` (default), it will first try
-opening the file as if it were not in an archive. If that fails, it will look inside archives.
+If the file cannot be opened from any mounts it will attempt to open the file from the backend's
+default search path. Mounts always take priority. When opening in transparent mode with
+`FS_TRANSPARENT` (default), it will first try opening the file as if it were not in an archive. If
+that fails, it will look inside archives.
 
 You can also mount directories for writing:
 
@@ -388,7 +388,7 @@ The main library will allocate the `fs` object, including any additional space s
 This function will take a pointer to the `fs` object, the backend-specific configuration data, and
 a stream object. The stream is used to provide the backend with the raw data of an archive, which
 will be required for archive backends like ZIP. If your backend requires this, you should check
-for is the stream is null, and if so, return an error. See section "4. Streams" for more details
+for if the stream is null, and if so, return an error. See section "4. Streams" for more details
 on how to use streams. You need not take a copy of the stream pointer for use outside of `init()`.
 Instead you can just use `fs_get_stream()` to get the stream object when you need it. You should
 not ever close or otherwise take ownership of the stream - that will be handled at a higher level.
@@ -1171,7 +1171,7 @@ For more information, please refer to <http://unlicense.org/>
 ===============================================================================
 ALTERNATIVE 2 - MIT No Attribution
 ===============================================================================
-Copyright 2024 David Reid
+Copyright 2025 David Reid
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in

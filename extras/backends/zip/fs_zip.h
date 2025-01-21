@@ -21,16 +21,15 @@ easily from fs object.
 
     ... now just read from pFileInsideZip like any other file ...
 
-A Zip archive is its own file system and is therefore implemented as an fs backend. In order
-to actually use the backend, it needs to know have access to the raw data of the entire Zip
-file. This is supplied via a fs_stream object. The fs_file object is a stream and can be
-used for this purpose. The code above just opens the Zip file from an earlier created fs
-object.
+A Zip archive is its own file system and is therefore implemented as an fs backend. In order to
+actually use the backend, it needs to have access to the raw data of the entire Zip file. This is
+supplied via a fs_stream object. The fs_file object is a stream and can be used for this purpose.
+The code above just opens the Zip file from an earlier created fs object.
 
-Once you have the fs_stream object for the Zip file, you can initialize a fs object,
-telling it to use the Zip backend which you do by passing in FS_ZIP, which is declared in this
-file. If all goes well, you'll get a pointer to a new fs object representing the Zip archive
-and you can use it to open files from within it just like any other file.
+Once you have the fs_stream object for the Zip file, you can initialize a fs object, telling it to
+use the Zip backend which you do by passing in FS_ZIP, which is declared in this file. If all goes
+well, you'll get a pointer to a new fs object representing the Zip archive and you can use it to
+open files from within it just like any other file.
 
 You can pass in NULL for the backend config in fs_init().
 */
