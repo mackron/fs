@@ -942,17 +942,6 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
 
 /* Default Backend. */
 extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
-
-/* ioctl: FS_STDIO_SET_FILE. Assign a FILE* to a path. */
-/* ioctl: FS_STDIO_GET_FILE. Get the FILE* associated with a path. */
-#define FS_STDIO_SET_FILE 0x00000001
-#define FS_STDIO_GET_FILE 0x00000002 
-
-typedef struct fs_stdio_file_args
-{
-    const char* pPath;
-    void* pFile;    /* Set this to a FILE* object. */
-} fs_stdio_set_file_args, fs_stdio_get_file_args;
 /* END fs.h */
 
 

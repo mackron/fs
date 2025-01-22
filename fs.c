@@ -4442,10 +4442,7 @@ typedef struct fs_stdio_registered_file
 
 typedef struct fs_stdio
 {
-    size_t registeredFileCount;
-    size_t registeredFileSize;
-    size_t registeredFileAllocSize;
-    fs_stdio_registered_file* pRegisteredFiles;
+    int _unused;
 } fs_stdio;
 
 static size_t fs_alloc_size_stdio(const void* pBackendConfig)
@@ -4470,118 +4467,14 @@ static void fs_uninit_stdio(fs* pFS)
     return;
 }
 
-static fs_result fs_stdio_append_registered_file(fs* pFS, const char* pPath, FILE* pFile)
-{
-    fs_stdio* pStdio = (fs_stdio*)fs_get_backend_data(pFS);
-    size_t allocSize;
-
-    FS_ASSERT(pStdio != NULL);
-
-    if (pPath == NULL || pPath[0] == '\0') {
-        return FS_INVALID_ARGS;
-    }
-
-    allocSize = FS_ALIGN(sizeof(fs_stdio_registered_file) + strlen(pPath) + 1, FS_SIZEOF_PTR);
-    
-    /* Resize if necessary. */
-    if (pStdio->registeredFileSize + allocSize > pStdio->registeredFileAllocSize) {
-        size_t newTotalAllocSize = FS_ALIGN(pStdio->registeredFileAllocSize + allocSize, 4096);
-        fs_stdio_registered_file* pNewRegisteredFiles;
-
-        pNewRegisteredFiles = (fs_stdio_registered_file*)fs_realloc(pStdio->pRegisteredFiles, newTotalAllocSize, fs_get_allocation_callbacks(pFS));
-        if (pNewRegisteredFiles == NULL) {
-            return FS_OUT_OF_MEMORY;
-        }
-
-        pStdio->pRegisteredFiles = pNewRegisteredFiles;
-        pStdio->registeredFileAllocSize = newTotalAllocSize;
-    }
-
-    /* At this point there should be enough room for the new entry. */
-    {
-        fs_stdio_registered_file* pNewFile = (fs_stdio_registered_file*)FS_OFFSET_PTR(pStdio->pRegisteredFiles, pStdio->registeredFileSize);
-        pNewFile->pathLen = strlen(pPath);
-        pNewFile->pFile = pFile;
-
-        FS_COPY_MEMORY(FS_OFFSET_PTR(pNewFile, sizeof(fs_stdio_registered_file)), pPath, pNewFile->pathLen + 1);
-
-        pStdio->registeredFileSize  += allocSize;
-        pStdio->registeredFileCount += 1;
-    }
-
-    return FS_SUCCESS;
-}
-
-static fs_stdio_registered_file* fs_stdio_find_registered_file(fs* pFS, const char* pPath)
-{
-    fs_stdio* pStdio = (fs_stdio*)fs_get_backend_data(pFS);
-    size_t iFile;
-    fs_stdio_registered_file* pCurrentFile;
-
-    if (pFS == NULL) {
-        return NULL;
-    }
-
-    FS_ASSERT(pStdio != NULL);
-
-    pCurrentFile = pStdio->pRegisteredFiles;
-
-    for (iFile = 0; iFile < pStdio->registeredFileCount; iFile += 1) {
-        if (fs_strncmp((const char*)FS_OFFSET_PTR(pCurrentFile, sizeof(fs_stdio_registered_file)), pPath, pCurrentFile->pathLen) == 0) {
-            return pCurrentFile;
-        }
-
-        pCurrentFile = (fs_stdio_registered_file*)FS_OFFSET_PTR(pCurrentFile, FS_ALIGN(sizeof(fs_stdio_registered_file) + pCurrentFile->pathLen + 1, FS_SIZEOF_PTR));
-    }
-
-    return NULL;
-}
-
 static fs_result fs_ioctl_stdio(fs* pFS, int op, void* pArgs)
 {
+    FS_UNUSED(pFS);
     FS_UNUSED(op);
     FS_UNUSED(pArgs);
 
-    switch (op)
-    {
-        case FS_STDIO_SET_FILE:
-        {
-            fs_stdio_set_file_args* pArgsFile = (fs_stdio_set_file_args*)pArgs;
-            fs_stdio_registered_file* pExistingFile;
-
-            /* If the file already exists, replace it. */
-            pExistingFile = fs_stdio_find_registered_file(pFS, pArgsFile->pPath);
-            if (pExistingFile != NULL) {
-                /* Already exists. Just replace. */
-                pExistingFile->pFile = (FILE*)pArgsFile->pFile;
-            } else {
-                /* Does not exist. Add to the end. */
-                fs_stdio_append_registered_file(pFS, pArgsFile->pPath, (FILE*)pArgsFile->pFile);
-            }
-        } break;
-
-        case FS_STDIO_GET_FILE:
-        {
-            fs_stdio_get_file_args* pArgsFile = (fs_stdio_get_file_args*)pArgs;
-            fs_stdio_registered_file* pExistingFile;
-
-            pArgsFile->pFile = NULL;
-
-            pExistingFile = fs_stdio_find_registered_file(pFS, pArgsFile->pPath);
-            if (pExistingFile != NULL) {
-                pArgsFile->pFile = pExistingFile->pFile;
-            } else {
-                return FS_DOES_NOT_EXIST;
-            }
-        } break;
-
-        default:
-        {
-            return FS_INVALID_OPERATION;
-        }
-    }
-
-    return FS_SUCCESS;
+    /* Not used by the stdio backend. */
+    return FS_INVALID_OPERATION;
 }
 
 static fs_result fs_remove_stdio(fs* pFS, const char* pFilePath)
@@ -4726,6 +4619,7 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
     fs_file_stdio* pFileStdio;
     int result;
 
+    FS_UNUSED(pFS);
     FS_UNUSED(pStream);
 
     pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
@@ -4758,16 +4652,6 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
             pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0;    /* Read-only. */
         } else {
             return FS_INVALID_ARGS;
-        }
-    }
-
-    /* First try loading from a registered file. */
-    {
-        fs_stdio_registered_file* pRegisteredFile = fs_stdio_find_registered_file(pFS, pPath);
-        if (pRegisteredFile != NULL) {
-            pFileStdio->pFile = pRegisteredFile->pFile;
-            pFileStdio->isRegisteredOrHandle = FS_TRUE;
-            return FS_SUCCESS;
         }
     }
 
