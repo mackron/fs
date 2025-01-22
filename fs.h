@@ -953,8 +953,6 @@ typedef struct fs_stdio_file_args
     const char* pPath;
     void* pFile;    /* Set this to a FILE* object. */
 } fs_stdio_set_file_args, fs_stdio_get_file_args;
-#define FS
-
 /* END fs.h */
 
 
