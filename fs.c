@@ -456,7 +456,7 @@ FS_API int fs_mtx_init(fs_mtx* mutex, int type)
     event (CreateEvent()) is not thread-aware and will deadlock (will not allow recursiveness). In
     Win32 I'm making all mutex's timeable.
     */
-    if ((type & fs_mtx_recursive) != 0) {
+    if ((type & FS_MTX_RECURSIVE) != 0) {
         hMutex = CreateMutexA(NULL, FALSE, NULL);
     } else {
         hMutex = CreateEventA(NULL, FALSE, TRUE, NULL);
@@ -521,7 +521,7 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
         return EINVAL;
     }
 
-    if ((mutex->type & fs_mtx_recursive) != 0) {
+    if ((mutex->type & FS_MTX_RECURSIVE) != 0) {
         result = ReleaseMutex((HANDLE)mutex->handle);
     } else {
         result = SetEvent((HANDLE)mutex->handle);
@@ -545,9 +545,9 @@ FS_API int fs_mtx_init(fs_mtx* mutex, int type)
 
     pthread_mutexattr_init(&attr);
     if ((type & FS_MTX_RECURSIVE) != 0) {
-        pthread_mutexattr_settype(&attr, fs_mtx_recursive);
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     } else {
-        pthread_mutexattr_settype(&attr, fs_mtx_plain);     /* Will deadlock. Consistent with Win32. */
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
     }
 
     result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
@@ -1180,6 +1180,11 @@ static void fs_backend_free_iterator(const fs_backend* pBackend, fs_iterator* pI
 This is a special backend that we use for archives so we can intercept opening and closing of files within those archives
 and do any necessary reference counting.
 */
+
+/* Forward declarations. */
+static size_t fs_increment_opened_archive_ref_count(fs* pFS, fs* pArchive);
+static size_t fs_decrement_opened_archive_ref_count(fs* pFS, fs* pArchive);
+
 typedef struct fs_proxy
 {
     const fs_backend* pBackend;
@@ -1359,7 +1364,27 @@ static fs_result fs_file_info_proxy(fs_file* pFile, fs_file_info* pInfo)
 
 static fs_result fs_file_duplicate_proxy(fs_file* pFile, fs_file* pDuplicatedFile)
 {
-    return fs_backend_file_duplicate(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, pDuplicatedFile);
+    fs_result result;
+    fs* pFS;
+
+    pFS = fs_file_get_fs(pFile);
+    
+    result = fs_backend_file_duplicate(fs_proxy_get_backend(pFS), pFile, pDuplicatedFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Increment the reference count of the opened archive if necessary. */
+    if (fs_file_proxy_get_unref_archive_on_close(pFile)) {
+        fs_file_proxy_set_unref_archive_on_close(pDuplicatedFile, FS_TRUE);
+
+        fs* pOwnerFS = fs_proxy_get_owner_fs(pFS);
+        if (pOwnerFS != NULL) {
+            fs_increment_opened_archive_ref_count(pOwnerFS, pFS);
+        }
+    }
+
+    return FS_SUCCESS;
 }
 
 static fs_iterator* fs_first_proxy(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
@@ -1460,7 +1485,7 @@ struct fs
     size_t archiveTypesAllocSize;
     fs_bool32 isOwnerOfArchiveTypes;
     size_t backendDataSize;
-    fs_mtx archiveLock;   /* For use with fs_open_archive() and fs_close_archive(). */
+    fs_mtx archiveLock;     /* For use with fs_open_archive() and fs_close_archive(). */
     void* pOpenedArchives;  /* One heap allocation. Structure is [fs*][refcount (size_t)][path][null-terminator][padding (aligned to FS_SIZEOF_PTR)] */
     size_t openedArchivesSize;
     size_t openedArchivesCap;
@@ -1820,7 +1845,7 @@ static fs_result fs_add_opened_archive(fs* pFS, fs* pArchive, const char* pArchi
 
     pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, pFS->openedArchivesSize);
     pOpenedArchive->pArchive = pArchive;
-    pOpenedArchive->refCount = 1;
+    pOpenedArchive->refCount = 0;
     fs_strncpy(pOpenedArchive->pPath, pArchivePath, archivePathLen);
 
     pFS->openedArchivesSize += openedArchiveSize;
@@ -1842,6 +1867,41 @@ static fs_result fs_remove_opened_archive(fs* pFS, fs_opened_archive* pOpenedArc
     pFS->openedArchivesSize -= openedArchiveSize;
 
     return FS_SUCCESS;
+}
+
+static size_t fs_increment_opened_archive_ref_count(fs* pFS, fs* pArchive)
+{
+    fs_opened_archive* pOpenedArchive = fs_find_opened_archive_by_fs(pFS, pArchive);
+    if (pOpenedArchive != NULL) {
+        pOpenedArchive->refCount += 1;
+
+        /* If the owner FS is also an archive, increment it's reference counter as well. */
+        if (pFS->pBackend == FS_PROXY) {
+            fs_increment_opened_archive_ref_count(fs_proxy_get_owner_fs(pFS), pFS);
+        }
+
+        return pOpenedArchive->refCount;
+    }
+
+    return 0;
+}
+
+static size_t fs_decrement_opened_archive_ref_count(fs* pFS, fs* pArchive)
+{
+    fs_opened_archive* pOpenedArchive = fs_find_opened_archive_by_fs(pFS, pArchive);
+    if (pOpenedArchive != NULL) {
+        FS_ASSERT(pOpenedArchive->refCount > 0);    /* <-- If this fails it means there's a bug in the library. Please report. */
+        pOpenedArchive->refCount -= 1;
+
+        /* If the owner FS is also an archive, decrement it's reference counter as well. */
+        if (pFS->pBackend == FS_PROXY) {
+            fs_decrement_opened_archive_ref_count(fs_proxy_get_owner_fs(pFS), pFS);
+        }
+
+        return pOpenedArchive->refCount;
+    }
+
+    return 0;
 }
 
 
@@ -1936,8 +1996,11 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
         }
     }
 
-    /* We need a mutex for fs_open_archive() and fs_close_archive(). */
-    fs_mtx_init(&pFS->archiveLock, FS_MTX_PLAIN);
+    /*
+    We need a mutex for fs_open_archive() and fs_close_archive(). This needs to be recursive because
+    during garbage collection we may end up closing archives in archives.
+    */
+    fs_mtx_init(&pFS->archiveLock, FS_MTX_RECURSIVE);
 
     /* We're now ready to initialize the backend. */
     if (pBackend->init != NULL) {
@@ -1976,7 +2039,7 @@ FS_API void fs_uninit(fs* pFS)
     I'll check if any archives are still open and throw an assert. Not sure if this is
     overly aggressive - feedback welcome.
     */
-    fs_gc_archives_nolock(pFS, FS_GC_FULL); /* <-- Need to use the _nolock version because this will call into fs_close_archive() which will also be locking. */
+    fs_gc_archives(pFS, FS_GC_POLICY_FULL);
 
     /* The caller has a bug if there are still outstanding archives. */
     #if !defined(FS_NO_OPENED_FILES_ASSERT)
@@ -2179,7 +2242,11 @@ static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, voi
     */
     pOpenedArchive = fs_find_opened_archive(pFS, pArchivePath, archivePathLen);
     if (pOpenedArchive != NULL) {
-        pOpenedArchive->refCount += 1;
+        if (pOpenedArchive->refCount == 0) {
+            pOpenedArchive->refCount += 1;
+        } else {
+            fs_increment_opened_archive_ref_count(pFS, pOpenedArchive->pArchive);
+        }
 
         *ppArchive = pOpenedArchive->pArchive;
         return FS_SUCCESS;
@@ -2245,6 +2312,8 @@ static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, voi
         fs_file_close(pArchiveFile);
         return result;
     }
+
+    fs_increment_opened_archive_ref_count(pFS, pArchive);
 
     *ppArchive = pArchive;
     return FS_SUCCESS;
@@ -2328,10 +2397,7 @@ FS_API void fs_close_archive(fs* pArchive)
 
     fs_mtx_lock(&pOwnerFS->archiveLock);
     {
-        fs_opened_archive* pOpenedArchive = fs_find_opened_archive_by_fs(pOwnerFS, pArchive);
-        if (pOpenedArchive != NULL) {
-            pOpenedArchive->refCount -= 1;
-        }
+        fs_decrement_opened_archive_ref_count(pOwnerFS, pArchive);
     }
     fs_mtx_unlock(&pOwnerFS->archiveLock);
 
@@ -2347,14 +2413,32 @@ FS_API void fs_close_archive(fs* pArchive)
     time. If we're over this threshold, we'll unload any archives that are no longer in use until we
     get below the threshold.
     */
-    fs_gc_archives(pOwnerFS, FS_GC_THRESHOLD);
+    fs_gc_archives(pOwnerFS, FS_GC_POLICY_THRESHOLD);
 }
 
 static void fs_gc_archives_nolock(fs* pFS, int policy)
 {
     size_t unreferencedCount = 0;
     size_t collectionCount = 0;
-    size_t cursor;
+    size_t cursor = 0;
+
+    FS_ASSERT(pFS != NULL);
+
+    /*
+    If we're doing a full garbage collection we need to recursively run the garbage collection process
+    on opened archives.
+    */
+    if ((policy & FS_GC_POLICY_FULL) != 0) {
+        cursor = 0;
+        while (cursor < pFS->openedArchivesSize) {
+            fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
+            FS_ASSERT(pOpenedArchive != NULL);
+
+            fs_gc_archives(pOpenedArchive->pArchive, policy);
+            cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+        }
+    }
+
 
     /* The first thing to do is count how many unreferenced archives there are. */
     cursor = 0;
@@ -2370,13 +2454,13 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
     }
 
     /* Now we need to determine how many archives we should unload. */
-    if (policy == FS_GC_THRESHOLD) {
+    if ((policy & FS_GC_POLICY_THRESHOLD) != 0) {
         if (unreferencedCount > fs_get_archive_gc_threshold(pFS)) {
-            collectionCount = unreferencedCount - FS_GC_THRESHOLD;
+            collectionCount = unreferencedCount - fs_get_archive_gc_threshold(pFS);
         } else {
             collectionCount = 0;    /* We're below the threshold. Don't collect anything. */
         }
-    } else if (policy == FS_GC_FULL) {
+    } else if ((policy & FS_GC_POLICY_FULL) != 0) {
         collectionCount = unreferencedCount;
     } else {
         FS_ASSERT(!"Invalid GC policy.");
@@ -2411,6 +2495,10 @@ FS_API void fs_gc_archives(fs* pFS, int policy)
 {
     if (pFS == NULL) {
         return;
+    }
+
+    if (policy == 0 || ((policy & FS_GC_POLICY_THRESHOLD) != 0 && (policy & FS_GC_POLICY_FULL) != 0)) {
+        return; /* Invalid policy. Must specify FS_GC_POLICY_THRESHOLD or FS_GC_POLICY_FULL, but not both. */
     }
 
     fs_mtx_lock(&pFS->archiveLock);
@@ -2482,6 +2570,7 @@ static size_t fs_file_stream_alloc_size(fs_stream* pStream)
 
 static fs_result fs_file_stream_duplicate(fs_stream* pStream, fs_stream* pDuplicatedStream)
 {
+    fs_result result;
     fs_file* pStreamFile = (fs_file*)pStream;
     fs_file* pDuplicatedStreamFile = (fs_file*)pDuplicatedStream;
 
@@ -2491,7 +2580,12 @@ static fs_result fs_file_stream_duplicate(fs_stream* pStream, fs_stream* pDuplic
     /* The stream will already have been initialized at a higher level in fs_stream_duplicate(). */
     fs_file_preinit_no_stream(pDuplicatedStreamFile, fs_file_get_fs(pStreamFile), pStreamFile->backendDataSize);
 
-    return fs_backend_file_duplicate(fs_get_backend_or_default(pStreamFile->pFS), pStreamFile, pDuplicatedStreamFile);
+    result = fs_backend_file_duplicate(fs_get_backend_or_default(pStreamFile->pFS), pStreamFile, pDuplicatedStreamFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    return FS_SUCCESS;
 }
 
 static void fs_file_stream_uninit(fs_stream* pStream)
@@ -3089,6 +3183,14 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                     /* The mount point is an archive. This is the simpler case. We just load the file directly from the archive. */
                     result = fs_file_open_or_info(iMountPoint.pArchive, pFileSubPathClean, openMode, ppFile, pInfo);
                     if (result == FS_SUCCESS) {
+                        /*
+                        The reference count of the archive must be incremented or else it'll get prematurely garbage collected. We only
+                        need to do this if we're opening the file. It's not necessary if we're just grabbing file info.
+                        */
+                        if (ppFile != NULL) {
+                            fs_increment_opened_archive_ref_count(pFS, iMountPoint.pArchive);
+                        }
+
                         return FS_SUCCESS;
                     } else {
                         /* Failed to load from this archive. Keep looking. */

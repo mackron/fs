@@ -793,8 +793,8 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 
 
 /* Garbage collection policies.*/
-#define FS_GC_THRESHOLD             0x0000  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
-#define FS_GC_FULL                  0x0001  /* Garbage collect every unreferenced opened archive, regardless of how many are open.*/
+#define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
+#define FS_GC_POLICY_FULL           0x0002  /* Garbage collect every unreferenced opened archive, regardless of how many are open.*/
 
 
 typedef struct fs_config    fs_config;
