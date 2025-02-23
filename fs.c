@@ -4129,7 +4129,7 @@ FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
         return FS_INVALID_ARGS;
     }
 
-    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
+    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
             if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
                 fs_close_archive(iterator.pArchive);
@@ -4258,7 +4258,7 @@ FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoin
         return FS_INVALID_ARGS;
     }
 
-    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
+    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
             fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
 
