@@ -2105,8 +2105,15 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
     char* pRunningPath = pRunningPathStack;
     size_t runningPathLen = 0;
     fs_path_iterator iSegment;
+    const fs_backend* pBackend;
 
-    if (pFS == NULL || pPath == NULL) {
+    pBackend = fs_get_backend_or_default(pFS);
+
+    if (pBackend == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    if (pPath == NULL) {
         return FS_INVALID_ARGS;
     }
 
@@ -2144,7 +2151,7 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
         runningPathLen += iSegment.segmentLength;
         pRunningPath[runningPathLen] = '\0';
 
-        result = fs_backend_mkdir(pFS->pBackend, pFS, pRunningPath);
+        result = fs_backend_mkdir(pBackend, pFS, pRunningPath);
 
         /* We just pretend to be successful if the directory already exists. */
         if (result == FS_ALREADY_EXISTS) {
