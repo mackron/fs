@@ -4316,7 +4316,7 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
     fs_result result;
     fs_file* pFile;
 
-    if (pFS == NULL || pFilePath == NULL || ppData == NULL || pDataSize == NULL) {
+    if (pFilePath == NULL || ppData == NULL || pDataSize == NULL) {
         return FS_INVALID_ARGS;
     }
 
@@ -4337,7 +4337,7 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
     fs_result result;
     fs_file* pFile;
 
-    if (pFS == NULL || pFilePath == NULL || pData == NULL) {
+    if (pFilePath == NULL || pData == NULL) {
         return FS_INVALID_ARGS;
     }
 
