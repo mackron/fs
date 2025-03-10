@@ -728,9 +728,11 @@ struct fs_stream_vtable
     fs_result (* write               )(fs_stream* pStream, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
     fs_result (* seek                )(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin);
     fs_result (* tell                )(fs_stream* pStream, fs_int64* pCursor);
+    /* BEG fs_stream_vtable_duplicate */
     size_t    (* duplicate_alloc_size)(fs_stream* pStream);                                 /* Optional. Returns the allocation size of the stream. When not defined, duplicating is disabled. */
     fs_result (* duplicate           )(fs_stream* pStream, fs_stream* pDuplicatedStream);   /* Optional. Duplicate the stream. */
     void      (* uninit              )(fs_stream* pStream);                                 /* Optional. Uninitialize the stream. */
+    /* END fs_stream_vtable_duplicate */
 };
 
 struct fs_stream
@@ -741,13 +743,17 @@ struct fs_stream
 FS_API fs_result fs_stream_init(const fs_stream_vtable* pVTable, fs_stream* pStream);
 FS_API fs_result fs_stream_read(fs_stream* pStream, void* pDst, size_t bytesToRead, size_t* pBytesRead);
 FS_API fs_result fs_stream_write(fs_stream* pStream, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
+FS_API fs_result fs_stream_seek(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin);
+FS_API fs_result fs_stream_tell(fs_stream* pStream, fs_int64* pCursor);
+
+/* BEG fs_stream_writef.h */
 FS_API fs_result fs_stream_writef(fs_stream* pStream, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(2, 3);
 FS_API fs_result fs_stream_writef_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(3, 4);
 FS_API fs_result fs_stream_writefv(fs_stream* pStream, const char* fmt, va_list args);
 FS_API fs_result fs_stream_writefv_ex(fs_stream* pStream, const fs_allocation_callbacks* pAllocationCallbacks, const char* fmt, va_list args);
-FS_API fs_result fs_stream_seek(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin);
-FS_API fs_result fs_stream_tell(fs_stream* pStream, fs_int64* pCursor);
+/* END fs_stream_writef.h */
 
+/* BEG fs_stream_duplicate.h */
 /*
 Duplicates a stream.
 
@@ -762,8 +768,9 @@ Deletes a duplicated stream.
 Do not use this for a stream that was not duplicated with `fs_stream_duplicate()`.
 */
 FS_API void fs_stream_delete_duplicate(fs_stream* pDuplicatedStream, const fs_allocation_callbacks* pAllocationCallbacks);
+/* END fs_stream_duplicate.h */
 
-
+/* BEG fs_stream_helpers.h */
 /*
 Helper functions for reading the entire contents of a stream, starting from the current cursor position. Free
 the returned pointer with fs_free().
@@ -781,6 +788,7 @@ typedef enum fs_format
 } fs_format;
 
 FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, const fs_allocation_callbacks* pAllocationCallbacks, void** ppData, size_t* pDataSize);
+/* END fs_stream_helpers.h */
 /* END fs_stream.h */
 
 
