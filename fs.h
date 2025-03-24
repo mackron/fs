@@ -1034,7 +1034,7 @@ also supports reading.
 You can overwrite data by seeking to the required location and then just writing like normal. To
 append data, just seek to the end:
 
-    fs_memory_stream_seek(pStream, 0, fs_SEEK_ORIGIN_END);
+    fs_memory_stream_seek(pStream, 0, FS_SEEK_END);
 
 The memory stream need not be uninitialized in read-only mode. In write mode you can use
 `fs_memory_stream_uninit()` to free the data. Alternatively you can just take ownership of the
