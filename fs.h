@@ -710,8 +710,6 @@ The stream vtable can support both reading and writing, but it doesn't need to s
 the same time. If one is not supported, simply leave the relevant `read` or `write` callback as
 `NULL`, or have them return FS_NOT_IMPLEMENTED.
 */
-
-/* Seek Origins. */
 typedef enum fs_seek_origin
 {
     FS_SEEK_SET = 0,
