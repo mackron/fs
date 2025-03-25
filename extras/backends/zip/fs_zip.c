@@ -575,7 +575,6 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                         if (counter & 256) {
                             break;
                         }
-                    
 #ifndef FS_64BIT     
                         if (bitCount < 15) {
                             bitBuffer |= (((fs_zip_deflate_bitBufferfer)FS_ZIP_READ_LE16(pInputBufferCurrent)) << bitCount);
