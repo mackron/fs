@@ -27,14 +27,6 @@ static fs_result fs_result_from_GetLastError(DWORD error)
 #endif
 
 
-/*
-This is the maximum number of ureferenced opened archive files that will be kept in memory
-before garbage collection of those archives is triggered.
-*/
-#ifndef FS_DEFAULT_ARCHIVE_GC_THRESHOLD
-#define FS_DEFAULT_ARCHIVE_GC_THRESHOLD 10
-#endif
-
 
 #define FS_UNUSED(x) (void)x
 
@@ -928,7 +920,7 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 /* END fs_stream.c */
 
 
-/* BEG fs_backend.c */
+/* BEG fs.c */
 static size_t fs_backend_alloc_size(const fs_backend* pBackend, const void* pBackendConfig)
 {
     FS_ASSERT(pBackend != NULL);
@@ -1179,11 +1171,8 @@ static void fs_backend_free_iterator(const fs_backend* pBackend, fs_iterator* pI
         pBackend->free_iterator(pIterator);
     }
 }
-/* END fs_backend.c */
 
 
-
-/* BEG fs_proxy.c */
 /*
 This is a special backend that we use for archives so we can intercept opening and closing of files within those archives
 and do any necessary reference counting.
@@ -1438,11 +1427,16 @@ static fs_backend fs_proxy_backend =
     fs_free_iterator_proxy
 };
 const fs_backend* FS_PROXY = &fs_proxy_backend;
-/* END fs_proxy.c */
 
 
+/*
+This is the maximum number of ureferenced opened archive files that will be kept in memory
+before garbage collection of those archives is triggered.
+*/
+#ifndef FS_DEFAULT_ARCHIVE_GC_THRESHOLD
+#define FS_DEFAULT_ARCHIVE_GC_THRESHOLD 10
+#endif
 
-/* BEG fs.c */
 #define FS_IS_OPAQUE(mode)      ((mode & FS_OPAQUE) != 0)
 #define FS_IS_VERBOSE(mode)     ((mode & FS_VERBOSE) != 0)
 #define FS_IS_TRANSPARENT(mode) ((mode & (FS_OPAQUE | FS_VERBOSE)) == 0)
