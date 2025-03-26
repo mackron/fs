@@ -106,9 +106,9 @@ typedef struct
 } fs_zip_deflate_huff_table;
 
 #ifdef FS_64BIT
-    typedef fs_uint64 fs_zip_deflate_bitBufferfer;
+    typedef fs_uint64 fs_zip_deflate_bitbuf;
 #else
-    typedef fs_uint32 fs_zip_deflate_bitBufferfer;
+    typedef fs_uint32 fs_zip_deflate_bitbuf;
 #endif
 
 typedef struct fs_zip_deflate_decompressor
@@ -125,7 +125,7 @@ typedef struct fs_zip_deflate_decompressor
     fs_uint32 counter;
     fs_uint32 extraCount;
     fs_uint32 tableSizes[FS_ZIP_DEFLATE_MAX_HUFF_TABLES];
-    fs_zip_deflate_bitBufferfer bitBuffer;
+    fs_zip_deflate_bitbuf bitBuffer;
     size_t distFromOutBufStart;
     fs_zip_deflate_huff_table tables[FS_ZIP_DEFLATE_MAX_HUFF_TABLES];
     fs_uint8 rawHeader[4];
@@ -177,7 +177,7 @@ reads ahead more than it needs to. Currently FS_ZIP_DEFLATE_GET_BYTE() pads the 
         } \
     } else c = *pInputBufferCurrent++; } FS_ZIP_DEFLATE_MACRO_END
 
-#define FS_ZIP_DEFLATE_NEED_BITS(stateIndex, n) do { unsigned int c; FS_ZIP_DEFLATE_GET_BYTE(stateIndex, c); bitBuffer |= (((fs_zip_deflate_bitBufferfer)c) << bitCount); bitCount += 8; } while (bitCount < (unsigned int)(n))
+#define FS_ZIP_DEFLATE_NEED_BITS(stateIndex, n) do { unsigned int c; FS_ZIP_DEFLATE_GET_BYTE(stateIndex, c); bitBuffer |= (((fs_zip_deflate_bitbuf)c) << bitCount); bitCount += 8; } while (bitCount < (unsigned int)(n))
 #define FS_ZIP_DEFLATE_SKIP_BITS(stateIndex, n) do { if (bitCount < (unsigned int)(n)) { FS_ZIP_DEFLATE_NEED_BITS(stateIndex, n); } bitBuffer >>= (n); bitCount -= (n); } FS_ZIP_DEFLATE_MACRO_END
 #define FS_ZIP_DEFLATE_GET_BITS(stateIndex, b, n) do { if (bitCount < (unsigned int)(n)) { FS_ZIP_DEFLATE_NEED_BITS(stateIndex, n); } b = bitBuffer & ((1 << (n)) - 1); bitBuffer >>= (n); bitCount -= (n); } FS_ZIP_DEFLATE_MACRO_END
 
@@ -205,7 +205,7 @@ bit buffer contains >=15 bits (deflate's max. Huffman code size).
             } \
         } \
         FS_ZIP_DEFLATE_GET_BYTE(stateIndex, c); \
-        bitBuffer |= (((fs_zip_deflate_bitBufferfer)c) << bitCount); \
+        bitBuffer |= (((fs_zip_deflate_bitbuf)c) << bitCount); \
         bitCount += 8; \
     } while (bitCount < 15);
 
@@ -223,7 +223,7 @@ The slow path is only executed at the very end of the input buffer.
         if ((pInputBufferEnd - pInputBufferCurrent) < 2) { \
             FS_ZIP_DEFLATE_HUFF_BITBUF_FILL(stateIndex, pHuff); \
         } else { \
-            bitBuffer |= (((fs_zip_deflate_bitBufferfer)pInputBufferCurrent[0]) << bitCount) | (((fs_zip_deflate_bitBufferfer)pInputBufferCurrent[1]) << (bitCount + 8)); \
+            bitBuffer |= (((fs_zip_deflate_bitbuf)pInputBufferCurrent[0]) << bitCount) | (((fs_zip_deflate_bitbuf)pInputBufferCurrent[1]) << (bitCount + 8)); \
             pInputBufferCurrent += 2; \
             bitCount += 16; \
         } \
@@ -289,7 +289,7 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
     fs_uint32 dist;
     fs_uint32 counter;
     fs_uint32 extraCount;
-    fs_zip_deflate_bitBufferfer bitBuffer;
+    fs_zip_deflate_bitbuf bitBuffer;
     const fs_uint8* pInputBufferCurrent = pInputBuffer;
     const fs_uint8* const pInputBufferEnd = pInputBuffer + *pInputBufferSize;
     fs_uint8 *pOutputBufferCurrent = pOutputBufferNext;
@@ -547,13 +547,13 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                         unsigned int codeLen;
 #ifdef FS_64BIT      
                         if (bitCount < 30) {
-                            bitBuffer |= (((fs_zip_deflate_bitBufferfer)FS_ZIP_READ_LE32(pInputBufferCurrent)) << bitCount);
+                            bitBuffer |= (((fs_zip_deflate_bitbuf)FS_ZIP_READ_LE32(pInputBufferCurrent)) << bitCount);
                             pInputBufferCurrent += 4;
                             bitCount += 32;
                         }
 #else               
                         if (bitCount < 15) {
-                            bitBuffer |= (((fs_zip_deflate_bitBufferfer)FS_ZIP_READ_LE16(pInputBufferCurrent)) << bitCount);
+                            bitBuffer |= (((fs_zip_deflate_bitbuf)FS_ZIP_READ_LE16(pInputBufferCurrent)) << bitCount);
                             pInputBufferCurrent += 2;
                             bitCount += 16;
                         }
@@ -577,7 +577,7 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                         }
 #ifndef FS_64BIT     
                         if (bitCount < 15) {
-                            bitBuffer |= (((fs_zip_deflate_bitBufferfer)FS_ZIP_READ_LE16(pInputBufferCurrent)) << bitCount);
+                            bitBuffer |= (((fs_zip_deflate_bitbuf)FS_ZIP_READ_LE16(pInputBufferCurrent)) << bitCount);
                             pInputBufferCurrent += 2;
                             bitCount += 16;
                         }
