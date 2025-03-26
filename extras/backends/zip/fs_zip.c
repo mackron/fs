@@ -736,7 +736,7 @@ common_exit:
 /* END fs_zip_deflate.c */
 
 
-
+/* BEG fs_zip.c */
 #ifndef FS_ZIP_CACHE_SIZE_IN_BYTES
 #define FS_ZIP_CACHE_SIZE_IN_BYTES              32768
 #endif
@@ -2589,5 +2589,6 @@ fs_backend fs_zip_backend =
     fs_free_iterator_zip
 };
 const fs_backend* FS_ZIP = &fs_zip_backend;
+/* END fs_zip.c */
 
 #endif  /* fs_zip_c */

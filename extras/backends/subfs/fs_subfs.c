@@ -30,6 +30,7 @@ static void fs_subfs_zero_memory_default(void* p, size_t sz)
 FS_API char* fs_strcpy(char* dst, const char* src);
 
 
+/* BEG fs_subfs.c */
 typedef struct fs_subfs
 {
     fs* pOwnerFS;
@@ -448,5 +449,6 @@ fs_backend fs_subfs_backend =
     fs_free_iterator_subfs
 };
 const fs_backend* FS_SUBFS = &fs_subfs_backend;
+/* END fs_subfs.c */
 
 #endif  /* fs_subfs_c */

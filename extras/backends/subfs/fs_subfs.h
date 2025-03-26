@@ -32,6 +32,7 @@ You must ensure you destroy your subfs object before destroying the owner FS obj
 extern "C" {
 #endif
 
+/* BEG fs_subfs.h */
 typedef struct fs_subfs_config
 {
     fs* pOwnerFS;
@@ -39,6 +40,7 @@ typedef struct fs_subfs_config
 } fs_subfs_config;
 
 extern const fs_backend* FS_SUBFS;
+/* END fs_subfs.h */
 
 #if defined(__cplusplus)
 }

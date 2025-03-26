@@ -40,7 +40,9 @@ You can pass in NULL for the backend config in fs_init().
 extern "C" {
 #endif
 
+/* BEG fs_zip.h */
 extern const fs_backend* FS_ZIP;
+/* END fs_zip.h */
 
 #if defined(__cplusplus)
 }
