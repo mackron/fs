@@ -415,8 +415,8 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
             }
 
             for (; (int)pDecompressor->type >= 0; pDecompressor->type--) {
-                int trefs_next;
-                int trefs_cur;
+                int tree_next;
+                int tree_cur;
                 fs_zip_deflate_huff_table *pTable;
                 unsigned int i;
                 unsigned int j;
@@ -449,7 +449,7 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                     FS_ZIP_DEFLATE_CR_RETURN_FOREVER(35, FS_ERROR);
                 }
 
-                for (trefs_next = -1, symIndex = 0; symIndex < pDecompressor->tableSizes[pDecompressor->type]; ++symIndex) {
+                for (tree_next = -1, symIndex = 0; symIndex < pDecompressor->tableSizes[pDecompressor->type]; ++symIndex) {
                     unsigned int revCode = 0;
                     unsigned int l;
                     unsigned int curCode;
@@ -476,26 +476,26 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                         continue;
                     }
 
-                    if (0 == (trefs_cur = pTable->lookup[revCode & (FS_ZIP_DEFLATE_FAST_LOOKUP_SIZE - 1)])) {
-                        pTable->lookup[revCode & (FS_ZIP_DEFLATE_FAST_LOOKUP_SIZE - 1)] = (fs_int16)trefs_next;
-                        trefs_cur = trefs_next;
-                        trefs_next -= 2;
+                    if (0 == (tree_cur = pTable->lookup[revCode & (FS_ZIP_DEFLATE_FAST_LOOKUP_SIZE - 1)])) {
+                        pTable->lookup[revCode & (FS_ZIP_DEFLATE_FAST_LOOKUP_SIZE - 1)] = (fs_int16)tree_next;
+                        tree_cur = tree_next;
+                        tree_next -= 2;
                     }
 
                     revCode >>= (FS_ZIP_DEFLATE_FAST_LOOKUP_BITS - 1);
 
                     for (j = codeSize; j > (FS_ZIP_DEFLATE_FAST_LOOKUP_BITS + 1); j--) {
-                        trefs_cur -= ((revCode >>= 1) & 1);
+                        tree_cur -= ((revCode >>= 1) & 1);
 
-                        if (!pTable->tree[-trefs_cur - 1]) {
-                            pTable->tree[-trefs_cur - 1] = (fs_int16)trefs_next; trefs_cur = trefs_next; trefs_next -= 2;
+                        if (!pTable->tree[-tree_cur - 1]) {
+                            pTable->tree[-tree_cur - 1] = (fs_int16)tree_next; tree_cur = tree_next; tree_next -= 2;
                         } else {
-                            trefs_cur = pTable->tree[-trefs_cur - 1];
+                            tree_cur = pTable->tree[-tree_cur - 1];
                         }
                     }
 
-                    trefs_cur -= ((revCode >>= 1) & 1);
-                    pTable->tree[-trefs_cur - 1] = (fs_int16)symIndex;
+                    tree_cur -= ((revCode >>= 1) & 1);
+                    pTable->tree[-tree_cur - 1] = (fs_int16)symIndex;
                 }
 
                 if (pDecompressor->type == 2) {
