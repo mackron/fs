@@ -277,7 +277,6 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 
 
 /* BEG fs_allocation_callbacks.c */
-/* Default allocation callbacks. */
 static void* fs_malloc_default(size_t sz, void* pUserData)
 {
     FS_UNUSED(pUserData);
