@@ -4,29 +4,11 @@
 #include "fs.h"
 
 #include <errno.h>
+
+/* BEG fs_common_macros.c */
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(_WIN32)
-#include <windows.h>    /* <-- Just can't get away from this darn thing... Needed for mutexes and file iteration. */
-
-static fs_result fs_result_from_GetLastError(DWORD error)
-{
-    switch (error)
-    {
-        case ERROR_SUCCESS:           return FS_SUCCESS;
-        case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
-        case ERROR_BUSY:              return FS_BUSY;
-        case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
-        default: break;
-    }
-
-    return FS_ERROR;
-}
-#endif
-
-
 
 #define FS_UNUSED(x) (void)x
 
@@ -73,7 +55,7 @@ static void fs_zero_memory_default(void* p, size_t sz)
 #define FS_CLAMP(x, lo, hi)         (FS_MAX((lo), FS_MIN((x), (hi))))
 #define FS_OFFSET_PTR(p, offset)    (((unsigned char*)(p)) + (offset))
 #define FS_ALIGN(x, a)              ((x + (a-1)) & ~(a-1))
-
+/* END fs_common_macros.c */
 
 FS_API char* fs_strcpy(char* dst, const char* src)
 {
@@ -273,6 +255,24 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 #endif
 }
 
+
+#if defined(_WIN32)
+#include <windows.h>    /* <-- Just can't get away from this darn thing... Needed for mutexes and file iteration. */
+
+static fs_result fs_result_from_GetLastError(DWORD error)
+{
+    switch (error)
+    {
+        case ERROR_SUCCESS:           return FS_SUCCESS;
+        case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
+        case ERROR_BUSY:              return FS_BUSY;
+        case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
+        default: break;
+    }
+
+    return FS_ERROR;
+}
+#endif
 
 
 

@@ -521,14 +521,14 @@ see some random tags and stuff in this file. These are just used for doing a dum
 #ifndef fs_h
 #define fs_h
 
-#include <stddef.h> /* For size_t. */
-#include <stdarg.h> /* For va_list. */
-
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 /* BEG fs_compiler_compat.h */
+#include <stddef.h> /* For size_t. */
+#include <stdarg.h> /* For va_list. */
+
 #if defined(SIZE_MAX)
     #define FS_SIZE_MAX  SIZE_MAX
 #else
