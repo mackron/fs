@@ -809,6 +809,8 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
 #define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
+/* Options for mkdir() */
+#define FS_MKDIR_IGNORE_MOUNTS      0x0001  /* Mounts will not be considered. */
 
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
@@ -894,9 +896,9 @@ typedef struct fs_backend
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
 FS_API void fs_uninit(fs* pFS);
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
-FS_API fs_result fs_remove(fs* pFS, const char* pFilePath);
-FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);
-FS_API fs_result fs_mkdir(fs* pFS, const char* pPath);  /* Does not consider mounts. Returns FS_SUCCESS if directory already exists. */
+FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
+FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);    /* Does not consider mounts. */
+FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_MKDIR_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_OVERWRITE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
@@ -1011,11 +1013,13 @@ FS_API fs_result fs_path_prev(fs_path_iterator* pIterator);
 FS_API fs_bool32 fs_path_is_first(const fs_path_iterator* pIterator);
 FS_API fs_bool32 fs_path_is_last(const fs_path_iterator* pIterator);
 FS_API int fs_path_iterators_compare(const fs_path_iterator* pIteratorA, const fs_path_iterator* pIteratorB);
+FS_API int fs_path_compare(const char* pPathA, size_t pathALen, const char* pPathB, size_t pathBLen);
 FS_API const char* fs_path_file_name(const char* pPath, size_t pathLen);    /* Does *not* include the null terminator. Returns an offset of pPath. Will only be null terminated if pPath is. Returns null if the path ends with a slash. */
 FS_API int fs_path_directory(char* pDst, size_t dstCap, const char* pPath, size_t pathLen); /* Returns the length, or < 0 on error. pDst can be null in which case the required length will be returned. Will not include a trailing slash. */
 FS_API const char* fs_path_extension(const char* pPath, size_t pathLen);    /* Does *not* include the null terminator. Returns an offset of pPath. Will only be null terminated if pPath is. Returns null if the extension cannot be found. */
 FS_API fs_bool32 fs_path_extension_equal(const char* pPath, size_t pathLen, const char* pExtension, size_t extensionLen); /* Returns true if the extension is equal to the given extension. Case insensitive. */
 FS_API const char* fs_path_trim_base(const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen);
+FS_API fs_bool32 fs_path_begins_with(const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen);
 FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size_t basePathLen, const char* pPathToAppend, size_t pathToAppendLen); /* pDst can be equal to pBasePath in which case it will be appended in-place. pDst can be null in which case the function will return the required length. */
 FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_t pathLen, unsigned int options); /* The only root component recognized is "/". The path cannot start with "C:", "//<address>", etc. This is not intended to be a general cross-platform path normalization routine. If the path starts with "/", this will fail with a negative result code if normalization would result in the path going above the root directory. Will convert all separators to "/". Will remove trailing slash. pDst can be null in which case the required length will be returned. */
 /* END fs_path.h */

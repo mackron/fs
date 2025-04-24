@@ -1920,6 +1920,52 @@ static size_t fs_archive_type_sizeof(const fs_archive_type* pArchiveType)
 }
 
 
+static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath, const char** ppMountPointPath, const char** ppSubPath)
+{
+    /*
+    This is a bit different from read mounts because we want to use the mount point that most closely
+    matches the start of the file path. Consider, for example, the following mount points:
+
+        - config
+        - config/global
+
+    If we're trying to open "config/global/settings.cfg" we want to use the "config/global" mount
+    point, not the "config" mount point. This is because the "config/global" mount point is more
+    specific and therefore more likely to be the correct one.
+
+    We'll need to iterate over every mount point and keep track of the mount point with the longest
+    prefix that matches the start of the file path.
+    */
+    fs_result result;
+    fs_mount_list_iterator iMountPoint;
+    fs_mount_point* pBestMountPoint = NULL;
+    const char* pBestMountPointPath = NULL;
+    const char* pBestMountPointFileSubPath = NULL;
+    
+    for (result = fs_mount_list_first(pFS->pWriteMountPoints, &iMountPoint); result == FS_SUCCESS; result = fs_mount_list_next(&iMountPoint)) {
+        const char* pFileSubPath = fs_path_trim_base(pPath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
+        if (pFileSubPath == NULL) {
+            continue;   /* The file path doesn't start with this mount point so skip. */
+        }
+
+        if (pBestMountPointFileSubPath == NULL || strlen(pFileSubPath) < strlen(pBestMountPointFileSubPath)) {
+            pBestMountPoint = iMountPoint.internal.pMountPoint;
+            pBestMountPointPath = iMountPoint.pPath;
+            pBestMountPointFileSubPath = pFileSubPath;
+        }
+    }
+
+    if (ppMountPointPath != NULL) {
+        *ppMountPointPath = pBestMountPointPath;
+    }
+    if (ppSubPath != NULL) {
+        *ppSubPath = pBestMountPointFileSubPath;
+    }
+
+    return pBestMountPoint;
+}
+
+
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
 {
     fs* pFS;
@@ -2105,7 +2151,7 @@ FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName)
     return fs_backend_rename(pFS->pBackend, pFS, pOldName, pNewName);
 }
 
-FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
+FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
 {
     char pRunningPathStack[1024];
     char* pRunningPathHeap = NULL;
@@ -2113,6 +2159,10 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
     size_t runningPathLen = 0;
     fs_path_iterator iSegment;
     const fs_backend* pBackend;
+    fs_mount_point* pMountPoint = NULL;
+    const char* pMountPointPath = NULL;
+    const char* pMountPointSubPath = NULL;
+    char* pFullPath = NULL;
 
     pBackend = fs_get_backend_or_default(pFS);
 
@@ -2124,17 +2174,58 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
         return FS_INVALID_ARGS;
     }
 
+    /* If we're using the default file system, ignore mount points since there's no real notion of them. */
+    if (pFS == NULL) {
+        options |= FS_MKDIR_IGNORE_MOUNTS;
+    }
+
+    /* If we're using mount points we'll want to find the best one from our input path. */
+    if ((options & FS_MKDIR_IGNORE_MOUNTS) != 0) {
+        pMountPoint = NULL;
+        pMountPointPath = "";
+        pMountPointSubPath = pPath;
+    } else {
+        pMountPoint = fs_find_best_write_mount_point(pFS, pPath, &pMountPointPath, &pMountPointSubPath);
+        if (pMountPoint == NULL) {
+            return FS_INVALID_FILE; /* Couldn't find a mount point. */
+        }
+    }
+
+
     /* We need to iterate over each segment and create the directory. If any of these fail we'll need to abort. */
-    if (fs_path_first(pPath, FS_NULL_TERMINATED, &iSegment) != FS_SUCCESS) {
+    if (fs_path_first(pMountPointSubPath, FS_NULL_TERMINATED, &iSegment) != FS_SUCCESS) {
         return FS_SUCCESS;  /* It's an empty path. */
     }
+
+
+    /* We need to pre-fill our running path with the mount point. */
+    runningPathLen = strlen(pMountPointPath);
+    if (runningPathLen + 1 >= sizeof(pRunningPathStack)) {
+        pRunningPathHeap = (char*)fs_malloc(runningPathLen + 1 + 1, fs_get_allocation_callbacks(pFS));
+        if (pRunningPathHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        pRunningPath = pRunningPathHeap;
+    }
+
+    FS_COPY_MEMORY(pRunningPath, pMountPointPath, runningPathLen);
+    pRunningPath[runningPathLen] = '\0';
+
+    /* We need to make sure we have a trailing slash. */
+    if (runningPathLen > 0 && pRunningPath[runningPathLen - 1] != '/') {
+        pRunningPath[runningPathLen] = '/';
+        runningPathLen += 1;
+        pRunningPath[runningPathLen] = '\0';
+    }
+
 
     for (;;) {
         fs_result result;
 
-        if (runningPathLen + iSegment.segmentLength + 1 >= sizeof(pRunningPathStack)) {
+        if (runningPathLen + iSegment.segmentLength + 1 + 1 >= sizeof(pRunningPathStack)) {
             if (pRunningPath == pRunningPathStack) {
-                pRunningPathHeap = (char*)fs_malloc(runningPathLen + iSegment.segmentLength + 1, fs_get_allocation_callbacks(pFS));
+                pRunningPathHeap = (char*)fs_malloc(runningPathLen + iSegment.segmentLength + 1 + 1, fs_get_allocation_callbacks(pFS));
                 if (pRunningPathHeap == NULL) {
                     return FS_OUT_OF_MEMORY;
                 }
@@ -2144,7 +2235,7 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
             } else {
                 char* pNewRunningPathHeap;
 
-                pNewRunningPathHeap = (char*)fs_realloc(pRunningPathHeap, runningPathLen + iSegment.segmentLength + 1, fs_get_allocation_callbacks(pFS));
+                pNewRunningPathHeap = (char*)fs_realloc(pRunningPathHeap, runningPathLen + iSegment.segmentLength + 1 + 1, fs_get_allocation_callbacks(pFS));
                 if (pNewRunningPathHeap == NULL) {
                     fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
                     return FS_OUT_OF_MEMORY;
@@ -2180,6 +2271,10 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath)
         if (result != FS_SUCCESS) {
             break;
         }
+    }
+
+    if (pRunningPathHeap != NULL) {
+        fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
     }
 
     return FS_SUCCESS;
@@ -2902,7 +2997,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
 
     /*
     Take a copy of the file system's stream if necessary. We only need to do this if we're opening the file, and if
-    the owner `fs` object `pFS` has itself has a stream.
+    the owner `fs` object `pFS` itself has a stream.
     */
     if (pFS != NULL && ppFile != NULL) {
         fs_stream* pFSStream = pFS->pStream;
@@ -2951,7 +3046,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
                 pDirPath = pDirPathStack;
             }
 
-            result = fs_mkdir(pFS, pDirPath);
+            result = fs_mkdir(pFS, pDirPath, FS_MKDIR_IGNORE_MOUNTS);
             if (result != FS_SUCCESS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
                 return result;
@@ -3039,40 +3134,14 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
     }
 
     if ((openMode & FS_WRITE) != 0) {
-        /*
-        Opening in write mode. We need to open from a mount point. This is a bit different from opening
-        in read mode because we want to use the mount point that most closely matches the start of the
-        file path. Consider, for example, the following mount points:
-
-            - config
-            - config/global
-
-        If we're trying to open "config/global/settings.cfg" we want to use the "config/global" mount
-        point, not the "config" mount point. This is because the "config/global" mount point is more
-        specific and therefore more likely to be the correct one.
-
-        We'll need to iterate over every mount point and keep track of the mount point with the longest
-        prefix that matches the start of the file path.
-        */
+        /* Opening in write mode. */
         if (pFS != NULL) {
             fs_mount_list_iterator iMountPoint;
             fs_mount_point* pBestMountPoint = NULL;
             const char* pBestMountPointPath = NULL;
             const char* pBestMountPointFileSubPath = NULL;
             
-            for (mountPointIerationResult = fs_mount_list_first(pFS->pWriteMountPoints, &iMountPoint); mountPointIerationResult == FS_SUCCESS; mountPointIerationResult = fs_mount_list_next(&iMountPoint)) {
-                const char* pFileSubPath = fs_path_trim_base(pFilePath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
-                if (pFileSubPath == NULL) {
-                    continue;   /* The file path doesn't start with this mount point so skip. */
-                }
-
-                if (pBestMountPointFileSubPath == NULL || strlen(pFileSubPath) < strlen(pBestMountPointFileSubPath)) {
-                    pBestMountPoint = iMountPoint.internal.pMountPoint;
-                    pBestMountPointPath = iMountPoint.pPath;
-                    pBestMountPointFileSubPath = pFileSubPath;
-                }
-            }
-
+            pBestMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, &pBestMountPointPath, &pBestMountPointFileSubPath);
             if (pBestMountPoint != NULL) {
                 char pActualPathStack[1024];
                 char* pActualPathHeap = NULL;
@@ -5658,6 +5727,60 @@ FS_API int fs_path_iterators_compare(const fs_path_iterator* pIteratorA, const f
     return fs_strncmp(pIteratorA->pFullPath + pIteratorA->segmentOffset, pIteratorB->pFullPath + pIteratorB->segmentOffset, FS_MIN(pIteratorA->segmentLength, pIteratorB->segmentLength));
 }
 
+FS_API int fs_path_compare(const char* pPathA, size_t pathALen, const char* pPathB, size_t pathBLen)
+{
+    fs_path_iterator iPathA;
+    fs_path_iterator iPathB;
+    fs_result result;
+
+    if (pPathA == NULL && pPathB == NULL) {
+        return 0;
+    }
+
+    if (pPathA == NULL) {
+        return -1;
+    }
+    if (pPathB == NULL) {
+        return +1;
+    }
+
+    result = fs_path_first(pPathA, pathALen, &iPathA);
+    if (result != FS_SUCCESS) {
+        return -1;
+    }
+
+    result = fs_path_first(pPathB, pathBLen, &iPathB);
+    if (result != FS_SUCCESS) {
+        return +1;
+    }
+
+    /* We just keep iterating until we find a mismatch or reach the end of one of the paths. */
+    for (;;) {
+        int cmp;
+
+        cmp = fs_path_iterators_compare(&iPathA, &iPathB);
+        if (cmp != 0) {
+            return cmp;
+        }
+
+        if (fs_path_is_last(&iPathA) && fs_path_is_last(&iPathB)) {
+            return 0;   /* Both paths are the same. */
+        }
+
+        result = fs_path_next(&iPathA);
+        if (result != FS_SUCCESS) {
+            return -1;
+        }
+
+        result = fs_path_next(&iPathB);
+        if (result != FS_SUCCESS) {
+            return +1;
+        }
+    }
+
+    return 0;
+}
+
 FS_API const char* fs_path_file_name(const char* pPath, size_t pathLen)
 {
     /* The file name is just the last segment. */
@@ -5816,6 +5939,11 @@ FS_API const char* fs_path_trim_base(const char* pPath, size_t pathLen, const ch
 
     /* Getting here means we got to the end of the base path without finding a mismatched segment which means the path begins with the base. */
     return iPath.pFullPath + iPath.segmentOffset;
+}
+
+FS_API fs_bool32 fs_path_begins_with(const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen)
+{
+    return fs_path_trim_base(pPath, pathLen, pBasePath, basePathLen) != NULL;
 }
 
 FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size_t basePathLen, const char* pPathToAppend, size_t pathToAppendLen)
