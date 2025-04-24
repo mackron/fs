@@ -654,6 +654,14 @@ FS_API fs_result fs_stream_read(fs_stream* pStream, void* pDst, size_t bytesToRe
 
     if (pBytesRead != NULL) {
         *pBytesRead = bytesRead;
+    } else {
+        /*
+        The caller has not specified a destination for the bytes read. If we didn't output the exact
+        number of bytes as requested we'll need to report an error.
+        */
+        if (result == FS_SUCCESS && bytesRead != bytesToRead) {
+            result = FS_ERROR;
+        }
     }
 
     return result;
