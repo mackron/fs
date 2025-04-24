@@ -80,8 +80,8 @@ target_compile_options(fspak PRIVATE ${WARNING_FLAGS})
 target_compile_options(fspak PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
 add_library(fssub STATIC
-    extras/backends/subfs/fs_sub.c
-    extras/backends/subfs/fs_sub.h
+    extras/backends/sub/fs_sub.c
+    extras/backends/sub/fs_sub.h
 )
 target_compile_features(fssub PRIVATE c_std_90)
 target_compile_options(fssub PRIVATE ${WARNING_FLAGS})
