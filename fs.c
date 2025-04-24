@@ -1231,12 +1231,18 @@ static fs_file_proxy* fs_file_proxy_get_backend_data(fs_file* pFile)
 
 static fs_bool32 fs_file_proxy_get_unref_archive_on_close(fs_file* pFile)
 {
-    return fs_file_proxy_get_backend_data(pFile)->unrefArchiveOnClose;
+    fs_file_proxy* pFileProxy = fs_file_proxy_get_backend_data(pFile);
+    FS_ASSERT(pFileProxy != NULL);
+
+    return pFileProxy->unrefArchiveOnClose;
 }
 
 static void fs_file_proxy_set_unref_archive_on_close(fs_file* pFile, fs_bool32 unrefArchiveOnClose)
 {
-    fs_file_proxy_get_backend_data(pFile)->unrefArchiveOnClose = unrefArchiveOnClose;
+    fs_file_proxy* pFileProxy = fs_file_proxy_get_backend_data(pFile);
+    FS_ASSERT(pFileProxy != NULL);
+
+    pFileProxy->unrefArchiveOnClose = unrefArchiveOnClose;
 }
 
 
@@ -1297,7 +1303,7 @@ static fs_result fs_info_proxy(fs* pFS, const char* pPath, int openMode, fs_file
 
 static size_t fs_file_alloc_size_proxy(fs* pFS)
 {
-    return fs_backend_file_alloc_size(fs_proxy_get_backend(pFS), pFS);
+    return fs_backend_file_alloc_size(fs_proxy_get_backend(pFS), pFS) + sizeof(fs_file_proxy);
 }
 
 static fs_result fs_file_open_proxy(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile)
