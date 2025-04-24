@@ -3,23 +3,52 @@ project(fs
     VERSION 1.0
 )
 
+# Options
+option(FS_BUILD_EXAMPLES             "Build typo examples"          OFF)
+option(FS_BUILD_TESTS                "Build typo tests"             OFF)
+option(FS_BUILD_TOOLS                "Build typo tools"             OFF)
+option(FS_FORCE_CXX                  "Force compilation as C++"     OFF)
+option(FS_FORCE_C89                  "Force compilation as C89"     OFF)
+option(FS_ENABLE_OPENED_FILES_ASSERT "Enable an assert for when a file is left open" OFF)
 
-# Option for forcing compilation of C files as C++. This is useful for
-# development to ensure the .c files can be included straight into C++
-# files and built as a single translation unit.
-option(USE_CXX_FOR_C "Use C++ compiler for C files" OFF)
 
-if(USE_CXX_FOR_C)
-    set(USE_CXX_FOR_C_COMPILE_OPTIONS -x c++)
+# Construct compiler options.
+set(COMPILE_OPTIONS)
+
+if(FS_FORCE_CXX AND FS_FORCE_C89)
+    message(FATAL_ERROR "FS_FORCE_CXX and FS_FORCE_C89 cannot be enabled at the same time.")
 endif()
 
+if(FS_FORCE_CXX)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(STATUS "Compiling as C++ (GNU/Clang)")
+        list(APPEND COMPILE_OPTIONS -x c++)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        message(STATUS "Compiling as C++ (MSVC)")
+        list(APPEND COMPILE_OPTIONS /TP)
+    else()
+        message(WARNING "FS_FORCE_CXX is enabled but the compiler does not support it. Ignoring.")
+    endif()
+endif()
 
-# Warning Options
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(WARNING_FLAGS -Wall -Wextra -Wpedantic)
+if(FS_FORCE_C89)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(STATUS "Compiling as C89")
+        list(APPEND COMPILE_OPTIONS -std=c89)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        message(WARNING "MSVC does not support forcing C89. FS_FORCE_C89 ignored.")
+    else()
+        message(WARNING "FS_FORCE_C89 is enabled but the compiler does not support it. Ignoring.")
+    endif()
+endif()
+
+# Warnings
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    list(APPEND COMPILE_OPTIONS -Wall -Wextra -Wpedantic)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(WARNING_FLAGS /W4)
+    #list(APPEND COMPILE_OPTIONS /W4)
 endif()
+
 
 
 # Static Libraries
