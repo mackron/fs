@@ -1450,9 +1450,9 @@ before garbage collection of those archives is triggered.
 #define FS_DEFAULT_ARCHIVE_GC_THRESHOLD 10
 #endif
 
-#define FS_IS_OPAQUE(mode)      ((mode & FS_OPAQUE) != 0)
-#define FS_IS_VERBOSE(mode)     ((mode & FS_VERBOSE) != 0)
-#define FS_IS_TRANSPARENT(mode) ((mode & (FS_OPAQUE | FS_VERBOSE)) == 0)
+#define FS_IS_OPAQUE(mode)      ((mode & FS_OPAQUE ) != FS_OPAQUE )
+#define FS_IS_VERBOSE(mode)     ((mode & FS_VERBOSE) != FS_VERBOSE)
+#define FS_IS_TRANSPARENT(mode) (!FS_IS_OPAQUE(mode) && !FS_IS_VERBOSE(mode))
 
 FS_API fs_config fs_config_init_default(void)
 {
