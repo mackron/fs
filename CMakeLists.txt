@@ -71,6 +71,14 @@ target_compile_features(fszip PRIVATE c_std_90)
 target_compile_options(fszip PRIVATE ${WARNING_FLAGS})
 target_compile_options(fszip PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
 
+add_library(fspak STATIC
+    extras/backends/pak/fs_pak.c
+    extras/backends/pak/fs_pak.h
+)
+target_compile_features(fspak PRIVATE c_std_90)
+target_compile_options(fspak PRIVATE ${WARNING_FLAGS})
+target_compile_options(fspak PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+
 add_library(fssubfs STATIC
     extras/backends/subfs/fs_subfs.c
     extras/backends/subfs/fs_subfs.h
@@ -88,6 +96,7 @@ if(FS_BUILD_TESTS)
     target_link_libraries(fstest PRIVATE
         fs
         fszip
+        fspak
         fssubfs
     )
     target_compile_options(fstest PRIVATE ${WARNING_FLAGS})
@@ -112,6 +121,7 @@ if(FS_BUILD_EXAMPLES)
     target_link_libraries(archives PRIVATE
         fs
         fszip
+        fspak
     )
     target_compile_options(archives PRIVATE ${WARNING_FLAGS})
     target_compile_options(archives PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
@@ -121,6 +131,7 @@ if(FS_BUILD_EXAMPLES)
     target_link_libraries(mounting PRIVATE
         fs
         fszip
+        fspak
     )
     target_compile_options(mounting PRIVATE ${WARNING_FLAGS})
     target_compile_options(mounting PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
