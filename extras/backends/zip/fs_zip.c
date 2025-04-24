@@ -1951,11 +1951,7 @@ static fs_result fs_file_read_zip_store(fs* pFS, fs_file_zip* pZipFile, void* pD
 
     bytesRead = 0;
 
-    /*
-    Before we spend any time locking the archive we should read from the cache. If the cache gets
-    exhausted before we've finished reading, we can then lock the archive and ready the rest of
-    the data.
-    */
+    /* Read from the cache first. */
     {
         size_t bytesRemainingInCache = pZipFile->cacheSize - pZipFile->cacheCursor;
         size_t bytesToReadFromCache = bytesToRead;
