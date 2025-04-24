@@ -2097,10 +2097,10 @@ FS_API void fs_uninit(fs* pFS)
     fs_gc_archives(pFS, FS_GC_POLICY_FULL);
 
     /* The caller has a bug if there are still outstanding archives. */
-    #if !defined(FS_NO_OPENED_FILES_ASSERT)
+    #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
     {
         if (pFS->openedArchivesSize > 0) {
-            FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. Define `FS_NO_OPENED_FILES_ASSERT` to workaround the assert. */
+            FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. */
         }
     }
     #endif
