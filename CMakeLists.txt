@@ -138,4 +138,18 @@ if(FS_BUILD_EXAMPLES)
 endif()
 
 
+# Tools
+if(FS_BUILD_TOOLS)
+    # fsu
+    add_executable(fsu tools/fsu.c)
+    target_link_libraries(fsu PRIVATE 
+        fs
+        fszip
+        fspak
+    )
+    target_compile_options(fsu PRIVATE ${WARNING_FLAGS})
+    target_compile_options(fsu PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+endif()
+
+
 # TODO: Always link with "-static" on Windows when compiling with GCC and Clang, and /MTd or /MT for MSVC. If MSVC, have option "STATIC_CRT" like what libgit2 does.
