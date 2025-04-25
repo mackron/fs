@@ -9,6 +9,15 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+
+#ifndef fs_va_copy
+    #if !defined(_MSC_VER) || _MSC_VER >= 1800
+        #define fs_va_copy(dst, src) va_copy((dst), (src))
+    #else
+        #define fs_va_copy(dst, src) ((dst) = (src))
+    #endif
+#endif
 
 #define FS_UNUSED(x) (void)x
 
@@ -728,12 +737,15 @@ FS_API fs_result fs_stream_writefv_ex(fs_stream* pStream, const fs_allocation_ca
     fs_result result;
     int strLen;
     char pStrStack[1024];
+    va_list args2;
 
     if (pStream == NULL || fmt == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args);
+    fs_va_copy(args2, args);
+
+    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args2);
     if (strLen < 0) {
         return FS_ERROR;    /* Encoding error. */
     }
