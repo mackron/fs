@@ -3441,6 +3441,10 @@ FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, si
     size_t bytesRead;
     const fs_backend* pBackend;
 
+    if (pBytesRead != NULL) {
+        *pBytesRead = 0;
+    }
+
     if (pFile == NULL || pDst == NULL) {
         return FS_INVALID_ARGS;
     }
@@ -3466,6 +3470,16 @@ FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, si
         return result;
     }
 
+    /*
+    If pBytesRead is null it means the caller will never be able to tell exactly how many bytes were read. In this
+    case, if we didn't read the exact number of bytes that were requested we'll need to return an error.
+    */
+    if (pBytesRead == NULL) {
+        if (bytesRead != bytesToRead) {
+            return FS_ERROR;
+        }
+    }
+
     return FS_SUCCESS;
 }
 
@@ -3474,6 +3488,10 @@ FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToW
     fs_result result;
     size_t bytesWritten;
     const fs_backend* pBackend;
+
+    if (pBytesWritten != NULL) {
+        *pBytesWritten = 0;
+    }
 
     if (pFile == NULL || pSrc == NULL) {
         return FS_INVALID_ARGS;
@@ -3487,6 +3505,16 @@ FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToW
 
     if (pBytesWritten != NULL) {
         *pBytesWritten = bytesWritten;
+    }
+
+    /*
+    As with reading, if the caller passes in null for pBytesWritten we need to return an error if
+    the exact number of bytes couldn't be written.
+    */
+    if (pBytesWritten == NULL) {
+        if (bytesWritten != bytesToWrite) {
+            return FS_ERROR;
+        }
     }
 
     return result;
