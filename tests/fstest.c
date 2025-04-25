@@ -349,6 +349,7 @@ static int fstest_archive_io()
 
     /* These test that loading above the level of the mount point correct results in an error. */
     /* TODO: Do proper automated tests for these. */
+#if 0
     fs_mount(pFS, "testvectors", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
     {
         fs_file* pFile;
@@ -357,22 +358,38 @@ static int fstest_archive_io()
         if (result == FS_SUCCESS) {
             int a = 5; (void)a;
         }
+
+        fs_file_close(pFile);
     }
     fs_unmount(pFS, "testvectors");
+#endif
 
     /* Test archives in archives. */
     {
-        fs_file* pFile;
+        fs_file* pFile1;
+        fs_file* pFile2;
         
-        result = fs_file_open(pFS, "testvectors/testvectors2.zip/testvectors.zip/miniaudio.h", FS_READ | FS_VERBOSE, &pFile);
+        result = fs_file_open(pFS, "testvectors/testvectors2.zip/testvectors.zip/miniaudio.h", FS_READ | FS_VERBOSE, &pFile1);
         if (result != FS_SUCCESS) {
             printf("Failed to open file.\n");
             return 1;
         }
+
+        fs_file_close(pFile1);
+
+
+        result = fs_file_open(pFS, "testvectors/testvectors2.zip/testvectors.zip/miniaudio.h", FS_READ | FS_VERBOSE, &pFile2);
+        if (result != FS_SUCCESS) {
+            printf("Failed to open file.\n");
+            return 1;
+        }
+
+        fs_file_close(pFile2);
+
+
+        //fs_gc_archives(pFS, FS_GC_POLICY_FULL);
     }
 
-    //fs_register_archive_type(pFS, FS_ZIP, "zip");
-    //fs_register_archive_type(pFS, FS_ZIP, "pac");
 
     fs_mount_write(pFS, "testvectors/extracted", NULL, FS_MOUNT_PRIORITY_HIGHEST);
 
