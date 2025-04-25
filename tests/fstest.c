@@ -1,5 +1,6 @@
 #include "../fs.h"
 #include "../extras/backends/zip/fs_zip.h"
+#include "../extras/backends/pak/fs_pak.h"
 #include "../extras/backends/sub/fs_sub.h"
 
 #include <stdarg.h>
@@ -332,7 +333,7 @@ static int fstest_archive_io()
     fs_archive_type pArchiveTypes[] =
     {
         {FS_ZIP, "zip"},
-        {FS_ZIP, "pac"}
+        {FS_PAK, "pak"}
     };
 
     printf("Archive I/O\n");
