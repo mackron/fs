@@ -349,7 +349,7 @@ static int fstest_archive_io()
 
     /* These test that loading above the level of the mount point correct results in an error. */
     /* TODO: Do proper automated tests for these. */
-#if 0
+#if 1
     fs_mount(pFS, "testvectors", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
     {
         fs_file* pFile;

@@ -1599,6 +1599,13 @@ static fs_result fs_mount_list_iterator_resolve_members(fs_mount_list_iterator* 
     return FS_SUCCESS;
 }
 
+static fs_bool32 fs_mount_list_at_end(const fs_mount_list_iterator* pIterator)
+{
+    FS_ASSERT(pIterator != NULL);
+
+    return (pIterator->internal.cursor >= fs_mount_list_get_alloc_size(pIterator->internal.pList));
+}
+
 static fs_result fs_mount_list_first(fs_mount_list* pList, fs_mount_list_iterator* pIterator)
 {
     FS_ASSERT(pIterator != NULL);
@@ -1619,8 +1626,8 @@ static fs_result fs_mount_list_next(fs_mount_list_iterator* pIterator)
 
     FS_ASSERT(pIterator != NULL);
 
-    /* For a bit of safety, lets go ahead and check if the cursor is already at the end and if so just abort early. */
-    if (pIterator->internal.cursor >= fs_mount_list_get_alloc_size(pIterator->internal.pList)) {
+    /* We can't continue if the list is at the end or else we'll overrun the cursor. */
+    if (fs_mount_list_at_end(pIterator)) {
         return FS_AT_END;
     }
 
@@ -4236,7 +4243,7 @@ FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
         return FS_INVALID_ARGS;
     }
 
-    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
+    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
             if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
                 fs_close_archive(iterator.pArchive);
