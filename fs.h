@@ -58,13 +58,14 @@ with a config, which you pass into `fs_init()`:
 
 ```c
 #include "extras/backends/zip/fs_zip.h" // <-- This is where FS_ZIP is declared.
+#include "extras/backends/pak/fs_pak.h" // <-- This is where FS_PAK is declared.
 
 ...
 
 fs_archive_type pArchiveTypes[] =
 {
     {FS_ZIP, "zip"},
-    {FS_ZIP, "pac"}
+    {FS_PAK, "pak"}
 };
 
 fs_config fsConfig = fs_config_init(FS_STDIO, NULL, NULL);
@@ -74,14 +75,14 @@ fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
 fs_init(&fsConfig, &pFS);
 ```
 
-In the code above we are registering support for ZIP archives (`FS_ZIP`). Whenever a file with a
-"zip" or "pac" extension is found, the library will be able to access the archive. The library will
-determine whether or not a file is an archive based on it's extension. You can use whatever
-extension you would like for a backend, and you can associated multiple extensions to the same
-backend. You can also associated different backends to the same extension, in which case the
-library will use the first one that works. If the extension of a file does not match with one of
-the registered archive types it'll assume it's not an archive and will skip it. Below is an example
-of one way you can read from an archive:
+In the code above we are registering support for ZIP archives (`FS_ZIP`) and Quake PAK archives
+(`FS_PAK`). Whenever a file with a "zip" or "pak" extension is found, the library will be able to
+access the archive. The library will determine whether or not a file is an archive based on it's
+extension. You can use whatever extension you would like for a backend, and you can associated
+multiple extensions to the same backend. You can also associated different backends to the same
+extension, in which case the library will use the first one that works. If the extension of a file
+does not match with one of the registered archive types it'll assume it's not an archive and will
+skip it. Below is an example of one way you can read from an archive:
 
 ```c
 result = fs_file_open(pFS, "archive.zip/file-inside-archive.txt", FS_READ, &pFile);
