@@ -374,18 +374,17 @@ static fs_result fs_file_duplicate_pak(fs_file* pFile, fs_file* pDuplicatedFile)
     return FS_SUCCESS;
 }
 
-typedef struct fs_iterator_item_pak
-{
-    char name[56];
-    fs_uint32 tocIndex; /* Will be set to 0xFFFFFFFF for directories.  */
-} fs_iterator_item_pak;
 
 typedef struct fs_iterator_pak
 {
     fs_iterator base;
     fs_uint32 index;    /* The index of the current item. */
     fs_uint32 count;    /* The numebr of entries in items. */
-    fs_iterator_item_pak items[1];
+    struct
+    {
+        char name[56];
+        fs_uint32 tocIndex; /* Will be set to 0xFFFFFFFF for directories.  */
+    } items[1];
 } fs_iterator_pak;
 
 static fs_bool32 fs_iterator_item_exists_pak(fs_iterator_pak* pIteratorPak, const char* pName, size_t nameLen)
