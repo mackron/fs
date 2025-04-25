@@ -2210,54 +2210,40 @@ static fs_result fs_file_write_zip(fs_file* pFile, const void* pSrc, size_t byte
     return FS_NOT_IMPLEMENTED;
 }
 
-#include <stdio.h>
 static fs_result fs_file_seek_zip(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)
 {
     fs_file_zip* pZipFile;
+    fs_int64 newSeekTarget;
     fs_uint64 newAbsoluteCursor;
 
     pZipFile = (fs_file_zip*)fs_file_get_backend_data(pFile);
     FS_ZIP_ASSERT(pZipFile != NULL);
+
+    if (origin == FS_SEEK_SET) {
+        newSeekTarget = 0;
+    } else if (origin == FS_SEEK_CUR) {
+        newSeekTarget = pZipFile->absoluteCursorUncompressed;
+    } else if (origin == FS_SEEK_END) {
+        newSeekTarget = pZipFile->info.uncompressedSize;
+    } else {
+        FS_ZIP_ASSERT(!"Invalid seek origin.");
+        return FS_INVALID_ARGS;
+    }
+
+    if (newSeekTarget < 0) {
+        return FS_BAD_SEEK;  /* Trying to seek before the start of the file. */
+    }
+    if (newSeekTarget > pZipFile->info.uncompressedSize) {
+        return FS_BAD_SEEK;  /* Trying to seek beyond the end of the file. */
+    }
+
+    newAbsoluteCursor = (fs_uint64)newSeekTarget;
 
     /*
     We can do fast seeking if we are moving within the cache. Otherwise we just move the cursor and
     clear the cache. The next time we read, it'll see that the cache is empty which will trigger a
     fresh read of data from the archive stream.
     */
-    if (origin == FS_SEEK_CUR) {
-        if (offset > 0) {
-            newAbsoluteCursor = pZipFile->absoluteCursorUncompressed + (fs_uint64)offset;
-        } else {
-            if ((fs_uint64)FS_ZIP_ABS(offset) > pZipFile->absoluteCursorUncompressed) {
-                return FS_BAD_SEEK;  /* Trying to seek to before the start of the file. */
-            }
-
-            newAbsoluteCursor = pZipFile->absoluteCursorUncompressed - FS_ZIP_ABS(offset);
-        }
-    } else if (origin == FS_SEEK_SET) {
-        if (offset < 0) {
-            return FS_BAD_SEEK;  /* Trying to seek to before the start of the file. */
-        }
-
-        newAbsoluteCursor = (fs_uint64)offset;
-    } else if (origin == FS_SEEK_END) {
-        if (offset > 0) {
-            return FS_BAD_SEEK;  /* Trying to seek beyond the end of the file. */
-        }
-
-        if ((fs_uint64)FS_ZIP_ABS(offset) > pZipFile->info.uncompressedSize) {
-            return FS_BAD_SEEK;  /* Trying to seek to before the start of the file. */
-        }
-
-        newAbsoluteCursor = pZipFile->info.uncompressedSize - FS_ZIP_ABS(offset);
-    } else {
-        return FS_INVALID_ARGS;
-    }
-
-    if (newAbsoluteCursor > pZipFile->info.uncompressedSize) {
-        return FS_BAD_SEEK;  /* Trying to seek beyond the end of the file. */
-    }
-
     if (newAbsoluteCursor > pZipFile->absoluteCursorUncompressed) {
         /* Moving forward. */
         fs_uint64 delta = newAbsoluteCursor - pZipFile->absoluteCursorUncompressed;

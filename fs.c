@@ -6407,6 +6407,8 @@ FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* p
 
 FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, int origin)
 {
+    fs_int64 newCursor;
+
     if (pStream == NULL) {
         return FS_INVALID_ARGS;
     }
@@ -6415,51 +6417,29 @@ FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offse
         return FS_INVALID_ARGS;  /* Trying to seek too far. This will never happen on 64-bit builds. */
     }
 
-    /*
-    The seek binary - it works or it doesn't. There's no clamping to the end or anything like that. The
-    seek point is either valid or invalid.
-    */
-    if (origin == FS_SEEK_CUR) {
-        if (offset > 0) {
-            /* Moving forward. */
-            size_t bytesRemaining = *pStream->pDataSize - pStream->cursor;
-            if (bytesRemaining < (size_t)offset) {
-                return FS_BAD_SEEK;  /* Trying to seek beyond the end of the buffer. */
-            }
+    newCursor = pStream->cursor;
 
-            pStream->cursor += (size_t)offset;
-        } else {
-            /* Moving backwards. */
-            size_t absoluteOffset = (size_t)FS_ABS(offset); /* Safe cast because it was checked above. */
-            if (absoluteOffset > pStream->cursor) {
-                return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer. */
-            }
-
-            pStream->cursor -= absoluteOffset;
-        }
-    } else if (origin == FS_SEEK_SET) {
-        if (offset < 0) {
-            return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer.. */
-        }
-
-        if ((size_t)offset > *pStream->pDataSize) {
-            return FS_BAD_SEEK;
-        }
-
-        pStream->cursor = (size_t)offset;
+    if (origin == FS_SEEK_SET) {
+        newCursor = 0;
+    } else if (origin == FS_SEEK_CUR) {
+        newCursor = (fs_int64)pStream->cursor;
     } else if (origin == FS_SEEK_END) {
-        if (offset > 0) {
-            return FS_BAD_SEEK;  /* Trying to seek beyond the end of the buffer. */
-        }
-
-        if ((size_t)FS_ABS(offset) > *pStream->pDataSize) {
-            return FS_BAD_SEEK;
-        }
-
-        pStream->cursor = *pStream->pDataSize - (size_t)FS_ABS(offset);
+        newCursor = (fs_int64)*pStream->pDataSize;
     } else {
+        FS_ASSERT(!"Invalid seek origin");
         return FS_INVALID_ARGS;
     }
+
+    newCursor += offset;
+
+    if (newCursor < 0) {
+        return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer. */
+    }
+    if ((size_t)newCursor > *pStream->pDataSize) {
+        return FS_BAD_SEEK;  /* Trying to seek beyond the end of the buffer. */
+    }
+
+    pStream->cursor = (size_t)newCursor;
 
     return FS_SUCCESS;
 }
