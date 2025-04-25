@@ -131,7 +131,7 @@ int extract(int argc, char** argv)
     }
 
     /* Make sure the output directory exists. */
-    result = fs_mkdir(pFS, pOutputPath, FS_MKDIR_IGNORE_MOUNTS);
+    result = fs_mkdir(pFS, pOutputPath, FS_IGNORE_MOUNTS);
     if (result != FS_SUCCESS) {
         printf("Failed to create output directory \"%s\" with code %d\n", pOutputPath, result);
         fs_uninit(pFS);

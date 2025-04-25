@@ -2203,11 +2203,11 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
 
     /* If we're using the default file system, ignore mount points since there's no real notion of them. */
     if (pFS == NULL) {
-        options |= FS_MKDIR_IGNORE_MOUNTS;
+        options |= FS_IGNORE_MOUNTS;
     }
 
     /* If we're using mount points we'll want to find the best one from our input path. */
-    if ((options & FS_MKDIR_IGNORE_MOUNTS) != 0) {
+    if ((options & FS_IGNORE_MOUNTS) != 0) {
         pMountPoint = NULL;
         pMountPointPath = "";
         pMountPointSubPath = pPath;
@@ -3073,7 +3073,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
                 pDirPath = pDirPathStack;
             }
 
-            result = fs_mkdir(pFS, pDirPath, FS_MKDIR_IGNORE_MOUNTS);
+            result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
             if (result != FS_SUCCESS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
                 return result;

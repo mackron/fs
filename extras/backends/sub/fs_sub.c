@@ -250,7 +250,7 @@ static fs_result fs_mkdir_sub(fs* pFS, const char* pPath)
         return result;
     }
 
-    result = fs_mkdir(pSubFS->pOwnerFS, subPath.pFullPath, FS_MKDIR_IGNORE_MOUNTS);
+    result = fs_mkdir(pSubFS->pOwnerFS, subPath.pFullPath, FS_IGNORE_MOUNTS);
     fs_sub_path_uninit(&subPath);
 
     return result;

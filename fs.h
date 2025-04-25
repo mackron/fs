@@ -810,8 +810,6 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
 #define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
-/* Options for mkdir() */
-#define FS_MKDIR_IGNORE_MOUNTS      0x0001  /* Mounts will not be considered. */
 
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
@@ -899,7 +897,8 @@ FS_API void fs_uninit(fs* pFS);
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);    /* Does not consider mounts. */
-FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_MKDIR_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
+FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
+FS_API fs_result fs_mktmp(fs* pFS, const char* pPrefix, char* pPath, size_t pathCap, int options);
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_OVERWRITE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
