@@ -377,7 +377,7 @@ static fs_result fs_file_duplicate_pak(fs_file* pFile, fs_file* pDuplicatedFile)
 typedef struct fs_iterator_item_pak
 {
     char name[56];
-    fs_uint32 tocIndex; /* Will be set to 0xFFFFFFFF  */
+    fs_uint32 tocIndex; /* Will be set to 0xFFFFFFFF for directories.  */
 } fs_iterator_item_pak;
 
 typedef struct fs_iterator_pak
