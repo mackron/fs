@@ -4310,7 +4310,7 @@ FS_API void fs_free_iterator(fs_iterator* pIterator)
 }
 
 
-FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority)
+static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pMountPoint, int options)
 {
     fs_result result;
     fs_mount_list_iterator iterator;
@@ -4320,13 +4320,10 @@ FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountP
     fs_file_info fileInfo;
     int openMode;
 
-    if (pFS == NULL || pPathToMount == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    if (pMountPoint == NULL) {
-        pMountPoint = "";
-    }
+    FS_ASSERT(pFS != NULL);
+    FS_ASSERT(pPathToMount != NULL);
+    FS_ASSERT(pMountPoint != NULL);
+    FS_ASSERT((options & FS_READ) == FS_READ);
 
     /*
     The first thing we're going to do is check for duplicates. We allow for the same path to be mounted
@@ -4343,7 +4340,7 @@ FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountP
     Getting here means we're not mounting a duplicate so we can now add it. We'll be either adding it to
     the end of the list, or to the beginning of the list depending on the priority.
     */
-    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, pPathToMount, pMountPoint, priority, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
+    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
     if (pMountPoints == NULL) {
         return FS_OUT_OF_MEMORY;
     }
@@ -4377,7 +4374,7 @@ FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountP
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
+FS_API fs_result fs_unmount_read(fs* pFS, const char* pPathToMount_NotMountPoint, int options)
 {
     fs_result iteratorResult;
     fs_mount_list_iterator iterator;
@@ -4385,6 +4382,8 @@ FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
     if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
         return FS_INVALID_ARGS;
     }
+
+    FS_UNUSED(options);
 
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
@@ -4405,6 +4404,29 @@ FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
     }
 
     return FS_SUCCESS;
+}
+
+
+FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority)
+{
+    if (pFS == NULL || pPathToMount == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    if (pMountPoint == NULL) {
+        pMountPoint = "";
+    }
+
+    return fs_mount_read(pFS, pPathToMount, pMountPoint, FS_READ | (priority == FS_MOUNT_PRIORITY_LOWEST) ? FS_LOWEST_PRIORITY : 0);
+}
+
+FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
+{
+    if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    return fs_unmount_read(pFS, pPathToMount_NotMountPoint, FS_READ);
 }
 
 static size_t fs_sysdir_append(fs_sysdir_type type, char* pDst, size_t dstCap, const char* pSubDir)
@@ -4481,7 +4503,7 @@ FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubD
 
     /* Mount for reading if requested. */
     if ((options & FS_READ) == FS_READ) {
-        result = fs_mount(pFS, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST);
+        result = fs_mount_read(pFS, pPathToMount, pMountPoint, options);
         if (result != FS_SUCCESS) {
             fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
             return result;
@@ -4490,7 +4512,7 @@ FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubD
 
     /* Mount for writing if requested. */
     if ((options & FS_WRITE) == FS_WRITE) {
-        result = fs_mount_write(pFS, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST);
+        result = fs_mount_write(pFS, pPathToMount, pMountPoint, options);
         if (result != FS_SUCCESS) {
             fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
             return result;
