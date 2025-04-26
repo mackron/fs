@@ -1096,7 +1096,7 @@ static fs_result fs_backend_mkdir(const fs_backend* pBackend, fs* pFS, const cha
 {
     FS_ASSERT(pBackend != NULL);
 
-    if (pBackend->remove == NULL) {
+    if (pBackend->mktmp == NULL) {
         return FS_NOT_IMPLEMENTED;
     } else {
         return pBackend->mkdir(pFS, pPath);
