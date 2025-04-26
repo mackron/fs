@@ -3547,7 +3547,7 @@ FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_f
             return result;
         }
 
-        return fs_file_open_or_info(pFS, pTmpPath, openMode, ppFile, NULL);
+        return fs_file_open_or_info(pFS, pTmpPath, openMode | FS_IGNORE_MOUNTS, ppFile, NULL);
     } else {
         return fs_file_open_or_info(pFS, pFilePath, openMode, ppFile, NULL);
     }
@@ -5053,7 +5053,7 @@ static fs_result fs_mktmp_stdio(fs* pFS, const char* pPrefix, char* pTmpPath, si
             At this point we will have the full path without a trailing slash. We need to make sure the folder
             exists or else GetTempFileNameA() will fail.
             */
-            if ((options & FS_MKTMP_NO_CREATE_DIRS) == 0) {
+            if ((options & FS_NO_CREATE_DIRS) == 0) {
                 fs_result result = fs_mkdir(pFS, pSystemTmpPath, FS_IGNORE_MOUNTS);
                 int a = 5; (void)result;
             }
@@ -5170,7 +5170,7 @@ static fs_result fs_mktmp_stdio(fs* pFS, const char* pPrefix, char* pTmpPath, si
             }
 
             /* Create the directory structure if necessary. */
-            if ((options & FS_MKTMP_NO_CREATE_DIRS) == 0) {
+            if ((options & FS_NO_CREATE_DIRS) == 0) {
                 fs_mkdir(pFS, pTmpPath, FS_IGNORE_MOUNTS);
             }
 

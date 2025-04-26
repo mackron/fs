@@ -813,10 +813,9 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
 /* Options for fs_mktmp() */
-#define FS_MKTMP_DIR                0x0001  /* Create a temporary directory. */
-#define FS_MKTMP_FILE               0x0002  /* Create a temporary file. */
-#define FS_MKTMP_BASE_DIR           0x0004  /* Use this to query the base system temp directory such as "/tmp".  */
-#define FS_MKTMP_NO_CREATE_DIRS     0x0008  /* When set the backend will not explicitly try to create the directory structure for the new temp file or folder. */
+#define FS_MKTMP_DIR                0x0800  /* Create a temporary directory. */
+#define FS_MKTMP_FILE               0x0800  /* Create a temporary file. */
+#define FS_MKTMP_BASE_DIR           0x1000  /* Use this to query the base system temp directory such as "/tmp".  */
 
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
