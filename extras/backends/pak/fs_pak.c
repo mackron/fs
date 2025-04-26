@@ -152,7 +152,6 @@ static void fs_uninit_pak(fs* pFS)
 
 static fs_result fs_info_pak(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
-    fs_result result;
     fs_pak* pPak;
     fs_uint32 tocIndex;
 
