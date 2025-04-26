@@ -1088,8 +1088,6 @@ This section just contains various helper functions, mainly for custom backends.
 
 /* Converts an errno code to our own error code. */
 FS_API fs_result fs_result_from_errno(int error);
-
-
 /* END fs_helpers.h */
 
 
