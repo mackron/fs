@@ -326,6 +326,99 @@ Enumeration is not recursive. If you want to enumerate recursively you can inspe
 member of the `info` member in `fs_iterator`.
 
 
+1.4. System Directories
+-----------------------
+It can often be useful to know the exact paths of known standard system directories, such as the
+home directory. You can use the `fs_sysdir()` function for this:
+
+```c
+char pPath[256];
+size_t pathLen = fs_sysdir(FS_SYSDIR_HOME, pPath, sizeof(pPath));
+if (pathLen > 0) {
+    if (pathLen < sizeof(pPath)) {
+        // Success!
+    } else {
+        // The buffer was too small. Expand the buffer to at least `pathLen + 1` and try again.
+    }
+} else {
+    // An error occurred.
+}
+
+```
+
+`fs_sysdir()` will return the length of the path written to `pPath`, or 0 if an error occurred. If
+the buffer is too small, it will return the required size, not including the null terminator.
+
+Recognized system directories include the following:
+
+  - FS_SYSDIR_HOME
+  - FS_SYSDIR_TEMP
+  - FS_SYSDIR_CONFIG
+  - FS_SYSDIR_DATA
+  - FS_SYSDIR_CACHE
+  
+
+
+1.5. Temporary Files
+--------------------
+You can create a temporary file or folder with `fs_mktmp()`. To create a temporary folder, use the
+`FS_MKTMP_DIR` option:
+
+```c
+char pTmpPath[256];
+fs_result result = fs_mktmp("prefix", pTmpPath, sizeof(pTmpPath), FS_MKTMP_DIR);
+if (result != FS_SUCCESS) {
+    // Failed to create temporary file.
+}
+```
+
+Similarly, to create a temporary file, use the `FS_MKTMP_FILE` option:
+
+```c
+char pTmpPath[256];
+fs_result result = fs_mktmp("prefix", pTmpPath, sizeof(pTmpPath), FS_MKTMP_FILE);
+if (result != FS_SUCCESS) {
+    // Failed to create temporary file.
+}
+```
+
+`fs_mktmp()` will create a temporary file or folder with a unique name based on the provided
+prefix and will return the full path to the created file or folder in `pTmpPath`. To open the
+temporary file, you can pass in the path to `fs_file_open()`, making sure to ignore mount points
+with `FS_IGNORE_MOUNTS`:
+
+```c
+fs_file* pFile;
+result = fs_file_open(pFS, pTmpPath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+if (result != FS_SUCCESS) {
+    // Failed to open temporary file.
+}
+```
+
+If you just want to create a temporary file and don't care about the name, you can use
+`fs_file_open()` with the `FS_TEMP` flag. In this case, the library will treat the file path
+as the prefix:
+
+```c
+fs_file* pFile;
+result = fs_file_open(pFS, "prefix", FS_TEMP, &pFile);
+if (result != FS_SUCCESS) {
+    // Failed to open temporary file.
+}
+```
+
+The use of temporary files is only valid with `fs` objects that make use of the standard file
+system, such as the stdio backend.
+
+The prefix can include subdirectories, such as "myapp/subdir". In this case the library will create
+the directory hierarchy for you, unless you pass in `FS_NO_CREATE_DIRS`.  Note that not all
+platforms treat the name portion of the prefix the same. In particular, Windows will only use up to
+the first 3 characters of the name portion of the prefix.
+
+If you don't like the behavior of `fs_mktmp()`, you can consider using `fs_sysdir()` with
+`FS_SYSDIR_TEMP` and create the temporary file yourself.
+
+
 
 2. Thread Safety
 ================
