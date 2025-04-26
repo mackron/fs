@@ -105,7 +105,6 @@ int extract(int argc, char** argv)
         {FS_PAK, "pak"}
     };
     fs* pArchive;
-    fs_iterator* pIterator;
 
     if (argc < 2) {
         printf("No input file.\n");
@@ -173,15 +172,6 @@ int extract(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    fs_result result;
-    fs* pFS;
-    fs_config fsConfig;
-    fs_archive_type pArchiveTypes[] =
-    {
-        {FS_ZIP, "zip"},
-        {FS_PAK, "pak"}
-    };
-
     if (argc < 2) {
         print_help();
         return 1;
