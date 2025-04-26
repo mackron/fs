@@ -4764,7 +4764,16 @@ static fs_result fs_rename_stdio(fs* pFS, const char* pOldName, const char* pNew
 #if defined(_WIN32)
 static fs_result fs_mkdir_stdio_win32(const char* pPath)
 {
-    int result = _mkdir(pPath);
+    int result;
+
+    /* If it's a drive letter segment just pretend it's successful. */
+    if (pPath[0] >= 'a' && pPath[0] <= 'z' || pPath[0] >= 'A' && pPath[0] <= 'Z') {
+        if (pPath[1] == ':' && pPath[2] == '\0') {
+            return FS_SUCCESS;
+        }
+    }
+    
+    result = _mkdir(pPath);
     if (result != 0) {
         return fs_result_from_errno(errno);
     }
