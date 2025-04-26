@@ -59,33 +59,25 @@ add_library(fs STATIC
 
 target_include_directories(fs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_compile_features(fs PRIVATE c_std_90)
-target_compile_options(fs PRIVATE ${WARNING_FLAGS})
-target_compile_options(fs PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+target_compile_options(fs PRIVATE ${COMPILE_OPTIONS})
 
 add_library(fszip STATIC
     extras/backends/zip/fs_zip.c
     extras/backends/zip/fs_zip.h
 )
-target_compile_features(fszip PRIVATE c_std_90)
-target_compile_options(fszip PRIVATE ${WARNING_FLAGS})
-target_compile_options(fszip PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+target_compile_options(fszip PRIVATE ${COMPILE_OPTIONS})
 
 add_library(fspak STATIC
     extras/backends/pak/fs_pak.c
     extras/backends/pak/fs_pak.h
 )
-target_compile_features(fspak PRIVATE c_std_90)
-target_compile_options(fspak PRIVATE ${WARNING_FLAGS})
-target_compile_options(fspak PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+target_compile_options(fspak PRIVATE ${COMPILE_OPTIONS})
 
 add_library(fssub STATIC
     extras/backends/sub/fs_sub.c
     extras/backends/sub/fs_sub.h
 )
-target_compile_features(fssub PRIVATE c_std_90)
-target_compile_options(fssub PRIVATE ${WARNING_FLAGS})
-target_compile_options(fssub PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+target_compile_options(fssub PRIVATE ${COMPILE_OPTIONS})
 
 
 # Tests
@@ -99,8 +91,7 @@ if(FS_BUILD_TESTS)
         fspak
         fssub
     )
-    target_compile_options(fstest PRIVATE ${WARNING_FLAGS})
-    target_compile_options(fstest PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    target_compile_options(fstest PRIVATE ${COMPILE_OPTIONS})
 
     add_test(NAME fstest COMMAND fstest)
 endif()
@@ -113,8 +104,7 @@ if(FS_BUILD_EXAMPLES)
     target_link_libraries(hello_world PRIVATE
         fs
     )
-    target_compile_options(hello_world PRIVATE ${WARNING_FLAGS})
-    target_compile_options(hello_world PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    target_compile_options(hello_world PRIVATE ${COMPILE_OPTIONS})
 
     # archives
     add_executable(archives examples/archives.c)
@@ -123,8 +113,7 @@ if(FS_BUILD_EXAMPLES)
         fszip
         fspak
     )
-    target_compile_options(archives PRIVATE ${WARNING_FLAGS})
-    target_compile_options(archives PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    target_compile_options(archives PRIVATE ${COMPILE_OPTIONS})
 
     # mounting
     add_executable(mounting examples/mounting.c)
@@ -133,8 +122,7 @@ if(FS_BUILD_EXAMPLES)
         fszip
         fspak
     )
-    target_compile_options(mounting PRIVATE ${WARNING_FLAGS})
-    target_compile_options(mounting PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    target_compile_options(mounting PRIVATE ${COMPILE_OPTIONS})
 endif()
 
 
@@ -147,8 +135,7 @@ if(FS_BUILD_TOOLS)
         fszip
         fspak
     )
-    target_compile_options(fsu PRIVATE ${WARNING_FLAGS})
-    target_compile_options(fsu PRIVATE ${USE_CXX_FOR_C_COMPILE_OPTIONS})
+    target_compile_options(fsu PRIVATE ${COMPILE_OPTIONS})
 endif()
 
 
