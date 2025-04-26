@@ -800,6 +800,7 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_APPEND                   (FS_WRITE | 0x0004)
 #define FS_OVERWRITE                (FS_WRITE | 0x0008)
 #define FS_TRUNCATE                 (FS_WRITE)
+#define FS_TEMP                     (FS_TRUNCATE | 0x0010)
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
 #define FS_OPAQUE                   0x0010  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */

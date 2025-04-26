@@ -249,8 +249,19 @@ static int fstest_default_io()
         char tmpPath[1024];
         fs_result result;
 
-        result = fs_mktmp(NULL, ".testing/abc", tmpPath, sizeof(tmpPath), FS_MKTMP_DIR);
+        result = fs_mktmp(NULL, ".testing/xyz", tmpPath, sizeof(tmpPath), FS_MKTMP_DIR);
         fstest_print_result_f("  mktmp: %s", (result != FS_SUCCESS), tmpPath);
+
+        {
+            fs_file* pFile;
+            result = fs_file_open(NULL, ".testing/abc", FS_TEMP, &pFile);
+            if (result == FS_SUCCESS) {
+                fs_file_writef(pFile, "Hello");
+                fs_file_close(pFile);
+            } else {
+                fstest_print_result_f("  Open: %s", (result != FS_SUCCESS), ".testing/abc");
+            }
+        }
     }
 
     return 0;
