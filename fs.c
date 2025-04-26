@@ -1096,21 +1096,10 @@ static fs_result fs_backend_mkdir(const fs_backend* pBackend, fs* pFS, const cha
 {
     FS_ASSERT(pBackend != NULL);
 
-    if (pBackend->mktmp == NULL) {
+    if (pBackend->mkdir == NULL) {
         return FS_NOT_IMPLEMENTED;
     } else {
         return pBackend->mkdir(pFS, pPath);
-    }
-}
-
-static fs_result fs_backend_mktmp(const fs_backend* pBackend, fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
-{
-    FS_ASSERT(pBackend != NULL);
-
-    if (pBackend->mktmp == NULL) {
-        return FS_NOT_IMPLEMENTED;
-    } else {
-        return pBackend->mktmp(pFS, pPrefix, pTmpPath, tmpPathCap, options);
     }
 }
 
@@ -1413,11 +1402,6 @@ static fs_result fs_mkdir_proxy(fs* pFS, const char* pPath)
     return fs_backend_mkdir(fs_proxy_get_backend(pFS), pFS, pPath);
 }
 
-static fs_result fs_mktmp_proxy(fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
-{
-    return fs_backend_mktmp(fs_proxy_get_backend(pFS), pFS, pPrefix, pTmpPath, tmpPathCap, options);
-}
-
 static fs_result fs_info_proxy(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     return fs_backend_info(fs_proxy_get_backend(pFS), pFS, pPath, openMode, pInfo);
@@ -1537,7 +1521,6 @@ static fs_backend fs_proxy_backend =
     fs_remove_proxy,
     fs_rename_proxy,
     fs_mkdir_proxy,
-    fs_mktmp_proxy,
     fs_info_proxy,
     fs_file_alloc_size_proxy,
     fs_file_open_proxy,
@@ -2407,42 +2390,6 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
     }
 
     return FS_SUCCESS;
-}
-
-FS_API fs_result fs_mktmp(fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
-{
-    const fs_backend* pBackend;
-
-    if (pTmpPath == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    pTmpPath[0] = '\0';  /* Safety. */
-
-    if (tmpPathCap == 0) {
-        return FS_INVALID_ARGS;
-    }
-
-    if (pPrefix == NULL) {
-        pPrefix = "";
-    }
-
-    /* The caller must explicitly specify whether or not a file or directory is being created. */
-    if ((options & (FS_MKTMP_DIR | FS_MKTMP_FILE)) == 0) {
-        return FS_INVALID_ARGS;
-    }
-
-    pBackend = fs_get_backend_or_default(pFS);
-    if (pBackend == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    /* The prefix is not allowed to have any ".." segments and cannot start with "/". */
-    if (strstr(pPrefix, "..") != NULL || pPrefix[0] == '/') {
-        return FS_INVALID_ARGS;
-    }
-
-    return fs_backend_mktmp(pBackend, pFS, pPrefix, pTmpPath, tmpPathCap, options);
 }
 
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
@@ -3542,7 +3489,7 @@ FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_f
         char pTmpPath[4096];
         fs_result result;
 
-        result = fs_mktmp(pFS, pFilePath, pTmpPath, sizeof(pTmpPath), FS_MKTMP_FILE);
+        result = fs_mktmp(pFilePath, pTmpPath, sizeof(pTmpPath), FS_MKTMP_FILE);
         if (result != FS_SUCCESS) {
             return result;
         }
@@ -4648,8 +4595,6 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
 
 #if defined(_WIN32)
 #include <direct.h>     /* For _mkdir() */
-#else
-#include <unistd.h>     /* For close() */
 #endif
 
 #ifndef S_ISDIR
@@ -4967,247 +4912,6 @@ static fs_result fs_mkdir_stdio(fs* pFS, const char* pPath)
     }
 
     return result;
-}
-
-static fs_result fs_mktmp_stdio(fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
-{
-    FS_ASSERT(pPrefix != NULL);
-    FS_ASSERT(pTmpPath != NULL);
-    FS_ASSERT(tmpPathCap > 0);
-
-    #if defined(_WIN32)
-    {
-        char pSystemTmpPath[260 + 1];
-
-        if (pPrefix[0] == '\0') {
-            pPrefix = "fst";
-        }
-
-        if (GetTempPathA(sizeof(pSystemTmpPath), pSystemTmpPath) == 0) {
-            return fs_result_from_errno(GetLastError());
-        }
-
-        /* The system's base temp path needs to be cleaned up. */
-        {
-            size_t i;
-
-            /* Slashes need to be converted to forward slashes. */
-            for (i = 0; pSystemTmpPath[i] != '\0'; i += 1) {
-                if (pSystemTmpPath[i] == '\\') {
-                    pSystemTmpPath[i] = '/';
-                }
-            }
-
-            /* Remove the trailing slash. */
-            if (i > 0) {
-                if (pSystemTmpPath[i - 1] == '/') {
-                    pSystemTmpPath[i - 1] = '\0';
-                }
-            }
-        }
-        
-        if ((options & FS_MKTMP_BASE_DIR) != 0) {
-            /* We're only retrieving the system's base temp directory. */
-            if (fs_strcpy_s(pTmpPath, tmpPathCap, pSystemTmpPath) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-        } else {
-            /* We're creating either a temp folder or file. */
-            size_t tmpPathLen = 0;
-            const char* pPrefixName;
-            const char* pPrefixDir;
-            size_t prefixDirLen;
-            char pPathResult[260];
-            size_t i;
-
-            tmpPathLen = strlen(pSystemTmpPath);
-            if (tmpPathLen >= tmpPathCap) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            if (fs_strcpy_s(pSystemTmpPath + tmpPathLen, tmpPathCap - tmpPathLen, "/") != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-            tmpPathLen += 1;
-
-            pPrefixName = fs_path_file_name(pPrefix, FS_NULL_TERMINATED);
-            FS_ASSERT(pPrefixName != NULL);
-
-            if (pPrefixName == pPrefix) {
-                /* No directory. */
-                pPrefixDir = "";
-                prefixDirLen = 0;
-            } else {
-                /* We have a directory. */
-                pPrefixDir = pPrefix;
-                prefixDirLen = (size_t)(pPrefixName - pPrefix);
-                prefixDirLen -= 1; /* Remove the trailing slash from the prefix directory. */
-            }
-
-            if (fs_strncpy_s(pSystemTmpPath + tmpPathLen, tmpPathCap - tmpPathLen, pPrefixDir, prefixDirLen) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-            tmpPathLen += prefixDirLen;
-
-            /*
-            At this point we will have the full path without a trailing slash. We need to make sure the folder
-            exists or else GetTempFileNameA() will fail.
-            */
-            if ((options & FS_NO_CREATE_DIRS) == 0) {
-                fs_result result = fs_mkdir(pFS, pSystemTmpPath, FS_IGNORE_MOUNTS);
-                int a = 5; (void)result;
-            }
-
-            /* Append a trailing slash in preparation for appending the file name part. */
-            if (tmpPathLen > 0) {
-                if (fs_strcpy_s(pSystemTmpPath + tmpPathLen, tmpPathCap - tmpPathLen, "/") != 0) {
-                    return FS_PATH_TOO_LONG;
-                }
-                tmpPathLen += 1;
-            }
-
-            /* Win32 wants paths to have back slashes. */
-            for (i = 0; pSystemTmpPath[i] != '\0'; i += 1) {
-                if (pSystemTmpPath[i] == '/') {
-                    pSystemTmpPath[i] = '\\';
-                }
-            }
-            
-            /*
-            At this point our output path contains the full directory, including a trailing slash. We now need to
-            append the file name part which we get from the operating system.
-            */
-            if (GetTempFileNameA(pSystemTmpPath, pPrefixName, 0, pPathResult) == 0) {
-                return fs_result_from_errno(GetLastError());
-            }
-
-            /*
-            NOTE: At this point the operating system will have created the file. If any error occurs from here
-            we need to remember to delete it.
-            */
-
-            if (fs_strcpy_s(pTmpPath, tmpPathCap, pPathResult) != 0) {
-                DeleteFileA(pPathResult);
-                return FS_PATH_TOO_LONG;
-            }
-
-            /*
-            If we're creating a folder the process is to delete the file that the OS just created and create a new
-            folder in it's place.
-            */
-            if ((options & FS_MKTMP_DIR) != 0) {
-                /* We're creating a temp directory. Delete the file and create a folder in it's place. */
-                DeleteFileA(pPathResult);
-
-                if (CreateDirectoryA(pPathResult, NULL) == 0) {
-                    return fs_result_from_errno(GetLastError());
-                }
-            } else {
-                /* We're creating a temp file. The OS will have already created the file in GetTempFileNameA() so no need to create it explicitly. */
-            }
-
-            /* Finally we need to convert our back slashes to forward slashes. */
-            for (i = 0; pTmpPath[i] != '\0'; i += 1) {
-                if (pTmpPath[i] == '\\') {
-                    pTmpPath[i] = '/';
-                }
-            }
-        }
-    }
-    #else
-    {
-        size_t tmpPathLen;
-        const char* pSystemTmpPath;
-        
-        pSystemTmpPath = getenv("TMPDIR");
-        if (pSystemTmpPath == NULL || pSystemTmpPath[0] == '\0') {
-            pSystemTmpPath = "/var/tmp";
-        }
-
-        if ((options & FS_MKTMP_BASE_DIR) != 0) {
-            /* We're only retrieving the system's base temp directory. */
-            if (fs_strcpy_s(pTmpPath, tmpPathCap, pSystemTmpPath) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-        } else {
-            /* We're creating either a temp folder or file. Either way we need to construct our template. */
-            const char* pPrefixName;
-            const char* pPrefixDir;
-            size_t prefixDirLen;
-
-            tmpPathLen = strlen(pSystemTmpPath) + 1 + strlen(pPrefix) + 1 + 6; /* 6 for the random part. */
-            if (tmpPathLen >= tmpPathCap) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            if (fs_strcpy_s(pTmpPath, tmpPathCap, pSystemTmpPath) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            /* We need to append the directory part of the prefix so we can create the directory. */
-            pPrefixName = fs_path_file_name(pPrefix, FS_NULL_TERMINATED);
-            FS_ASSERT(pPrefixName != NULL);
-
-            if (pPrefixName == pPrefix) {
-                /* No directory. */
-                pPrefixDir = "";
-                prefixDirLen = 0;
-            } else {
-                /* We have a directory. */
-                pPrefixDir = pPrefix;
-                prefixDirLen = (size_t)(pPrefixName - pPrefix);
-                prefixDirLen -= 1; /* Remove the trailing slash from the prefix directory. */
-            }
-
-            if (prefixDirLen > 0) {
-                if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
-                    return FS_PATH_TOO_LONG;
-                }
-            }
-
-            if (fs_strncat_s(pTmpPath, tmpPathCap, pPrefixDir, prefixDirLen) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            /* Create the directory structure if necessary. */
-            if ((options & FS_NO_CREATE_DIRS) == 0) {
-                fs_mkdir(pFS, pTmpPath, FS_IGNORE_MOUNTS);
-            }
-
-            /* Now we can append the file name. */
-            if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            if (fs_strcat_s(pTmpPath, tmpPathCap, pPrefixName) != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            /* Append the random part. */
-            if (fs_strcat_s(pTmpPath, tmpPathCap, "XXXXXX") != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
-            /* At this point the full path has been constructed. We can now create the file or directory. */
-            if ((options & FS_MKTMP_DIR) != 0) {
-                /* We're creating a temp directory. */
-                if (mkdtemp(pTmpPath) == NULL) {
-                    return fs_result_from_errno(errno);
-                }
-            } else {
-                /* We're creating a temp file. */
-                int fd = mkstemp(pTmpPath);
-                if (fd == -1) {
-                    return fs_result_from_errno(errno);
-                }
-
-                close(fd);
-            }
-        }
-    }
-    #endif
-
-    return FS_SUCCESS;
 }
 
 static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
@@ -5980,7 +5684,6 @@ fs_backend fs_stdio_backend =
     fs_remove_stdio,
     fs_rename_stdio,
     fs_mkdir_stdio,
-    fs_mktmp_stdio,
     fs_info_stdio,
     fs_file_alloc_size_stdio,
     fs_file_open_stdio,
@@ -6004,7 +5707,7 @@ const fs_backend* FS_STDIO = NULL;
 /* END fs.c */
 
 
-/* BEG fs_sysdir.h */
+/* BEG fs_sysdir.c */
 #if defined(_WIN32)
 #include <shlobj.h>
 #else
@@ -6237,7 +5940,182 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 
     return fullLength;
 }
-/* END fs_sysdir.h */
+/* END fs_sysdir.c */
+
+
+/* BEG fs_mktmp.c */
+#if defined(_WIN32)
+#else
+#include <unistd.h>     /* For close() */
+#endif
+
+FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
+{
+    size_t baseDirLen;
+    const char* pPrefixName;
+    const char* pPrefixDir;
+    size_t prefixDirLen;
+
+    if (pTmpPath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    pTmpPath[0] = '\0';  /* Safety. */
+
+    if (tmpPathCap == 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    if (pPrefix == NULL) {
+        pPrefix = "";
+    }
+
+    if (pPrefix[0] == '\0') {
+        pPrefix = "fs";
+    }
+
+    /* The caller must explicitly specify whether or not a file or directory is being created. */
+    if ((options & (FS_MKTMP_DIR | FS_MKTMP_FILE)) == 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* It's not allowed for both DIR and FILE to be set. */
+    if ((options & FS_MKTMP_DIR) != 0 && (options & FS_MKTMP_FILE) != 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* The prefix is not allowed to have any ".." segments and cannot start with "/". */
+    if (strstr(pPrefix, "..") != NULL || pPrefix[0] == '/') {
+        return FS_INVALID_ARGS;
+    }
+
+    /* We first need to grab the directory of the system's base temp directory. */
+    baseDirLen = fs_sysdir(FS_SYSDIR_TEMP, pTmpPath, tmpPathCap);
+    if (baseDirLen == 0) {
+        return FS_ERROR;    /* Failed to retrieve the base temp directory. Cannot create a temp file. */
+    }
+
+    /* Now we need to append the directory part of the prefix. */
+    pPrefixName = fs_path_file_name(pPrefix, FS_NULL_TERMINATED);
+    FS_ASSERT(pPrefixName != NULL);
+
+    if (pPrefixName == pPrefix) {
+        /* No directory. */
+        pPrefixDir = "";
+        prefixDirLen = 0;
+    } else {
+        /* We have a directory. */
+        pPrefixDir = pPrefix;
+        prefixDirLen = (size_t)(pPrefixName - pPrefix);
+        prefixDirLen -= 1; /* Remove the trailing slash from the prefix directory. */
+    }
+
+    if (prefixDirLen > 0) {
+        if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
+            return FS_PATH_TOO_LONG;
+        }
+    }
+
+    if (fs_strncat_s(pTmpPath, tmpPathCap, pPrefixDir, prefixDirLen) != 0) {
+        return FS_PATH_TOO_LONG;
+    }
+
+    /* Create the directory structure if necessary. */
+    if ((options & FS_NO_CREATE_DIRS) == 0) {
+        fs_mkdir(NULL, pTmpPath, FS_IGNORE_MOUNTS);
+    }
+
+    /* Now we can append the between the directory part and the name part. */
+    if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
+        return FS_PATH_TOO_LONG;
+    }
+
+    /* We're now ready for the platform specific part. */
+    #if defined(_WIN32)
+    {
+        /*
+        We're using GetTempFileName(). This is annoying because of two things. First, it requires that
+        path separators be backslashes. Second, it does not take a capacity parameter so we need to
+        ensure the output buffer is at least MAX_PATH (260) bytes long.
+        */
+        char pTmpPathWin[MAX_PATH];
+        size_t i;
+
+        for (i = 0; pTmpPath[i] != '\0'; i += 1) {
+            if (pTmpPath[i] == '/') {
+                pTmpPath[i] = '\\';
+            }
+        }
+
+        if (GetTempFileNameA(pTmpPath, pPrefixName, 0, pTmpPathWin) == 0) {
+            return fs_result_from_errno(GetLastError());
+        }
+
+        /*
+        NOTE: At this point the operating system will have created the file. If any error occurs from here
+        we need to remember to delete it.
+        */
+
+        if (fs_strcpy_s(pTmpPath, tmpPathCap, pTmpPathWin) != 0) {
+            DeleteFileA(pTmpPathWin);
+            return FS_PATH_TOO_LONG;
+        }
+
+        /*
+        If we're creating a folder the process is to delete the file that the OS just created and create a new
+        folder in it's place.
+        */
+        if ((options & FS_MKTMP_DIR) != 0) {
+            /* We're creating a temp directory. Delete the file and create a folder in it's place. */
+            DeleteFileA(pTmpPathWin);
+
+            if (CreateDirectoryA(pTmpPathWin, NULL) == 0) {
+                return fs_result_from_errno(GetLastError());
+            }
+        } else {
+            /* We're creating a temp file. The OS will have already created the file in GetTempFileNameA() so no need to create it explicitly. */
+        }
+
+        /* Finally we need to convert our back slashes to forward slashes. */
+        for (i = 0; pTmpPath[i] != '\0'; i += 1) {
+            if (pTmpPath[i] == '\\') {
+                pTmpPath[i] = '/';
+            }
+        }
+    }
+    #else
+    {
+        /* Append the file name part. */
+        if (fs_strcat_s(pTmpPath, tmpPathCap, pPrefixName) != 0) {
+            return FS_PATH_TOO_LONG;
+        }
+
+        /* Append the random part. */
+        if (fs_strcat_s(pTmpPath, tmpPathCap, "XXXXXX") != 0) {
+            return FS_PATH_TOO_LONG;
+        }
+
+        /* At this point the full path has been constructed. We can now create the file or directory. */
+        if ((options & FS_MKTMP_DIR) != 0) {
+            /* We're creating a temp directory. */
+            if (mkdtemp(pTmpPath) == NULL) {
+                return fs_result_from_errno(errno);
+            }
+        } else {
+            /* We're creating a temp file. */
+            int fd = mkstemp(pTmpPath);
+            if (fd == -1) {
+                return fs_result_from_errno(errno);
+            }
+
+            close(fd);
+        }
+    }
+    #endif
+
+    return FS_SUCCESS;
+}
+/* END fs_mktmp.c */
 
 
 /* BEG fs_helpers.c */

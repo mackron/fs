@@ -556,7 +556,6 @@ fs_backend fs_pak_backend =
     NULL,   /* remove */
     NULL,   /* rename */
     NULL,   /* mkdir */
-    NULL,   /* mktmp */
     fs_info_pak,
     fs_file_alloc_size_pak,
     fs_file_open_pak,

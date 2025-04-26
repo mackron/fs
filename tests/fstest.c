@@ -271,7 +271,7 @@ static int fstest_default_io(void)
         char tmpPath[1024];
         fs_result result;
 
-        result = fs_mktmp(NULL, ".testing/xyz", tmpPath, sizeof(tmpPath), FS_MKTMP_DIR);
+        result = fs_mktmp(".testing/xyz", tmpPath, sizeof(tmpPath), FS_MKTMP_DIR);
         fstest_print_result_f("  mktmp: %s", (result != FS_SUCCESS), tmpPath);
 
         {
@@ -559,6 +559,7 @@ static int fstest_io()
 {
     int result = 0;
 
+    result |= fstest_sysdirs();
     result |= fstest_default_io();
     result |= fstest_archive_io();
     result |= fstest_write_io();

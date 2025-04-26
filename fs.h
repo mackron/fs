@@ -812,11 +812,6 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
 #define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
-/* Options for fs_mktmp() */
-#define FS_MKTMP_DIR                0x0800  /* Create a temporary directory. */
-#define FS_MKTMP_FILE               0x1000  /* Create a temporary file. */
-#define FS_MKTMP_BASE_DIR           0x2000  /* Use this to query the base system temp directory such as "/tmp".  */
-
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
 #define FS_GC_POLICY_FULL           0x0002  /* Garbage collect every unreferenced opened archive, regardless of how many are open.*/
@@ -881,7 +876,6 @@ typedef struct fs_backend
     fs_result    (* remove          )(fs* pFS, const char* pFilePath);
     fs_result    (* rename          )(fs* pFS, const char* pOldName, const char* pNewName);
     fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
-    fs_result    (* mktmp           )(fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options); /* Must return FS_PATH_TOO_LONG if the output buffer is too small. */
     fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by proxy of passthrough style backends. */
     size_t       (* file_alloc_size )(fs* pFS);
     fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return FS_DOES_NOT_EXIST if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
@@ -905,7 +899,6 @@ FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);    /* Does not consider mounts. */
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
-FS_API fs_result fs_mktmp(fs* pFS, const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_OVERWRITE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
@@ -984,6 +977,15 @@ typedef enum fs_sysdir_type
 
 FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* Returns the length of the string, or 0 on failure. If the return value is >= to dstCap it means the output buffer was too small. Use the returned value to know how big to make the buffer. Set pDst to NULL to calculate the required length. */
 /* END fs_sysdir.h */
+
+
+/* BEG fs_mktmp.h */
+/* Make sure these options do not conflict with FS_NO_CREATE_DIRS. */
+#define FS_MKTMP_DIR  0x0800  /* Create a temporary directory. */
+#define FS_MKTMP_FILE 0x1000  /* Create a temporary file. */
+
+FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
+/* END fs_mktmp.h */
 
 
 /* BEG fs_helpers.h */
