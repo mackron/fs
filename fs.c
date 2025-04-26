@@ -2292,7 +2292,6 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
     fs_mount_point* pMountPoint = NULL;
     const char* pMountPointPath = NULL;
     const char* pMountPointSubPath = NULL;
-    char* pFullPath = NULL;
 
     pBackend = fs_get_backend_or_default(pFS);
 
@@ -3302,7 +3301,6 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
     if ((openMode & FS_WRITE) != 0) {
         /* Opening in write mode. */
         if (pFS != NULL) {
-            fs_mount_list_iterator iMountPoint;
             fs_mount_point* pBestMountPoint = NULL;
             const char* pBestMountPointPath = NULL;
             const char* pBestMountPointFileSubPath = NULL;
