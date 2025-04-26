@@ -2555,6 +2555,7 @@ fs_backend fs_zip_backend =
     NULL,   /* remove */
     NULL,   /* rename */
     NULL,   /* mkdir */
+    NULL,   /* mktmp */
     fs_info_zip,
     fs_file_alloc_size_zip,
     fs_file_open_zip,

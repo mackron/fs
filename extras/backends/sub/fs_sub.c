@@ -432,6 +432,7 @@ fs_backend fs_sub_backend =
     fs_remove_sub,
     fs_rename_sub,
     fs_mkdir_sub,
+    NULL, /* mktmp */
     fs_info_sub,
     fs_file_alloc_size_sub,
     fs_file_open_sub,
