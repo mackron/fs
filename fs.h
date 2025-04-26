@@ -972,6 +972,19 @@ extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for
 /* END fs.h */
 
 
+/* BEG fs_sysdir.h */
+typedef enum fs_sysdir_type
+{
+    FS_SYSDIR_HOME,
+    FS_SYSDIR_TEMP,
+    FS_SYSDIR_CONFIG,
+    FS_SYSDIR_DATA,
+    FS_SYSDIR_CACHE
+} fs_sysdir_type;
+
+FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* Returns the length of the string, or 0 on failure. If the return value is >= to dstCap it means the output buffer was too small. Use the returned value to know how big to make the buffer. Set pDst to NULL to calculate the required length. */
+/* END fs_sysdir.h */
+
 
 /* BEG fs_helpers.h */
 /*

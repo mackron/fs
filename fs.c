@@ -6004,6 +6004,242 @@ const fs_backend* FS_STDIO = NULL;
 /* END fs.c */
 
 
+/* BEG fs_sysdir.h */
+#if defined(_WIN32)
+#include <shlobj.h>
+#else
+#include <pwd.h>
+
+static const char* fs_sysdir_home(void)
+{
+    const char* pHome;
+    struct passwd* pPasswd;
+
+    pHome = getenv("HOME");
+    if (pHome != NULL) {
+        return pHome;
+    }
+
+    /* Fallback to getpwuid(). */
+    pPasswd = getpwuid(getuid());
+    if (pPasswd != NULL) {
+        return pPasswd->pw_dir;
+    }
+
+    return NULL;
+}
+
+static size_t fs_sysdir_home_subdir(const char* pSubDir, char* pDst, size_t dstCap)
+{
+    const char* pHome = fs_sysdir_home();
+    if (pHome != NULL) {
+        size_t homeLen = strlen(pHome);
+        size_t subDirLen = strlen(pSubDir);
+        size_t fullLength = homeLen + 1 + subDirLen;
+
+        if (fullLength < dstCap) {
+            FS_COPY_MEMORY(pDst, pHome, homeLen);
+            pDst[homeLen] = '/';
+            FS_COPY_MEMORY(pDst + homeLen + 1, pSubDir, subDirLen);
+            pDst[fullLength] = '\0';
+        }
+
+        return fullLength;
+    }
+
+    return 0;
+}
+#endif
+
+FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
+{
+    size_t fullLength = 0;
+
+    #if defined(_WIN32)
+    {
+        HRESULT hr;
+        char pPath[260];
+
+        switch (type)
+        {
+            case FS_SYSDIR_HOME:
+            {
+                hr = SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT, pPath);
+                if (SUCCEEDED(hr)) {
+                    fullLength = strlen(pPath);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pPath, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_TEMP:
+            {
+                fullLength = GetTempPathA(sizeof(pPath), pPath);
+                if (fullLength > 0) {
+                    fullLength -= 1;  /* Remove the trailing slash. */
+
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pPath, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_CONFIG:
+            {
+                hr = SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                if (SUCCEEDED(hr)) {
+                    fullLength = strlen(pPath);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pPath, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_DATA:
+            {
+                hr = SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                if (SUCCEEDED(hr)) {
+                    fullLength = strlen(pPath);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pPath, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_CACHE:
+            {
+                /* There's no proper known folder for caches. We'll just use %LOCALAPPDATA%\Cache. */
+                hr = SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                if (SUCCEEDED(hr)) {
+                    const char* pCacheSuffix = "\\Cache";
+                    size_t localAppDataLen = strlen(pPath);
+                    size_t cacheSuffixLen = strlen(pCacheSuffix);
+                    fullLength = localAppDataLen + cacheSuffixLen;
+
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pPath, localAppDataLen);
+                        FS_COPY_MEMORY(pDst + localAppDataLen, pCacheSuffix, cacheSuffixLen);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            default:
+            {
+                FS_ASSERT(!"Unknown system directory type.");
+            } break;
+        }
+
+        /* Normalize the path to use forward slashes. */
+        if (pDst != NULL && fullLength < dstCap) {
+            size_t i;
+
+            for (i = 0; i < fullLength; i += 1) {
+                if (pDst[i] == '\\') {
+                    pDst[i] = '/';
+                }
+            }
+        }
+    }
+    #else
+    {
+        switch (type)
+        {
+            case FS_SYSDIR_HOME:
+            {
+                const char* pHome = fs_sysdir_home();
+                if (pHome != NULL) {
+                    fullLength = strlen(pHome);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pHome, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_TEMP:
+            {
+                const char* pTemp = getenv("TMPDIR");
+                if (pTemp != NULL) {
+                    fullLength = strlen(pTemp);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pTemp, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                } else {
+                    /* Fallback to /tmp. */
+                    const char* pTmp = "/tmp";
+                    fullLength = strlen(pTmp);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pTmp, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                }
+            } break;
+
+            case FS_SYSDIR_CONFIG:
+            {
+                const char* pConfig = getenv("XDG_CONFIG_HOME");
+                if (pConfig != NULL) {
+                    fullLength = strlen(pConfig);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pConfig, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                } else {
+                    /* Fallback to ~/.config. */
+                    fullLength = fs_sysdir_home_subdir(".config", pDst, dstCap);
+                }
+            } break;
+
+            case FS_SYSDIR_DATA:
+            {
+                const char* pData = getenv("XDG_DATA_HOME");
+                if (pData != NULL) {
+                    fullLength = strlen(pData);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pData, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                } else {
+                    /* Fallback to ~/.local/share. */
+                    fullLength = fs_sysdir_home_subdir(".local/share", pDst, dstCap);
+                }
+            } break;
+
+            case FS_SYSDIR_CACHE:
+            {
+                const char* pCache = getenv("XDG_CACHE_HOME");
+                if (pCache != NULL) {
+                    fullLength = strlen(pCache);
+                    if (pDst != NULL && fullLength < dstCap) {
+                        FS_COPY_MEMORY(pDst, pCache, fullLength);
+                        pDst[fullLength] = '\0';
+                    }
+                } else {
+                    /* Fallback to ~/.cache. */
+                    fullLength = fs_sysdir_home_subdir(".cache", pDst, dstCap);
+                }
+            } break;
+
+            default:
+            {
+                FS_ASSERT(!"Unknown system directory type.");
+            } break;
+        }
+    }
+    #endif
+
+    return fullLength;
+}
+/* END fs_sysdir.h */
+
+
 /* BEG fs_helpers.c */
 FS_API fs_result fs_result_from_errno(int error)
 {

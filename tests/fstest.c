@@ -239,8 +239,30 @@ static int fstest_paths()
 }
 
 
+static int fstest_sysdirs(void)
+{
+    char pPath[1024];
+    size_t length;
 
-static int fstest_default_io()
+    length = fs_sysdir(FS_SYSDIR_HOME, pPath, sizeof(pPath));
+    printf("HOME:   %s\n", (length == 0) ? "ERROR" : pPath);
+
+    length = fs_sysdir(FS_SYSDIR_TEMP, pPath, sizeof(pPath));
+    printf("TEMP:   %s\n", (length == 0) ? "ERROR" : pPath);
+
+    length = fs_sysdir(FS_SYSDIR_CONFIG, pPath, sizeof(pPath));
+    printf("CONFIG: %s\n", (length == 0) ? "ERROR" : pPath);
+
+    length = fs_sysdir(FS_SYSDIR_DATA, pPath, sizeof(pPath));
+    printf("DATA:   %s\n", (length == 0) ? "ERROR" : pPath);
+
+    length = fs_sysdir(FS_SYSDIR_CACHE, pPath, sizeof(pPath));
+    printf("CACHE:  %s\n", (length == 0) ? "ERROR" : pPath);
+
+    return 0;
+}
+
+static int fstest_default_io(void)
 {
     /* TODO: Implement me. */
 
