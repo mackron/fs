@@ -5126,10 +5126,6 @@ static fs_result fs_mktmp_stdio(fs* pFS, const char* pPrefix, char* pTmpPath, si
             }
 
             /* We need to append the directory part of the prefix so we can create the directory. */
-            if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
-                return FS_PATH_TOO_LONG;
-            }
-
             pPrefixName = fs_path_file_name(pPrefix, FS_NULL_TERMINATED);
             FS_ASSERT(pPrefixName != NULL);
 
@@ -5142,6 +5138,12 @@ static fs_result fs_mktmp_stdio(fs* pFS, const char* pPrefix, char* pTmpPath, si
                 pPrefixDir = pPrefix;
                 prefixDirLen = (size_t)(pPrefixName - pPrefix);
                 prefixDirLen -= 1; /* Remove the trailing slash from the prefix directory. */
+            }
+
+            if (prefixDirLen > 0) {
+                if (fs_strcat_s(pTmpPath, tmpPathCap, "/") != 0) {
+                    return FS_PATH_TOO_LONG;
+                }
             }
 
             if (fs_strncat_s(pTmpPath, tmpPathCap, pPrefixDir, prefixDirLen) != 0) {
