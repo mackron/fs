@@ -2230,10 +2230,11 @@ static fs_result fs_file_seek_zip(fs_file* pFile, fs_int64 offset, fs_seek_origi
         return FS_INVALID_ARGS;
     }
 
+    newSeekTarget += offset;
     if (newSeekTarget < 0) {
         return FS_BAD_SEEK;  /* Trying to seek before the start of the file. */
     }
-    if (newSeekTarget > pZipFile->info.uncompressedSize) {
+    if ((fs_uint64)newSeekTarget > pZipFile->info.uncompressedSize) {
         return FS_BAD_SEEK;  /* Trying to seek beyond the end of the file. */
     }
 
