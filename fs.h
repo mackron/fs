@@ -356,7 +356,24 @@ Recognized system directories include the following:
   - FS_SYSDIR_CONFIG
   - FS_SYSDIR_DATA
   - FS_SYSDIR_CACHE
-  
+
+It's often useful to mount a system directory to a virtual path. To make this easier, you can use
+`fs_mount_sysdir()`:
+
+```c
+fs_mount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", "/config", FS_READ | FS_WRITE);
+```
+
+This function requires that you specify a sub-directory of the system directory to mount. The reason
+for this is to encourage the application to use good practice to avoid cluttering the file system.
+
+You can use `fs_unmount_sysdir()` to unmount a system directory. When using this you must specify the
+sub-directory you used when mounting it:
+
+```c
+fs_unmount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", FS_READ | FS_WRITE);
+```
+
 
 
 1.5. Temporary Files
@@ -885,6 +902,28 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 /* END fs_stream.h */
 
 
+/* BEG fs_sysdir.h */
+typedef enum fs_sysdir_type
+{
+    FS_SYSDIR_HOME,
+    FS_SYSDIR_TEMP,
+    FS_SYSDIR_CONFIG,
+    FS_SYSDIR_DATA,
+    FS_SYSDIR_CACHE
+} fs_sysdir_type;
+
+FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* Returns the length of the string, or 0 on failure. If the return value is >= to dstCap it means the output buffer was too small. Use the returned value to know how big to make the buffer. Set pDst to NULL to calculate the required length. */
+/* END fs_sysdir.h */
+
+
+/* BEG fs_mktmp.h */
+/* Make sure these options do not conflict with FS_NO_CREATE_DIRS. */
+#define FS_MKTMP_DIR  0x0800  /* Create a temporary directory. */
+#define FS_MKTMP_FILE 0x1000  /* Create a temporary file. */
+
+FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
+/* END fs_mktmp.h */
+
 
 /* BEG fs.h */
 /* Open mode flags. */
@@ -904,6 +943,8 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 #define FS_ONLY_MOUNTS              0x0100  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
 #define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
 #define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
+
+#define FS_LOWEST_PRIORITY          0x2000  /* Only used with mounting. When set will create the mount with a lower priority to existing mounts. */
 
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
@@ -1029,6 +1070,8 @@ FS_API void fs_free_iterator(fs_iterator* pIterator);
 
 FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
 FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint);
+FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pMountPoint, int options);
+FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, int options);
 FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_mount_priority priority);
 FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS);   /* Must be matched up with fs_mount_fs(). */
 
@@ -1056,29 +1099,6 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
 /* Default Backend. */
 extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
 /* END fs.h */
-
-
-/* BEG fs_sysdir.h */
-typedef enum fs_sysdir_type
-{
-    FS_SYSDIR_HOME,
-    FS_SYSDIR_TEMP,
-    FS_SYSDIR_CONFIG,
-    FS_SYSDIR_DATA,
-    FS_SYSDIR_CACHE
-} fs_sysdir_type;
-
-FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* Returns the length of the string, or 0 on failure. If the return value is >= to dstCap it means the output buffer was too small. Use the returned value to know how big to make the buffer. Set pDst to NULL to calculate the required length. */
-/* END fs_sysdir.h */
-
-
-/* BEG fs_mktmp.h */
-/* Make sure these options do not conflict with FS_NO_CREATE_DIRS. */
-#define FS_MKTMP_DIR  0x0800  /* Create a temporary directory. */
-#define FS_MKTMP_FILE 0x1000  /* Create a temporary file. */
-
-FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
-/* END fs_mktmp.h */
 
 
 /* BEG fs_helpers.h */

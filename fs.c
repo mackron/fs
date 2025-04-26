@@ -4407,6 +4407,163 @@ FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
     return FS_SUCCESS;
 }
 
+static size_t fs_sysdir_append(fs_sysdir_type type, char* pDst, size_t dstCap, const char* pSubDir)
+{
+    size_t sysDirLen;
+    size_t subDirLen;
+    size_t totalLen;
+
+    if (pDst == NULL || pSubDir == NULL) {
+        return 0;
+    }
+
+    sysDirLen = fs_sysdir(type, pDst, dstCap);
+    if (sysDirLen == 0) {
+        return 0;   /* Failed to retrieve the system directory. */
+    }
+
+    subDirLen = strlen(pSubDir);
+
+    totalLen = sysDirLen + 1 + subDirLen;   /* +1 for the separator. */
+    if (totalLen < dstCap) {
+        pDst[sysDirLen] = '/';
+        FS_COPY_MEMORY(pDst + sysDirLen + 1, pSubDir, subDirLen);
+        pDst[totalLen] = '\0';
+    }
+
+    return totalLen;
+}
+
+FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pMountPoint, int options)
+{
+    char  pPathToMountStack[1024];
+    char* pPathToMountHeap = NULL;
+    char* pPathToMount;
+    size_t pathToMountLen;
+    fs_result result;
+
+    if (pFS == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    if (pMountPoint == NULL) {
+        pMountPoint = "";
+    }
+
+    /*
+    We're enforcing a sub-directory with this function to encourage applications to use good
+    practice with with directory structures.
+    */
+    if (pSubDir == NULL || pSubDir[0] == '\0') {
+        return FS_INVALID_ARGS;
+    }
+
+    pathToMountLen = fs_sysdir_append(type, pPathToMountStack, sizeof(pPathToMountStack), pSubDir);
+    if (pathToMountLen == 0) {
+        return FS_ERROR;    /* Failed to retrieve the system directory. */
+    }
+
+    if (pathToMountLen < sizeof(pPathToMountStack)) {
+        pPathToMount = pPathToMountStack;
+    } else {
+        pathToMountLen += 1;    /* +1 for the null terminator. */
+
+        pPathToMountHeap = (char*)fs_malloc(pathToMountLen, fs_get_allocation_callbacks(pFS));
+        if (pPathToMountHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        fs_sysdir_append(type, pPathToMountHeap, pathToMountLen, pSubDir);
+        pPathToMount = pPathToMountHeap;
+    }
+
+    /* At this point we should have the path we want to mount. Now we can do the actual mounting. */
+
+    /* Mount for reading if requested. */
+    if ((options & FS_READ) == FS_READ) {
+        result = fs_mount(pFS, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST);
+        if (result != FS_SUCCESS) {
+            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+    }
+
+    /* Mount for writing if requested. */
+    if ((options & FS_WRITE) == FS_WRITE) {
+        result = fs_mount_write(pFS, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST);
+        if (result != FS_SUCCESS) {
+            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+    }
+
+    fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+    return FS_SUCCESS;
+}
+
+FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, int options)
+{
+    char  pPathToMountStack[1024];
+    char* pPathToMountHeap = NULL;
+    char* pPathToMount;
+    size_t pathToMountLen;
+    fs_result result;
+
+    if (pFS == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /*
+    We're enforcing a sub-directory with this function to encourage applications to use good
+    practice with with directory structures.
+    */
+    if (pSubDir == NULL || pSubDir[0] == '\0') {
+        return FS_INVALID_ARGS;
+    }
+
+    pathToMountLen = fs_sysdir_append(type, pPathToMountStack, sizeof(pPathToMountStack), pSubDir);
+    if (pathToMountLen == 0) {
+        return FS_ERROR;    /* Failed to retrieve the system directory. */
+    }
+
+    if (pathToMountLen < sizeof(pPathToMountStack)) {
+        pPathToMount = pPathToMountStack;
+    } else {
+        pathToMountLen += 1;    /* +1 for the null terminator. */
+
+        pPathToMountHeap = (char*)fs_malloc(pathToMountLen, fs_get_allocation_callbacks(pFS));
+        if (pPathToMountHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        fs_sysdir_append(type, pPathToMountHeap, pathToMountLen, pSubDir);
+        pPathToMount = pPathToMountHeap;
+    }
+
+    /* At this point we should have the path we want to mount. Now we can do the actual mounting. */
+
+    /* Mount for reading if requested. */
+    if ((options & FS_READ) == FS_READ) {
+        result = fs_unmount(pFS, pPathToMount);
+        if (result != FS_SUCCESS) {
+            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+    }
+
+    /* Mount for writing if requested. */
+    if ((options & FS_WRITE) == FS_WRITE) {
+        result = fs_unmount_write(pFS, pPathToMount);
+        if (result != FS_SUCCESS) {
+            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+    }
+
+    fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
+    return FS_SUCCESS;
+}
+
 FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_mount_priority priority)
 {
     fs_result iteratorResult;
@@ -4421,6 +4578,8 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_
     if (pMountPoint == NULL) {
         pMountPoint = "";
     }
+
+    /* TODO: This is only valid with read mode. */
 
     /*
     We don't allow duplicates. An archive can be bound to multiple mount points, but we don't want to have the same
