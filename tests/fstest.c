@@ -244,6 +244,15 @@ static int fstest_default_io()
 {
     /* TODO: Implement me. */
 
+    printf("Temporaries\n");
+    {
+        char tmpPath[1024];
+        fs_result result;
+
+        result = fs_mktmp(NULL, ".testing/abc", tmpPath, sizeof(tmpPath), FS_MKTMP_DIR);
+        fstest_print_result_f("  mktmp: %s", (result != FS_SUCCESS), tmpPath);
+    }
+
     return 0;
 }
 
