@@ -36,13 +36,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    result = fs_mount(pFS, "testvectors/mounting/src1", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
+    result = fs_mount(pFS, "testvectors/mounting/src1", "mnt", FS_READ);
     if (result != FS_SUCCESS) {
         printf("Failed to mount directory: %d\n", result);
         return 1;
     }
 
-    result = fs_mount(pFS, "testvectors/mounting/src2", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
+    result = fs_mount(pFS, "testvectors/mounting/src2", "mnt", FS_READ);
     if (result != FS_SUCCESS) {
         printf("Failed to mount directory: %d\n", result);
         return 1;

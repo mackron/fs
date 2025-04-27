@@ -1,7 +1,7 @@
 /*
 Shows the most basic of basic usage of the library.
 
-This will simply load a file from the default file system and print it to the console.
+This will simply load a file from the default file system and print it to stdout.
 
 At the most basic level, a `fs` object is not required which is what this example demonstrates.
 */

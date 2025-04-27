@@ -1617,6 +1617,12 @@ typedef struct fs_file
     size_t backendDataSize;
 } fs_file;
 
+typedef enum fs_mount_priority
+{
+    FS_MOUNT_PRIORITY_HIGHEST = 0,
+    FS_MOUNT_PRIORITY_LOWEST  = 1
+} fs_mount_priority;
+
 
 static void fs_gc_archives_nolock(fs* pFS, int policy); /* Defined further down in the file. */
 
@@ -4310,7 +4316,7 @@ FS_API void fs_free_iterator(fs_iterator* pIterator)
 }
 
 
-static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pMountPoint, int options)
+static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options)
 {
     fs_result result;
     fs_mount_list_iterator iterator;
@@ -4321,8 +4327,8 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
     int openMode;
 
     FS_ASSERT(pFS != NULL);
-    FS_ASSERT(pPathToMount != NULL);
-    FS_ASSERT(pMountPoint != NULL);
+    FS_ASSERT(pActualPath != NULL);
+    FS_ASSERT(pVirtualPath != NULL);
     FS_ASSERT((options & FS_READ) == FS_READ);
 
     /*
@@ -4331,7 +4337,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
     want to have any duplicates where the same path is mounted to the same mount point.
     */
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
-        if (strcmp(pPathToMount, iterator.pPath) == 0 && strcmp(pMountPoint, iterator.pMountPointPath) == 0) {
+        if (strcmp(pActualPath, iterator.pPath) == 0 && strcmp(pVirtualPath, iterator.pMountPointPath) == 0) {
             return FS_SUCCESS;  /* Just pretend we're successful. */
         }
     }
@@ -4340,7 +4346,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
     Getting here means we're not mounting a duplicate so we can now add it. We'll be either adding it to
     the end of the list, or to the beginning of the list depending on the priority.
     */
-    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, pPathToMount, pMountPoint, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
+    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, pActualPath, pVirtualPath, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
     if (pMountPoints == NULL) {
         return FS_OUT_OF_MEMORY;
     }
@@ -4354,7 +4360,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
     openMode = FS_READ | FS_VERBOSE;
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
-    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pPathToMount[0] != '\0') ? pPathToMount : ".", FS_IGNORE_MOUNTS, &fileInfo);
+    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -4363,7 +4369,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
         pNewMountPoint->pArchive = NULL;
         pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
     } else {
-        result = fs_open_archive(pFS, pPathToMount, openMode, &pNewMountPoint->pArchive);
+        result = fs_open_archive(pFS, pActualPath, openMode, &pNewMountPoint->pArchive);
         if (result != FS_SUCCESS) {
             return result;
         }
@@ -4374,19 +4380,19 @@ static fs_result fs_mount_read(fs* pFS, const char* pPathToMount, const char* pM
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount_read(fs* pFS, const char* pPathToMount_NotMountPoint, int options)
+FS_API fs_result fs_unmount_read(fs* pFS, const char* pActualPath, int options)
 {
     fs_result iteratorResult;
     fs_mount_list_iterator iterator;
 
-    if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
+    if (pFS == NULL || pActualPath == NULL) {
         return FS_INVALID_ARGS;
     }
 
     FS_UNUSED(options);
 
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
-        if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
+        if (strcmp(pActualPath, iterator.pPath) == 0) {
             if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
                 fs_close_archive(iterator.pArchive);
             }
@@ -4406,27 +4412,131 @@ FS_API fs_result fs_unmount_read(fs* pFS, const char* pPathToMount_NotMountPoint
     return FS_SUCCESS;
 }
 
-
-FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority)
+static fs_result fs_mount_write(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options)
 {
-    if (pFS == NULL || pPathToMount == NULL) {
+    fs_mount_list_iterator iterator;
+    fs_result iteratorResult;
+    fs_mount_point* pNewMountPoint;
+    fs_mount_list* pMountList;
+
+    if (pFS == NULL || pActualPath == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    if (pMountPoint == NULL) {
-        pMountPoint = "";
+    if (pVirtualPath == NULL) {
+        pVirtualPath = "";
     }
 
-    return fs_mount_read(pFS, pPathToMount, pMountPoint, FS_READ | (priority == FS_MOUNT_PRIORITY_LOWEST) ? FS_LOWEST_PRIORITY : 0);
+    /* Like with regular read mount points we'll want to check for duplicates. */
+    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
+        if (strcmp(pActualPath, iterator.pPath) == 0 && strcmp(pVirtualPath, iterator.pMountPointPath) == 0) {
+            return FS_SUCCESS;  /* Just pretend we're successful. */
+        }
+    }
+
+    /* Getting here means we're not mounting a duplicate so we can now add it. */
+    pMountList = fs_mount_list_alloc(pFS->pWriteMountPoints, pActualPath, pVirtualPath, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
+    if (pMountList == NULL) {
+        return FS_OUT_OF_MEMORY;
+    }
+
+    pFS->pWriteMountPoints = pMountList;
+    
+    /* We don't support mounting archives. Explicitly disable this. */
+    pNewMountPoint->pArchive = NULL;
+    pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
+
+    /* Since we'll be wanting to write out files to the mount point we should ensure the folder actually exists. */
+    if ((options & FS_NO_CREATE_DIRS) == 0) {
+        fs_mkdir(pFS, pActualPath, FS_IGNORE_MOUNTS);
+    }
+
+    return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint)
+static fs_result fs_unmount_write(fs* pFS, const char* pActualPath, int options)
 {
+    fs_result iteratorResult;
+    fs_mount_list_iterator iterator;
+
+    FS_ASSERT(pFS != NULL);
+    FS_ASSERT(pActualPath != NULL);
+
+    FS_UNUSED(options);
+
+    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
+        if (strcmp(pActualPath, iterator.pPath) == 0) {
+            fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
+
+            /*
+            Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
+            the members in preparation for the next iteration.
+            */
+            fs_mount_list_iterator_resolve_members(&iterator, iterator.internal.cursor);
+        } else {
+            iteratorResult = fs_mount_list_next(&iterator);
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
+
+FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options)
+{
+    if (pFS == NULL || pActualPath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    if (pVirtualPath == NULL) {
+        pVirtualPath = "";
+    }
+
+    /* At least READ or WRITE must be specified. */
+    if ((options & (FS_READ | FS_WRITE)) == 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    if ((options & FS_READ) == FS_READ) {
+        fs_result result = fs_mount_read(pFS, pActualPath, pVirtualPath, options);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+    }
+
+    if ((options & FS_WRITE) == FS_WRITE) {
+        fs_result result = fs_mount_write(pFS, pActualPath, pVirtualPath, options);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
+FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint, int options)
+{
+    fs_result result;
+
     if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    return fs_unmount_read(pFS, pPathToMount_NotMountPoint, FS_READ);
+    if ((options & FS_READ) == FS_READ) {
+        result = fs_unmount_read(pFS, pPathToMount_NotMountPoint, options);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+    }
+
+    if ((options & FS_WRITE) == FS_WRITE) {
+        result = fs_unmount_write(pFS, pPathToMount_NotMountPoint, options);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+    }
+
+    return FS_SUCCESS;
 }
 
 static size_t fs_sysdir_append(fs_sysdir_type type, char* pDst, size_t dstCap, const char* pSubDir)
@@ -4456,7 +4566,7 @@ static size_t fs_sysdir_append(fs_sysdir_type type, char* pDst, size_t dstCap, c
     return totalLen;
 }
 
-FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pMountPoint, int options)
+FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pVirtualPath, int options)
 {
     char  pPathToMountStack[1024];
     char* pPathToMountHeap = NULL;
@@ -4468,8 +4578,8 @@ FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubD
         return FS_INVALID_ARGS;
     }
 
-    if (pMountPoint == NULL) {
-        pMountPoint = "";
+    if (pVirtualPath == NULL) {
+        pVirtualPath = "";
     }
 
     /*
@@ -4500,27 +4610,10 @@ FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubD
     }
 
     /* At this point we should have the path we want to mount. Now we can do the actual mounting. */
-
-    /* Mount for reading if requested. */
-    if ((options & FS_READ) == FS_READ) {
-        result = fs_mount_read(pFS, pPathToMount, pMountPoint, options);
-        if (result != FS_SUCCESS) {
-            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-    }
-
-    /* Mount for writing if requested. */
-    if ((options & FS_WRITE) == FS_WRITE) {
-        result = fs_mount_write(pFS, pPathToMount, pMountPoint, options);
-        if (result != FS_SUCCESS) {
-            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-    }
-
+    result = fs_mount(pFS, pPathToMount, pVirtualPath, options);
     fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-    return FS_SUCCESS;
+
+    return result;
 }
 
 FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, int options)
@@ -4563,30 +4656,13 @@ FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSu
     }
 
     /* At this point we should have the path we want to mount. Now we can do the actual mounting. */
-
-    /* Mount for reading if requested. */
-    if ((options & FS_READ) == FS_READ) {
-        result = fs_unmount(pFS, pPathToMount);
-        if (result != FS_SUCCESS) {
-            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-    }
-
-    /* Mount for writing if requested. */
-    if ((options & FS_WRITE) == FS_WRITE) {
-        result = fs_unmount_write(pFS, pPathToMount);
-        if (result != FS_SUCCESS) {
-            fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-    }
+    result = fs_unmount(pFS, pPathToMount, options);
 
     fs_free(pPathToMountHeap, fs_get_allocation_callbacks(pFS));
-    return FS_SUCCESS;
+    return result;
 }
 
-FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_mount_priority priority)
+FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, int options)
 {
     fs_result iteratorResult;
     fs_mount_list_iterator iterator;
@@ -4597,18 +4673,21 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_
         return FS_INVALID_ARGS;
     }
 
-    if (pMountPoint == NULL) {
-        pMountPoint = "";
+    if (pVirtualPath == NULL) {
+        pVirtualPath = "";
     }
 
-    /* TODO: This is only valid with read mode. */
+    /* We don't support write mode when mounting an FS. */
+    if ((options & FS_WRITE) == FS_WRITE) {
+        return FS_INVALID_ARGS;
+    }
 
     /*
     We don't allow duplicates. An archive can be bound to multiple mount points, but we don't want to have the same
     archive mounted to the same mount point multiple times.
     */
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
-        if (pOtherFS == iterator.pArchive && strcmp(pMountPoint, iterator.pMountPointPath) == 0) {
+        if (pOtherFS == iterator.pArchive && strcmp(pVirtualPath, iterator.pMountPointPath) == 0) {
             return FS_SUCCESS;  /* Just pretend we're successful. */
         }
     }
@@ -4617,7 +4696,7 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_
     Getting here means we're not mounting a duplicate so we can now add it. We'll be either adding it to
     the end of the list, or to the beginning of the list depending on the priority.
     */
-    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, "", pMountPoint, priority, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
+    pMountPoints = fs_mount_list_alloc(pFS->pReadMountPoints, "", pVirtualPath, ((options & FS_LOWEST_PRIORITY) == FS_LOWEST_PRIORITY) ? FS_MOUNT_PRIORITY_LOWEST : FS_MOUNT_PRIORITY_HIGHEST, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
     if (pMountPoints == NULL) {
         return FS_OUT_OF_MEMORY;
     }
@@ -4630,7 +4709,7 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS)
+FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options)
 {
     fs_result iteratorResult;
     fs_mount_list_iterator iterator;
@@ -4638,6 +4717,8 @@ FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS)
     if (pFS == NULL || pOtherFS == NULL) {
         return FS_INVALID_ARGS;
     }
+
+    FS_UNUSED(options);
 
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
         if (iterator.pArchive == pOtherFS) {
@@ -4649,69 +4730,6 @@ FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS)
     return FS_SUCCESS;
 }
 
-
-FS_API fs_result fs_mount_write(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority)
-{
-    fs_mount_list_iterator iterator;
-    fs_result iteratorResult;
-    fs_mount_point* pNewMountPoint;
-    fs_mount_list* pMountList;
-
-    if (pFS == NULL || pPathToMount == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    if (pMountPoint == NULL) {
-        pMountPoint = "";
-    }
-
-    /* Like with regular read mount points we'll want to check for duplicates. */
-    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
-        if (strcmp(pPathToMount, iterator.pPath) == 0 && strcmp(pMountPoint, iterator.pMountPointPath) == 0) {
-            return FS_SUCCESS;  /* Just pretend we're successful. */
-        }
-    }
-
-    /* Getting here means we're not mounting a duplicate so we can now add it. */
-    pMountList = fs_mount_list_alloc(pFS->pWriteMountPoints, pPathToMount, pMountPoint, priority, fs_get_allocation_callbacks(pFS), &pNewMountPoint);
-    if (pMountList == NULL) {
-        return FS_OUT_OF_MEMORY;
-    }
-
-    pFS->pWriteMountPoints = pMountList;
-    
-    /* We don't support mounting archives. Explicitly disable this. */
-    pNewMountPoint->pArchive = NULL;
-    pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
-
-    return FS_SUCCESS;
-}
-
-FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoint)
-{
-    fs_result iteratorResult;
-    fs_mount_list_iterator iterator;
-
-    if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
-        if (strcmp(pPathToMount_NotMountPoint, iterator.pPath) == 0) {
-            fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
-
-            /*
-            Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
-            the members in preparation for the next iteration.
-            */
-            fs_mount_list_iterator_resolve_members(&iterator, iterator.internal.cursor);
-        } else {
-            iteratorResult = fs_mount_list_next(&iterator);
-        }
-    }
-
-    return FS_SUCCESS;
-}
 
 FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize)
 {

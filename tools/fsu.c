@@ -138,8 +138,8 @@ int extract(int argc, char** argv)
     }
 
     /* TODO: Extract to a temp folder and then move to the output target. */
-    /*fs_mount_write(pFS, pTempPath, "NULL", FS_MOUNT_PRIORITY_HIGHEST);*/
-    fs_mount_write(pFS, pOutputPath, NULL, FS_MOUNT_PRIORITY_HIGHEST);
+    /*fs_mount(pFS, pTempPath, "NULL", FS_WRITE);*/
+    fs_mount(pFS, pOutputPath, NULL, FS_WRITE);
 
     
 

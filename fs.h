@@ -39,22 +39,125 @@ if (result != FS_SUCCESS) {
 }
 ```
 
+If you don't need any of the advanced features of the library, you can just pass in NULL for the
+`fs` object which will just use the native file system like normal:
+
+```c
+fs_file_open(NULL, "file.txt", FS_READ, &pFile);
+```
+
+From here on out, examples will use an `fs` object for the sake of consistency, but all basic IO
+APIs that do not use things like mounting and archive registration will work with NULL.
+
+To close a file, use `fs_file_close()`:
+
+```c
+fs_file_close(pFile);
+```
+
 Reading content from the file is very standard:
 
 ```c
 size_t bytesRead;
 
-result = fs_file_read(pFS, pBuffer, bytesToRead, &bytesRead);
+result = fs_file_read(pFile, pBuffer, bytesToRead, &bytesRead);
 if (result != FS_SUCCESS) {
     // Failed to read file. You can use FS_AT_END to check if reading failed due to being at EOF.
 }
 ```
 
 In the code above, the number of bytes actually read is output to a variable. You can use this to
-determine if you've reached the end of the file. You can also check if the result is FS_AT_END.
+determine if you've reached the end of the file. You can also check if the result is FS_AT_END. You
+can pass in null for the last parameter of `fs_file_read()` in which an error will be returned if
+the exact number of bytes requested could not be read.
 
-To do more advanced stuff, such as opening from archives, you'll need to configure the `fs` object
-with a config, which you pass into `fs_init()`:
+Writing works the same way as reading:
+
+```c
+fs_file* pFile;
+
+result = fs_file_open(pFS, "file.txt", FS_WRITE, &pFile);
+if (result != FS_SUCCESS) {
+    // Failed to open file.
+}
+
+result = fs_file_write(pFile, pBuffer, bytesToWrite, &bytesWritten);
+```
+
+The `FS_WRITE` option will default to `FS_TRUNCATE`. You can also use `FS_APPEND` and
+`FS_OVERWRITE`:
+
+```c
+fs_file_open(pFS, "file.txt", FS_APPEND, &pFile);   // You need not specify FS_WRITE when using FS_TRUNCATE, FS_APPEND or FS_OVERWRITE as it is implied.
+```
+
+Files can be opened for both reading and writing by simply combining the two:
+
+```c
+fs_file_open(pFS, "file.txt", FS_READ | FS_WRITE, &pFile);
+```
+
+Seeking and telling is very standard as well:
+
+```c
+fs_file_seek(pFile, 0, FS_SEEK_END);
+
+fs_int64 cursorPos;
+fs_file_tell(pFile, &cursorPos);
+```
+
+Retrieving information about a file is done with `fs_file_info()`:
+
+```c
+fs_file_info info;
+fs_file_info(pFile, &info);
+```
+
+If you want to get information about a file without opening it, you can use `fs_info()`:
+
+```c
+fs_file_info info;
+fs_info(pFS, "file.txt", &info);
+```
+
+A file handle can be duplicated with `fs_file_duplicate()`:
+
+```c
+fs_file* pFileDup;
+fs_file_duplicate(pFile, &pFileDup);
+```
+
+Note that this will only duplicate the file handle. It does not make a copy of the file on the file
+system itself. The duplicated file handle will be entirely independent of the original handle.
+
+To delete a file, use `fs_remove()`:
+
+```c
+fs_remove(pFS, "file.txt");
+```
+
+Files can be renamed and moved with `fs_rename()`:
+
+```c
+fs_rename(pFS, "file.txt", "new-file.txt");
+```
+
+To create a directory, use `fs_mkdir()`:
+
+```c
+fs_mkdir(pFS, "new-directory", 0);
+```
+
+By default, `fs_mkdir()` will create the directory hierarchy for you. If you want to disable this
+so it fails if the directory hierarchy doesn't exist, you can use `FS_NO_CREATE_DIRS`:
+
+```c
+fs_mkdir(pFS, "new-directory", FS_NO_CREATE_DIRS);
+```
+
+1.2. Archives
+-------------
+To enable support for archives, you need an `fs` object, and it must be initialized with a config:
 
 ```c
 #include "extras/backends/zip/fs_zip.h" // <-- This is where FS_ZIP is declared.
@@ -72,6 +175,7 @@ fs_config fsConfig = fs_config_init(FS_STDIO, NULL, NULL);
 fsConfig.pArchiveTypes    = pArchiveTypes;
 fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
 
+fs* pFS;
 fs_init(&fsConfig, &pFS);
 ```
 
@@ -79,7 +183,7 @@ In the code above we are registering support for ZIP archives (`FS_ZIP`) and Qua
 (`FS_PAK`). Whenever a file with a "zip" or "pak" extension is found, the library will be able to
 access the archive. The library will determine whether or not a file is an archive based on it's
 extension. You can use whatever extension you would like for a backend, and you can associated
-multiple extensions to the same backend. You can also associated different backends to the same
+multiple extensions to the same backend. You can also associate different backends to the same
 extension, in which case the library will use the first one that works. If the extension of a file
 does not match with one of the registered archive types it'll assume it's not an archive and will
 skip it. Below is an example of one way you can read from an archive:
@@ -117,8 +221,8 @@ if (result != FS_SUCCESS) {
 }
 ```
 
-In the example above, `FS_OPAQUE` is telling the library to treat archives as if they're totally
-opaque and that the files within cannot be accessed.
+In the example above, opening the file will fail because `FS_OPAQUE` is telling the library to
+treat archives as if they're totally opaque which means the files within cannot be accessed.
 
 Up to this point the handling of archives has been done automatically via `fs_file_open()`, however
 the library allows you to manage archives manually. To do this you just initialize a `fs` object to
@@ -171,30 +275,40 @@ In addition to the above, you can use `fs_open_archive()` to open an archive fro
 
 ```c
 fs* pArchive;
+fs_open_archive(pFS, "archive.zip", FS_READ, &pArchive);
 
-result = fs_open_archive(pFS, "archive.zip", FS_READ, &pArchive);
+...
+
+// When tearing down, do *not* use `fs_uninit()`. Use `fs_close_archive()` instead.
+fs_close_archive(pArchive);
 ```
 
-When opening an archive like this, it will inherit the archive types from the parent `fs` object
-and will therefore support archives within archives. Use caution when doing this because if both
-archives are compressed you will get a big performance hit. Only the inner-most archive should be
-compressed.
+Note that you need to use `fs_close_archive()` when opening an archive like this. The reason for
+this is that there's some internal reference counting and memory management happening under the
+hood. You should only call `fs_close_archive()` if `fs_open_archive()` succeeds.
+
+When opening an archive with `fs_open_archive()`, it will inherit the archive types from the parent
+`fs` object and will therefore support archives within archives. Use caution when doing this
+because if both archives are compressed you will get a big performance hit. Only the inner-most
+archive should be compressed.
 
 
-1.2. Mounting
+1.3. Mounting
 -------------
-There is no notion of a "current directory" in this library. By default, relative paths will be
-relative to whatever the backend deems appropriate. In practice, this means the "current" directory
-for the default system backend, and the root directory for archives. There is still control over
-how to load files from a relative path, however: mounting.
-
-You can mount a physical directory to virtual path, similar in concept to Unix operating systems.
-The difference, however, is that you can mount multiple directories to the same mount point in
-which case a prioritization system will be used. There are separate mount points for reading and
-writing. Below is an example of mounting for reading:
+There is no ability to change the working directory in this library. Instead you can mount a
+physical directory to virtual path, similar in concept to Unix operating systems. The difference,
+however, is that you can mount multiple directories to the same mount point in which case a
+prioritization system will be used. There are separate mount points for reading and writing. Below
+is an example of mounting for reading:
 
 ```c
-fs_mount(pFS, "/some/actual/path", NULL, FS_MOUNT_PRIORITY_HIGHEST);
+fs_mount(pFS, "/some/actual/path", NULL, FS_READ);
+```
+
+Do unmount, you need to specify the actual path, not the virtual path:
+
+```c
+fs_unmount(pFS, "/some/actual/path", FS_READ);
 ```
 
 In the example above, `NULL` is equivalent to an empty path. If, for example, you have a file with
@@ -208,76 +322,75 @@ You don't need to specify the "/some/actual/path" part because it's handled by t
 specify a virtual path, you can do something like the following:
 
 ```c
-fs_mount(pFS, "/some/actual/path", "assets", FS_MOUNT_PRIORITY_HIGHEST);
+fs_mount(pFS, "/some/actual/path", "assets", FS_READ);
 ```
 
 In this case, loading files that are physically located in "/some/actual/path" would need to be
-prexied with "assets":
+prefixed with "assets":
 
 ```c
 fs_file_open(pFS, "assets/file.txt", FS_READ, &pFile);
 ```
 
-Archives can also be mounted:
+You can mount multiple paths to the same virtual path in which case a prioritization system will be
+used:
 
 ```c
-fs_mount(pFS, "/game/data/base/assets.zip", "assets", FS_MOUNT_PRIORITY_HIGHEST);
+fs_mount(pFS, "/usr/share/mygame/gamedata/base",              "gamedata", FS_READ); // Base game. Lowest priority.
+fs_mount(pFS, "/home/user/.local/share/mygame/gamedata/mod1", "gamedata", FS_READ); // Mod #1. Middle priority.
+fs_mount(pFS, "/home/user/.local/share/mygame/gamedata/mod2", "gamedata", FS_READ); // Mod #2. Highest priority.
 ```
 
-You can mount multiple paths to the same mount point:
+The example above shows a basic system for setting up some kind of modding support in a game. In
+this case, attempting to load a file from the "gamedata" mount point will first check the "mod2"
+directory, and if it cannot be opened from there, it will check "mod1", and finally it'll fall back
+to the base game data.
+
+Internally there are a separate set of mounts for reading and writing. To set up a mount point for
+opening files in write mode, you need to specify the `FS_WRITE` option:
 
 ```c
-fs_mount(pFS, "/game/data/base.zip", "assets", FS_MOUNT_PRIORITY_HIGHEST);
-fs_mount(pFS, "/game/data/mod1.zip", "assets", FS_MOUNT_PRIORITY_HIGHEST);
-fs_mount(pFS, "/game/data/mod2.zip", "assets", FS_MOUNT_PRIORITY_HIGHEST);
+fs_mount(pFS, "/home/user/.config/mygame",            "config", FS_WRITE);
+fs_mount(pFS, "/home/user/.local/share/mygame/saves", "saves",  FS_WRITE);
 ```
 
-In the example above, the "base.zip" archive is mounted first. Then "mod1.zip" is mounted, which
-takes higher priority over "base.zip". Then "mod2.zip" is mounted which takes higher priority
-again. With this set up, any file that is loaded from the "assets" mount point will first be loaded
-from "mod2.zip", and if it doesn't exist there, "mod1.zip", and if not there, finally "base.zip".
-You could use this set up to support simple modding prioritization in a game, for example.
-
-If the file cannot be opened from any mounts it will attempt to open the file from the backend's
-default search path. Mounts always take priority. When opening in transparent mode with
-`FS_TRANSPARENT` (default), it will first try opening the file as if it were not in an archive. If
-that fails, it will look inside archives.
-
-You can also mount directories for writing:
-
-```c
-fs_mount_write(pFS, "/home/user/.config/mygame", "config", FS_MOUNT_PRIORITY_HIGHEST);
-```
-
-You can then open a file for writing like so:
-
-```c
-fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile);
-```
-
-When opening a file in write mode, the prefix is what determines which write mount point to use.
-You can therefore have multiple write mounts:
-
-```c
-fs_mount_write(pFS, "/home/user/.config/mygame",            "config", FS_MOUNT_PRIORITY_HIGHEST);
-fs_mount_write(pFS, "/home/user/.local/share/mygame/saves", "saves",  FS_MOUNT_PRIORITY_HIGHEST);
-```
-
-Now you can write out different types of files, with the prefix being used to determine where it'll
-be saved:
+To open a file for writing, you need only prefix the path with the mount's virtual path, exactly
+like read mode:
 
 ```c
 fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile); // Prefixed with "config", so will use the "config" mount point.
 fs_file_open(pFS, "saves/save0.sav", FS_WRITE, &pFile); // Prefixed with "saves", so will use the "saves" mount point.
 ```
 
-When opening a file for writing, if you pass in NULL for the `pFS` parameter it will open the file
-like normal using the standard file system. That is it'll work exactly as if you were using stdio
-`fopen()` and you will not be able use mount points. Keep in mind that there is no notion of a
-"current directory" in this library so you'll be stuck with the initial working directory.
+If you want to mount a directory for reading and writing, you can use both `FS_READ` and
+`FS_WRITE` together:
+
+```c
+fs_mount(pFS, "/home/user/.config/mygame", "config", FS_READ | FS_WRITE);
+```
+
+You can set up read and write mount points to the same virtual path:
+
+```c
+fs_mount(pFS, "/usr/share/mygame/config",              "config", FS_READ);
+fs_mount(pFS, "/home/user/.local/share/mygame/config", "config", FS_READ | FS_WRITE);
+```
+
+When opening a file for reading, it'll first try searching the second mount point, and if it's not
+found will fall back to the first. When opening in write mode, it will only ever use the second
+mount point as the output directory because that's the only one set up with `FS_WRITE`. With this
+setup, the first mount point is essentially protected from modification.
+
+When mounting a directory for writing, the library will create the directory hierarchy for you. If
+you want to disable this functionality, you can use the `FS_NO_CREATE_DIRS` flag:
+
+```c
+fs_mount(pFS, "/home/user/.config/mygame", "config", FS_WRITE | FS_NO_CREATE_DIRS);
+```
+
 
 By default, you can move outside the mount point with ".." segments. If you want to disable this
-functionality, you can use the `FS_NO_ABOVE_ROOT_NAVIGATION` flag:
+functionality, you can use the `FS_NO_ABOVE_ROOT_NAVIGATION` flag when opening the file:
 
 ```c
 fs_file_open(pFS, "../file.txt", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION, &pFile);
@@ -287,19 +400,75 @@ In addition, any mount points that start with a "/" will be considered absolute 
 any above-root navigation:
 
 ```c
-fs_mount(pFS, "/game/data/base", "/gamedata", FS_MOUNT_PRIORITY_HIGHEST);
+fs_mount(pFS, "/usr/share/mygame/gamedata/base", "/gamedata", FS_READ);
 ```
 
 In the example above, the "/gamedata" mount point starts with a "/", so it will not allow any
-above-root navigation which means you cannot navigate above "/game/data/base" when using this mount
-point.
+above-root navigation which means you cannot navigate above "/usr/share/mygame/gamedata/base". When
+opening a file with this kind of mount point, you would need to specify the leading slash:
 
-Note that writing directly into an archive is not supported by this API. To write into an archive,
-the backend itself must support writing, and you will need to manually initialize a `fs` object for
-the archive an write into it directly.
+```c
+fs_file_open(pFS, "/gamedata/file.txt", FS_READ, &pFile);   // Note how the path starts with "/".
+```
 
 
-1.3. Enumeration
+You can also mount an archives to a virtual path:
+
+```c
+fs_mount(pFS, "/usr/share/mygame/gamedata.zip", "gamedata", FS_READ);
+```
+
+In order to do this, the `fs` object must have been configured with support for the given archive
+type. Note that writing directly into an archive is not supported by this API. To write into an
+archive, the backend itself must support writing, and you will need to manually initialize a `fs`
+object for the archive an write into it directly.
+
+
+The examples above have been hard coding paths, but you can use `fs_mount_sysdir()` to mount a
+system directory to a virtual path. This is just a convenience helper function, and you need not
+use it if you'd rather deal with system directories yourself:
+
+```c
+fs_mount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", "/config", FS_READ | FS_WRITE);
+```
+
+This function requires that you specify a sub-directory of the system directory to mount. The reason
+for this is to encourage the application to use good practice to avoid cluttering the file system.
+
+Use `fs_unmount_sysdir()` to unmount a system directory. When using this you must specify the
+sub-directory you used when mounting it:
+
+```c
+fs_unmount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", FS_READ | FS_WRITE);
+```
+
+
+Mounting a `fs` object to a virtual path is also supported. 
+
+```c
+fs* pSomeOtherFS; // <-- This would have been initialized earlier.
+
+fs_mount_fs(pFS, pSomeOtherFS, "assets.zip", FS_READ);
+
+...
+
+fs_unmount_fs(pFS, pSomeOtherFS, FS_READ);
+```
+
+
+If the file cannot be opened from any mounts it will attempt to open the file from the backend's
+default search path. Mounts always take priority. When opening in transparent mode with
+`FS_TRANSPARENT` (default), it will first try opening the file as if it were not in an archive. If
+that fails, it will look inside archives.
+
+When opening a file, if you pass in NULL for the `pFS` parameter it will open the file like normal
+using the standard file system. That is, it'll work exactly as if you were using stdio `fopen()`,
+and you will not have access to mount points. Keep in mind that there is no notion of a "current
+directory" in this library so you'll be stuck with the initial working directory.
+
+
+
+1.4. Enumeration
 ----------------
 You can enumerate over the contents of a directory like the following:
 
@@ -326,7 +495,7 @@ Enumeration is not recursive. If you want to enumerate recursively you can inspe
 member of the `info` member in `fs_iterator`.
 
 
-1.4. System Directories
+1.5. System Directories
 -----------------------
 It can often be useful to know the exact paths of known standard system directories, such as the
 home directory. You can use the `fs_sysdir()` function for this:
@@ -357,26 +526,9 @@ Recognized system directories include the following:
   - FS_SYSDIR_DATA
   - FS_SYSDIR_CACHE
 
-It's often useful to mount a system directory to a virtual path. To make this easier, you can use
-`fs_mount_sysdir()`:
-
-```c
-fs_mount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", "/config", FS_READ | FS_WRITE);
-```
-
-This function requires that you specify a sub-directory of the system directory to mount. The reason
-for this is to encourage the application to use good practice to avoid cluttering the file system.
-
-You can use `fs_unmount_sysdir()` to unmount a system directory. When using this you must specify the
-sub-directory you used when mounting it:
-
-```c
-fs_unmount_sysdir(pFS, FS_SYSDIR_CONFIG, "myapp", FS_READ | FS_WRITE);
-```
 
 
-
-1.5. Temporary Files
+1.6. Temporary Files
 --------------------
 You can create a temporary file or folder with `fs_mktmp()`. To create a temporary folder, use the
 `FS_MKTMP_DIR` option:
@@ -465,7 +617,8 @@ in the `fs_backend` structure.
 
 A ZIP backend is included in the "extras" folder of this library's repository. Refer to this for
 a complete example for how to implement a backend (not including write support, but I'm sure
-you'll figure it out!).
+you'll figure it out!). A PAK backend is also included in the "extras" folder, and is simpler than
+the ZIP backend which might also be a good place to start.
 
 The backend abstraction is designed to relieve backends from having to worry about the
 implementation details of the main library. Backends should only concern themselves with their
@@ -511,10 +664,15 @@ not ever close or otherwise take ownership of the stream - that will be handled 
 
 The `uninit` function is where you should do any cleanup. Do not close the stream here.
 
-The `remove` function is used to remove a file. This is not recursive. If the path is a directory,
-the backend should return an error if it is not empty. Backends do not need to implement this
-function in which case they can leave the callback pointer as `NULL`, or have it return
-`FS_NOT_IMPLEMENTED`.
+The `ioctl` function is optional. You can use this to implement custom IO control commands. Return
+`FS_INVALID_COMMAND` if the command is not recognized. The format of the `pArg` parameter is
+command specific. If the backend does not need to implement this function, it can be left as `NULL`
+or return `FS_NOT_IMPLEMENTED`.
+
+The `remove` function is used to delete a file or directory. This is not recursive. If the path is
+a directory, the backend should return an error if it is not empty. Backends do not need to
+implement this function in which case they can leave the callback pointer as `NULL`, or have it
+return `FS_NOT_IMPLEMENTED`.
 
 The `rename` function is used to rename a file. This will act as a move if the source and
 destination are in different directories. If the destination already exists, it should be
@@ -527,7 +685,8 @@ or return `FS_NOT_IMPLEMENTED`.
 The `info` function is used to get information about a file. If the backend does not have the
 notion of the last modified or access time, it can set those values to 0. Set `directory` to 1 (or
 FS_TRUE) if it's a directory. Likewise, set `symlink` to 1 if it's a symbolic link. It is important
-that this function return the info of the exact file that would be opened with `file_open()`.
+that this function return the info of the exact file that would be opened with `file_open()`. This
+function is mandatory.
 
 Like when initializing a `fs` object, the library needs to know how much backend-specific data to
 allocate for the `fs_file` object. This is done with the `file_alloc_size` function. This function
@@ -537,14 +696,16 @@ not need any additional data, it can return 0. The backend can access this data 
 
 The `file_open` function is where the backend should open the file. If the `fs` object that owns
 the file was initialized with a stream, i.e. it's an archive, the stream will be non-null. You
-should store this pointer for later use in `file_read`, etc. The `openMode` parameter will be a
-combination of `FS_READ`, `FS_WRITE`, `FS_TRUNCATE`, `FS_APPEND` and `FS_OVERWRITE`. When opening
-in write mode (`FS_WRITE`), it will default to truncate mode. You should ignore the `FS_OPAQUE`,
-`FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist, the backend should return
-`FS_DOES_NOT_EXIST`. If the file is a directory, it should return `FS_IS_DIRECTORY`.
+should store this pointer for later use in `file_read`, etc. Do *not* make a duplicate of the
+stream with `fs_stream_duplicate()`. Instead just take a copy of the pointer. The `openMode`
+parameter will be a combination of `FS_READ`, `FS_WRITE`, `FS_TRUNCATE`, `FS_APPEND` and
+`FS_OVERWRITE`. When opening in write mode (`FS_WRITE`), it will default to truncate mode. You
+should ignore the `FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist,
+the backend should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return
+`FS_IS_DIRECTORY`.
 
 The file should be closed with `file_close`. This is where the backend should release any resources
-associated with the file. The stream should not be closed here - it'll be cleaned up at a higher
+associated with the file. Do not uninitialize the stream here - it'll be cleaned up at a higher
 level.
 
 The `file_read` function is used to read data from the file. The backend should return `FS_AT_END`
@@ -557,13 +718,14 @@ specified if the backend supports writing.
 The `file_seek` function is used to seek the cursor. The backend should return `FS_BAD_SEEK` if the
 seek is out of bounds.
 
-The `file_tell` function is used to get the cursor position.
+The `file_tell` function is used to get the current cursor position. There is only one cursor, even
+when the file is opened in read and write mode.
 
 The `file_flush` function is used to flush any buffered data to the file. This is optional and can
 be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
 
 The `file_info` function is used to get information about an opened file. It returns the same
-information as `info` but for an opened file.
+information as `info` but for an opened file. This is mandatory.
 
 The `file_duplicate` function is used to duplicate a file. The destination file will be a new file
 and already allocated. The backend need only copy the necessary backend-specific data to the new
@@ -580,7 +742,9 @@ to deal with this is to allocate the allocate additional space for the name imme
 Backends are responsible for guaranteeing thread-safety of different files across different
 threads. This should typically be quite easy since most system backends, such as stdio, are already
 thread-safe, and archive backends are typically read-only which should make thread-safety trivial
-on that front as well.
+on that front as well. You need not worry about thread-safety of a single individual file handle.
+But when you have two different file handles, they must be able to be used on two different threads
+at the same time.
 
 
 4. Streams
@@ -597,7 +761,7 @@ For `fs_file`, simply opening the file is enough. For `fs_memory_stream`, you ne
 implement your own stream type you would need to implement a similar initialization function.
 
 Use `fs_stream_read()` and `fs_stream_write()` to read and write data from a stream. If the stream
-does not support reading or writing, the respective function should return `FS_NOT_IMPLEMENTED`.
+does not support reading or writing, the respective function will return `FS_NOT_IMPLEMENTED`.
 
 The cursor can be set and retrieved with `fs_stream_seek()` and `fs_stream_tell()`. There is only
 a single cursor which is shared between reading and writing.
@@ -611,8 +775,8 @@ uninitialize a duplicated stream - `fs_stream_delete_duplicate()` will deal with
 
 Streams are not thread safe. If you want to use a stream across multiple threads, you will need to
 synchronize access to it yourself. Using different stream objects across multiple threads is safe.
-A duplicated stream is entirely independent of the original stream and can be used across on a
-different thread to the original stream.
+A duplicated stream is entirely independent of the original stream and can be used on a different
+thread to the original stream.
 
 The `fs_stream` object is a base class. If you want to implement your own stream, you should make
 the first member of your stream object a `fs_stream` object. This will allow you to cast between
@@ -958,12 +1122,6 @@ typedef struct fs_file_info fs_file_info;
 typedef struct fs_iterator  fs_iterator;
 typedef struct fs_backend   fs_backend;
 
-typedef enum fs_mount_priority
-{
-    FS_MOUNT_PRIORITY_HIGHEST = 0,
-    FS_MOUNT_PRIORITY_LOWEST  = 1
-} fs_mount_priority;
-
 typedef struct fs_archive_type
 {
     const fs_backend* pBackend;
@@ -1068,15 +1226,12 @@ FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, int mode);
 FS_API fs_iterator* fs_next(fs_iterator* pIterator);
 FS_API void fs_free_iterator(fs_iterator* pIterator);
 
-FS_API fs_result fs_mount(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
-FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint);
-FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pMountPoint, int options);
+FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options);
+FS_API fs_result fs_unmount(fs* pFS, const char* pActualPath, int options);
+FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pVirtualPath, int options);
 FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, int options);
-FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pMountPoint, fs_mount_priority priority);
-FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS);   /* Must be matched up with fs_mount_fs(). */
-
-FS_API fs_result fs_mount_write(fs* pFS, const char* pPathToMount, const char* pMountPoint, fs_mount_priority priority);
-FS_API fs_result fs_unmount_write(fs* pFS, const char* pPathToMount_NotMountPoint);
+FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, int options);
+FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options);   /* Must be matched up with fs_mount_fs(). */
 
 /*
 Helper functions for reading the entire contents of a file, starting from the current cursor position. Free

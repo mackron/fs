@@ -1,142 +1,108 @@
-This is a cross-platform library which abstracts access to the regular file system and archives
-such as ZIP files. It's written in C, has no external dependencies, and is your choice of either
-public domain or [MIT No Attribution](https://github.com/aws/mit-0).
+This is a cross-platform library that provides a unified API for accessing the native file system
+and archives such as ZIP. It's written in C (compilable as C++), has no external dependencies, and
+is your choice of either public domain or [MIT No Attribution](https://github.com/aws/mit-0).
 
 
 About
 =====
-This library supports the ability to open files from the native file system, in addition to
-archives such as ZIP files, through a consistent API. The idea is that a `fs` object can represent
-any kind of file system, including, but not restricted to, the native file system, and archives.
-You can implement and plug in custom file system backends, examples of which can be found in the
-[extras/backends](extras/backends) folder.
+See the documentation at the top of [fs.h](fs.h) for details on how to use the library.
 
-There are multiple ways of working with an archive, the most common way of which is to associate a
-backend with a file extension. When this association is established, which you do during the
-initialization of your `fs` object, the `fs` object will be able to seamlessly read from those
-archives. By default, archives will be scanned automatically and handled transparently, but this
-can be inefficient so there are options when opening a file to require that archives be explicitly
-listed in the path such as "data/archive.zip/file.txt", or to even disable loading from archives
-entirely.
+This library supports the ability to open files from the both the native file system and virtual
+file systems through a unified API. File systems are implemented as backends, examples of which can
+be found in the [extras/backends](extras/backends) folder. Custom backends can be implemented and
+plugged in without needing to modify the library.
 
-There is no notion of a "current" or "working" directory. Instead, when you want to open a file
-using a relative path, it searches through a list of base directories that you specify. The first
-search path in this list that contains a file of the specified relative path will be where the file
-is loaded from. Adding a search/base path is referred to as mounting. You can mount both
-directories and archives. When mounting an archive it will be handled totally transparently with no
-special handling required on your part.
-
-There is a lot of flexibility to the mounting system. An obvious use case is for a game where you
-want to support mods, with each mod having a different priority. You could, as an example, set up
-your mounts like this:
+One common use of a backend, and the motivation for the creation of this library in the first
+place, is to support archive formats like ZIP. You can plug in archive backends and associate them
+with a file extension to enable seamless and transparent handling of archives. For example, you can
+associate the ZIP backend with the "zip" extension which will then let you load a file like this:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata/base", "gamedata", 0); // Base game. Lowest priority.
-fs_mount(pFS, "/game/install/path/gamedata/mod1", "gamedata", 0); // Mod #1. Middle priority.
-fs_mount(pFS, "/game/install/path/gamedata/mod2", "gamedata", 0); // Mod #2. Highest priority.
+fs_file_open(pFS, "myapp/archive.zip/file.txt", FS_READ, &pFile);
 ```
 
-In this example you would then load a game asset like this:
+The example above explicitly lists the "archive.zip" archive in the path, but you need not specify
+that if you don't want to. The following will also work:
 
 ```c
-fs_file* pFile;
-fs_file_open(pFS, "gamedata/texture.png", FS_READ, &pFile); // Start the path with "gamedata" to search in the "gamedata" mounts.
+fs_file_open(pFS, "myapp/file.txt", FS_READ, &pFile);
 ```
 
-The "mod2" search directory will have the highest priority. If "texture.png" is not found in that
-mod's data directory, "mod1" will have it's directory searched. If it can't be found there it will
-fall back to the base game. The example above has the mods data directory in the same folder as the
-game's installation directory, but you can refer to any actual path you like. You could even have
-it so your mods are installed in a separate folder if you'd like mods to be decoupled from your
-game's installation:
+Here the archive is handled totally transparently. There are many options for opening a file, some
+of which are more efficient than others. See the documentation in [fs.h](fs.h) for details.
+
+When opening a file, the library searches through a list of mount points that you set up
+beforehand. Below is an example for setting up a simple mount point that will be used when opening
+a file for reading:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata/base", "gamedata", 0);
-fs_mount(pFS, "/mods/install/path/mod1",          "gamedata", 0);
+fs_mount(pFS, "/home/user/.local/share/myapp", NULL, FS_READ);
 ```
 
-The examples above use a mount point called "gamedata", but you can use an empty directory as well:
+With this setup, opening a file in read-only mode will open the file relative to the path specified
+in `fs_mount()`. You can also specify a virtual path for a mount point:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata/base", "", 0);
+fs_mount(pFS, "/home/user/.local/share/myapp", "data", FS_READ);
 ```
 
-You can also mount an archive straight from it's path, so long as the `fs` object has been
-configured with support for the relevant backend:
+With the mount above you would need to prefix your path with "data" when opening a file:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata/base.zip", "gamedata", 0);
+fs_file_open(pFS, "data/file.txt", FS_READ, &pFile);
 ```
 
-You can also mount a directory within an archive:
+Since the path starts with "data", the paths mounted to the virtual path "data" will be searched
+when opening the file.
+
+You can also mount multiple paths to the same virtual path, in which case the later will take
+precedence. Below is an example you might see in a game:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata.zip/base", "gamedata", 0);
+fs_mount(pFS, "/usr/share/mygame/gamedata/base",              "gamedata", FS_READ); // Base game. Lowest priority.
+fs_mount(pFS, "/home/user/.local/share/mygame/gamedata/mod1", "gamedata", FS_READ); // Mod #1. Middle priority.
+fs_mount(pFS, "/home/user/.local/share/mygame/gamedata/mod2", "gamedata", FS_READ); // Mod #2. Highest priority.
 ```
 
-You can also mount an `fs` directly which might be useful if, for example, you have an in-memory
-archive that you want to link up to your main `fs` object:
+You could then load an asset like this:
 
 ```c
-fs_mount_fs(pFS, pInMemoryArchiveFS, "gamedata", 0);  // The second paramter is just another `fs` object.
+fs_file_open(pFS, "gamedata/texture.png", FS_READ, &pFile);
 ```
 
-Other libraries such as PhysicsFS disable the ability to use "." and ".." in file paths, the idea
-being that it prevents you from navigating outside the mount point. This library on the other hand
-explicitly supports the ability to navigate above and around the mount point, but you have the
-ability to disable it.
+Here there "mod2" directory would be searched first because it has the highest priority. If the
+file cannot be opened from there it'll fall back to "mod1", and then as a last resort it'll fall
+back to the base game.
 
-The first way is to use a leading "/" for the mount point:
+Internally there are a separate set of mounts for reading and writing. To set up a mount point for
+opening files in write mode, you need to specify the `FS_WRITE` option:
 
 ```c
-fs_mount(pFS, "/game/install/path/gamedata/base", "/gamedata", 0);
+fs_mount(pFS, "/home/user/.config/mygame", "config", FS_WRITE);
 ```
 
-With this example we are mounting to "/gamedata" instead of "gamedata". The leading slash tells the
-library to consider that the root and to not allow navigation outside of that. The other way to do
-it is on a per-file basis via `fs_file_open()`:
+To open a file for writing, you need only prefix the path with the mount's virtual path, exactly
+like read mode:
 
 ```c
-fs_file_open(pFS, "gamedata/../texture.png", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION, &pFile);
+fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile);
 ```
 
-Here the `FS_NO_ABOVE_ROOT_NAVIGATION` flag will disallow the ability to navigate above the level
-of the mount point, exactly as if the mount point was "/gamedata" instead of "gamedata".
-
-If you want to be exactly like PhysicsFS and disable the "." and ".." path segments entirely, you
-can do so with `FS_NO_SPECIAL_DIRS`:
+You can set up read and write mount points to the same virtual path:
 
 ```c
-fs_file_open(pFS, pSomeInsecureFilePathFromUser, FS_READ | FS_NO_SPECIAL_DIRS, &pFile);
+fs_mount(pFS, "/usr/share/mygame/config",              "config", FS_READ);
+fs_mount(pFS, "/home/user/.local/share/mygame/config", "config", FS_READ | FS_WRITE);
 ```
 
-In addition to mounting search paths for reading, you can do the same for writing. Writing mounts
-are separate from the mounts used when opening a file for reading:
+When opening a file for reading, it'll first try searching the second mount point, and if it's not
+found will fall back to the first. When opening in write mode, it will only ever use the second
+mount point as the output directory because that's the only one set up with `FS_WRITE`. With this
+setup, the first mount point is essentially protected from modification.
 
-```c
-fs_mount_write(pFS, "/home/user/.config/mygame",            "config", 0);
-fs_mount_write(pFS, "/home/user/.local/share/mygame/saves", "saves",  0);
-```
-
-Here we've mounted two write directories. When you open a file for writing, it looks at the start
-of the file path and checks if it matches any of the mount points. So with the mounts above, you
-can save a config file like so:
-
-```c
-fs_file_open(pFS, "config/game.cfg", FS_WRITE, &pFile); // Will save to the "config" mount point because the path starts with "config".
-```
-
-And then when you want to write a save game, you can use the "saves" mount point:
-
-```c
-fs_file_open(pFS, "saves/save1.cfg", FS_WRITE, &pFile); // Will save to the "saves" mount point because the path starts with "saves".
-```
-
-Writing into an archive is not supported through the main API like this. Therefore, attempting
-to mount an archive for writing will fail.
-
-This kind of mounting system allows you to isolate all of your platform-specific directory
-structures to the mounting part of your code, and then everything else can be cross-platform code.
+There's more you can do with mounting, such as mounting an archive or `fs` object to a virtual
+path, helpers for mounting system directories, and preventing navigation outside the mount point.
+See the documentation at the top of [fs.h](fs.h) for more details.
 
 In addition to the aforementioned functionality, the library includes all of the standard
 functionality you would expect for file IO, such as file enumeration, stat-ing (referred to as
@@ -145,7 +111,8 @@ functionality you would expect for file IO, such as file enumeration, stat-ing (
 
 Usage
 =====
-See fs.h for documentation. Examples can be found in the "examples" folder.
+See [fs.h](fs.h) for documentation. Examples can be found in the "examples" folder. Backends can
+be found in the [extras/backends](extras/backends) folder.
 
 
 Building
@@ -158,9 +125,11 @@ include after fs.h:
 ```c
 #include "fs.h"
 #include "extras/backends/zip/fs_zip.h"
+#include "extras/backends/pak/fs_pak.h"
 ```
 
-See examples/archives.c for an example on how to use archives.
+You need only include backends that you care about. See examples/archives.c for an example on how
+to use archives.
 
 You can also use CMake, but support for that is very basic.
 

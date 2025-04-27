@@ -393,7 +393,7 @@ static int fstest_archive_io()
     /* These test that loading above the level of the mount point correct results in an error. */
     /* TODO: Do proper automated tests for these. */
 #if 1
-    fs_mount(pFS, "testvectors", "mnt", FS_MOUNT_PRIORITY_HIGHEST);
+    fs_mount(pFS, "testvectors", "mnt", FS_READ);
     {
         fs_file* pFile;
 
@@ -404,7 +404,7 @@ static int fstest_archive_io()
 
         fs_file_close(pFile);
     }
-    fs_unmount(pFS, "testvectors");
+    fs_unmount(pFS, "testvectors", FS_READ);
 #endif
 
     /* Test archives in archives. */
@@ -434,10 +434,10 @@ static int fstest_archive_io()
     }
 
 
-    fs_mount_write(pFS, "testvectors/extracted", NULL, FS_MOUNT_PRIORITY_HIGHEST);
+    fs_mount(pFS, "testvectors/extracted", NULL, FS_WRITE);
 
-    //fs_mount(pFS, "test", NULL, FS_MOUNT_PRIORITY_HIGHEST);
-    //fs_mount(pFS, "blah", NULL, FS_MOUNT_PRIORITY_LOWEST);
+    //fs_mount(pFS, "test", NULL, FS_READ);
+    //fs_mount(pFS, "blah", NULL, FS_READ);
 
     result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
     result |= fstest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
@@ -445,17 +445,17 @@ static int fstest_archive_io()
 
 #if 1
     /* Mounted tests. TODO: Improve these. Make a separate test. */
-    if (fs_mount(pFS, "testvectors", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors'\n"); }
+    if (fs_mount(pFS, "testvectors", NULL, FS_READ) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors'\n"); }
     {
         result |= fstest_archive_io_file(pFS, "testvectors.zip/miniaudio.h", "", FS_VERBOSE);
     }
-    fs_unmount(pFS, "testvectors");
+    fs_unmount(pFS, "testvectors", FS_READ);
 
-    if (fs_mount(pFS, "testvectors/testvectors.zip", NULL, FS_MOUNT_PRIORITY_HIGHEST) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors/testvectors.zip'\n"); }
+    if (fs_mount(pFS, "testvectors/testvectors.zip", NULL, FS_READ) != FS_SUCCESS) { printf("FAILED TO MOUNT 'testvectors/testvectors.zip'\n"); }
     {
         result |= fstest_archive_io_file(pFS, "miniaudio.h", "", FS_VERBOSE);
     }
-    fs_unmount(pFS, "testvectors/testvectors.zip");
+    fs_unmount(pFS, "testvectors/testvectors.zip", FS_READ);
 #endif
 
     fs_uninit(pFS);
@@ -478,9 +478,9 @@ static int fstest_write_io()
         return 1;
     }
 
-    fs_mount_write(pFS, "testvectors/write",               NULL,            FS_MOUNT_PRIORITY_HIGHEST);
-    fs_mount_write(pFS, "testvectors/write/config",        "config",        FS_MOUNT_PRIORITY_HIGHEST);
-    fs_mount_write(pFS, "testvectors/write/config/editor", "config/editor", FS_MOUNT_PRIORITY_HIGHEST);
+    fs_mount(pFS, "testvectors/write",               NULL,            FS_WRITE);
+    fs_mount(pFS, "testvectors/write/config",        "config",        FS_WRITE);
+    fs_mount(pFS, "testvectors/write/config/editor", "config/editor", FS_WRITE);
 
     {
         fs_file* pFile;
@@ -541,7 +541,7 @@ static int fstest_iteration()
         return 1;
     }
 
-    fs_mount(pFS, "testvectors", NULL, FS_MOUNT_PRIORITY_HIGHEST);
+    fs_mount(pFS, "testvectors", NULL, FS_READ);
 
     {
         fs_iterator* pIterator;
