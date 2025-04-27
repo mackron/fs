@@ -830,8 +830,11 @@ FS_API fs_result fs_stream_writefv_ex(fs_stream* pStream, const fs_allocation_ca
     }
 
     fs_va_copy(args2, args);
+    {
+        strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args2);
+    }
+    va_end(args2);
 
-    strLen = fs_vsnprintf(pStrStack, sizeof(pStrStack), fmt, args2);
     if (strLen < 0) {
         return FS_ERROR;    /* Encoding error. */
     }
