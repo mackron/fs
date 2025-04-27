@@ -13,7 +13,11 @@
 
 #ifndef fs_va_copy
     #if !defined(_MSC_VER) || _MSC_VER >= 1800
-        #define fs_va_copy(dst, src) va_copy((dst), (src))
+        #if (defined(__GNUC__) && __GNUC__ < 3)
+            #define fs_va_copy(dst, src) ((dst) = (src))    /* This is untested. Not sure if this is correct for old GCC. */
+        #else
+            #define fs_va_copy(dst, src) va_copy((dst), (src))
+        #endif
     #else
         #define fs_va_copy(dst, src) ((dst) = (src))
     #endif
