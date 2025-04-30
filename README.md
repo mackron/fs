@@ -111,7 +111,7 @@ functionality you would expect for file IO, such as file enumeration, stat-ing (
 
 Usage
 =====
-See [fs.h](fs.h) for documentation. Examples can be found in the "examples" folder. Backends can
+See [fs.h](fs.h) for documentation. Examples can be found in the [examples](examples) folder. Backends can
 be found in the [extras/backends](extras/backends) folder.
 
 
