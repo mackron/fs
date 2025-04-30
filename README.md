@@ -119,8 +119,8 @@ Building
 ========
 To build the library, just add the necessary source files to your source tree. The main library is
 contained within fs.c. Archive backends are each contained in their own separate file. Stock
-archive backends can be found in the "extras" folder. These will have a .h file which you should
-include after fs.h:
+archive backends can be found in the [extras/backends](extras/backends) folder. These will have a
+.h file which you should include after fs.h:
 
 ```c
 #include "fs.h"
