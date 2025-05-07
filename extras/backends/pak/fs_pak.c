@@ -267,7 +267,7 @@ static fs_result fs_file_read_pak(fs_file* pFile, void* pDst, size_t bytesToRead
         return result;
     }
 
-    pPakFile->cursor += *pBytesRead;
+    pPakFile->cursor += (fs_uint32)*pBytesRead;
     FS_PAK_ASSERT(pPakFile->cursor <= pPak->pTOC[pPakFile->tocIndex].size);
 
     return FS_SUCCESS;
