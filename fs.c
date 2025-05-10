@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdarg.h>
 
+/* BEG fs_va_copy.c */
 #ifndef fs_va_copy
     #if !defined(_MSC_VER) || _MSC_VER >= 1800
         #if (defined(__GNUC__) && __GNUC__ < 3)
@@ -22,6 +23,7 @@
         #define fs_va_copy(dst, src) ((dst) = (src))
     #endif
 #endif
+/* END fs_va_copy.c */
 
 #define FS_UNUSED(x) (void)x
 
