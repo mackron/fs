@@ -1270,10 +1270,9 @@ FS_API fs_result fs_result_from_errno(int error);
 /*
 These functions are low-level functions for working with paths. The most important part of this API
 is probably the iteration functions. These functions are used for iterating over each of the
-segments of a path. This library will recognize both '\' and '/'. If you want to use just one or
-the other, or a different separator, you'll need to use a different library. Likewise, this library
-will treat paths as case sensitive. Again, you'll need to use a different library if this is not
-suitable for you.
+segments of a path. This library will recognize both '\' and '/'. If you want to use a different
+separator, you'll need to use a different library. Likewise, this library will treat paths as case
+sensitive. Again, you'll need to use a different library if this is not suitable for you.
 
 Iteration will always return both sides of a separator. For example, if you iterate "abc/def",
 you will get two items: "abc" and "def". Where this is of particular importance and where you must
