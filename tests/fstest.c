@@ -17,7 +17,7 @@ static void fstest_print_result_v(const char* pPattern, int result, va_list args
     char pSpaces[1024];
 
     memset(pSpaces, ' ', sizeof(pSpaces));
-    vsnprintf(pBuffer, 1024, pPattern, args);
+    fs_vsnprintf(pBuffer, 1024, pPattern, args);
 
     printf("%s%s%.*s%s\033[0m\n", ((result == 0) ? "\033[32m" : "\033[31m"), pBuffer, 80 - 4 - (int)strlen(pBuffer), pSpaces, pResultStr);
 }
@@ -319,7 +319,7 @@ static int fstest_archive_io_file(fs* pFS, const char* pFilePath, const char* pO
         return 1;
     }
 
-    snprintf(pOutputFilePath, sizeof(pOutputFilePath), "%s/%s", pOutputDirectory, fs_path_file_name(pFilePath, (size_t)-1));
+    fs_snprintf(pOutputFilePath, sizeof(pOutputFilePath), "%s/%s", pOutputDirectory, fs_path_file_name(pFilePath, (size_t)-1));
     result = fs_file_open(pFS, pOutputFilePath, FS_WRITE | FS_TRUNCATE, &pFileOut);
     fstest_print_result_f("  Open      %s", (result != FS_SUCCESS), pOutputFilePath);
     if (result != 0) {
