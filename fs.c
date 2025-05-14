@@ -5918,6 +5918,80 @@ const fs_backend* FS_STDIO = NULL;
 /* BEG fs_sysdir.c */
 #if defined(_WIN32)
 #include <shlobj.h>
+
+#ifndef CSIDL_LOCAL_APPDATA
+#define CSIDL_LOCAL_APPDATA 0x001C
+#endif
+#ifndef CSIDL_PROFILE
+#define CSIDL_PROFILE       0x0028
+#endif
+
+
+/*
+A helper for retrieving the directory containing the executable. We use this as a fall back for when
+a system folder cannot be used (usually ancient versions of Windows).
+*/
+HRESULT fs_get_executable_directory_win32(char* pPath)
+{
+    DWORD result;
+
+    result = GetModuleFileNameA(NULL, pPath, 260);
+    if (result == 260) {
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    fs_path_directory(pPath, 260, pPath, result);
+
+    return ERROR_SUCCESS;
+}
+
+/*
+A simple wrapper to get a folder path. Mainly used to hide away some messy compatibility workarounds
+for different versions of Windows.
+
+The `pPath` pointer must be large enough to store at least 260 characters.
+*/
+HRESULT fs_get_folder_path_win32(char* pPath, int nFolder)
+{
+    HRESULT hr;
+
+    FS_ASSERT(pPath != NULL);
+
+    /*
+    Using SHGetSpecialFolderPath() here for compatibility with Windows 95/98. This has been deprecated
+    and the successor is SHGetFolderPath(), which itself has been deprecated in favour of the Known
+    Folder API.
+
+    If something comes up and SHGetSpecialFolderPath() stops working (unlikely), we could instead try
+    using SHGetFolderPath(), like this:
+
+        SHGetFolderPathA(NULL, nFolder, NULL, SHGFP_TYPE_CURRENT, pPath);
+
+    If that also stops working, we would need to use the Known Folder API which I'm unfamiliar with.
+    */
+
+    hr = SHGetSpecialFolderPathA(NULL, pPath, nFolder, 0);
+    if (FAILED(hr)) {
+        /*
+        If this fails it could be because we're calling this from an old version of Windows. We'll
+        check for known folder types and do a fall back.
+        */
+        if (nFolder == CSIDL_LOCAL_APPDATA) {
+            hr = SHGetSpecialFolderPathA(NULL, pPath, CSIDL_APPDATA, 0);
+            if (FAILED(hr)) {
+                hr = fs_get_executable_directory_win32(pPath);
+            }
+        } else if (nFolder == CSIDL_PROFILE) {
+            /*
+            Old versions of Windows don't really have the notion of a user folder. In this case
+            we'll just use the executable directory.
+            */
+            hr = fs_get_executable_directory_win32(pPath);
+        }
+    }
+
+    return hr;
+}
 #else
 #include <pwd.h>
 
@@ -5975,7 +6049,7 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
         {
             case FS_SYSDIR_HOME:
             {
-                hr = SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT, pPath);
+                hr = fs_get_folder_path_win32(pPath, CSIDL_PROFILE);
                 if (SUCCEEDED(hr)) {
                     fullLength = strlen(pPath);
                     if (pDst != NULL && fullLength < dstCap) {
@@ -6000,7 +6074,7 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 
             case FS_SYSDIR_CONFIG:
             {
-                hr = SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                hr = fs_get_folder_path_win32(pPath, CSIDL_APPDATA);
                 if (SUCCEEDED(hr)) {
                     fullLength = strlen(pPath);
                     if (pDst != NULL && fullLength < dstCap) {
@@ -6012,7 +6086,7 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 
             case FS_SYSDIR_DATA:
             {
-                hr = SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                hr = fs_get_folder_path_win32(pPath, CSIDL_LOCAL_APPDATA);
                 if (SUCCEEDED(hr)) {
                     fullLength = strlen(pPath);
                     if (pDst != NULL && fullLength < dstCap) {
@@ -6025,7 +6099,7 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
             case FS_SYSDIR_CACHE:
             {
                 /* There's no proper known folder for caches. We'll just use %LOCALAPPDATA%\Cache. */
-                hr = SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, pPath);
+                hr = fs_get_folder_path_win32(pPath, CSIDL_LOCAL_APPDATA);
                 if (SUCCEEDED(hr)) {
                     const char* pCacheSuffix = "\\Cache";
                     size_t localAppDataLen = strlen(pPath);
@@ -6606,8 +6680,8 @@ FS_API int fs_path_directory(char* pDst, size_t dstCap, const char* pPath, size_
 
         if (pDst != NULL && dstCap > 0) {
             size_t bytesToCopy = FS_MIN(dstCap - 1, dirLen);
-            if (bytesToCopy > 0) {
-                FS_COPY_MEMORY(pDst, pPath, bytesToCopy);
+            if (bytesToCopy > 0 && pDst != pPath) {
+                FS_MOVE_MEMORY(pDst, pPath, bytesToCopy);
             }
 
             pDst[bytesToCopy] = '\0';
