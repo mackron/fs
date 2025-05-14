@@ -3416,6 +3416,12 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                         */
                         if (ppFile != NULL) {
                             fs_increment_opened_archive_ref_count(pFS, iMountPoint.pArchive);
+
+                            /*
+                            Since we incremented the reference count of the archive, we need to ensure it gets decremented when
+                            the file is closed.
+                            */
+                            fs_file_proxy_set_unref_archive_on_close(*ppFile, FS_TRUE);
                         }
 
                         return FS_SUCCESS;
