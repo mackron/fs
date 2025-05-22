@@ -2474,13 +2474,15 @@ FS_API size_t fs_get_backend_data_size(fs* pFS)
     return pFS->backendDataSize;
 }
 
-FS_API void fs_ref(fs* pFS)
+FS_API fs* fs_ref(fs* pFS)
 {
     if (pFS == NULL) {
-        return;
+        return NULL;
     }
 
     pFS->refCount += 1;
+
+    return pFS;
 }
 
 FS_API void fs_unref(fs* pFS)
