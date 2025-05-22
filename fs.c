@@ -1616,6 +1616,7 @@ struct fs
     size_t archiveGCThreshold;
     fs_mount_list* pReadMountPoints;
     fs_mount_list* pWriteMountPoints;
+    size_t refCount;        /* Incremented when a file is opened, decremented when a file is closed. */
 };
 
 typedef struct fs_file
@@ -2143,6 +2144,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
 
     pFS->pBackend              = pBackend;
     pFS->pStream               = pConfig->pStream; /* <-- This is allowed to be null, which will be the case for standard OS file system APIs like stdio. Streams are used for things like archives like Zip files, or in-memory file systems. */
+    pFS->refCount              = 1;
     pFS->allocationCallbacks   = fs_allocation_callbacks_init_copy(pConfig->pAllocationCallbacks);
     pFS->backendDataSize       = backendDataSizeInBytes;
     pFS->isOwnerOfArchiveTypes = FS_TRUE;
@@ -2223,6 +2225,18 @@ FS_API void fs_uninit(fs* pFS)
     overly aggressive - feedback welcome.
     */
     fs_gc_archives(pFS, FS_GC_POLICY_FULL);
+
+    /*
+    A correct program should explicitly close their files. The reference count should be 1 when
+    calling this function if the program is correct.
+    */
+    #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
+    {
+        if (pFS->refCount > 1) {
+            FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. */
+        }
+    }
+    #endif
 
     /* The caller has a bug if there are still outstanding archives. */
     #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
@@ -2458,6 +2472,33 @@ FS_API size_t fs_get_backend_data_size(fs* pFS)
     }
 
     return pFS->backendDataSize;
+}
+
+FS_API void fs_ref(fs* pFS)
+{
+    if (pFS == NULL) {
+        return;
+    }
+
+    pFS->refCount += 1;
+}
+
+FS_API void fs_unref(fs* pFS)
+{
+    if (pFS == NULL) {
+        return;
+    }
+
+    if (pFS->refCount == 1) {
+        #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
+        {
+            FS_ASSERT(!"ref/funref mismatch. Ensure all fs_ref() calls are matched with fs_unref() calls.");
+        }
+        #endif
+        return;
+    }
+
+    pFS->refCount -= 1;
 }
 
 
@@ -3058,6 +3099,25 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
     return FS_DOES_NOT_EXIST;
 }
 
+static void fs_file_free(fs_file** ppFile)
+{
+    fs_file* pFile;
+
+    if (ppFile == NULL) {
+        return;
+    }
+
+    pFile = *ppFile;
+    if (pFile == NULL) {
+        return;
+    }
+
+    fs_unref(pFile->pFS);
+    fs_free(pFile, fs_get_allocation_callbacks(pFile->pFS));
+
+    *ppFile = NULL;
+}
+
 static fs_result fs_file_alloc(fs* pFS, fs_file** ppFile)
 {
     fs_file* pFile;
@@ -3088,6 +3148,9 @@ static fs_result fs_file_alloc(fs* pFS, fs_file** ppFile)
     pFile->pFS = pFS;
     pFile->backendDataSize = backendDataSizeInBytes;
 
+    /* The reference count of the fs object needs to be incremented. It'll be decremented in fs_file_free(). */
+    fs_ref(pFS);
+
     *ppFile = pFile;
     return FS_SUCCESS;
 }
@@ -3108,18 +3171,17 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     fs_result result;
     const fs_backend* pBackend;
 
+    pBackend = fs_get_backend_or_default(pFS);
+    if (pBackend == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
     if (ppFile != NULL) {
         result = fs_file_alloc_if_necessary(pFS, ppFile);
         if (result != FS_SUCCESS) {
             *ppFile = NULL;
             return result;
         }
-    }
-
-    pBackend = fs_get_backend_or_default(pFS);
-
-    if (pBackend == NULL) {
-        return FS_INVALID_ARGS;
     }
 
     /*
@@ -3131,6 +3193,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         if (pFSStream != NULL) {
             result = fs_stream_duplicate(pFSStream, fs_get_allocation_callbacks(pFS), &(*ppFile)->pStreamForBackend);
             if (result != FS_SUCCESS) {
+                fs_file_free(ppFile);
                 return result;
             }
         }
@@ -3141,7 +3204,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     file path should already be prefixed with the mount point.
 
     UPDATE: Actually don't want to explicitly append FS_IGNORE_MOUNTS here because it can affect the behavior of
-    proxy and passthrough style backends. Some backends, particularly FS_SUBFS, will call straight into the owner
+    proxy and passthrough style backends. Some backends, particularly FS_SUB, will call straight into the owner
     `fs` object which might depend on those mounts being handled for correct behaviour.
     */
     /*openMode |= FS_IGNORE_MOUNTS;*/
@@ -3158,12 +3221,15 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
             if (dirPathLen >= (int)sizeof(pDirPathStack)) {
                 pDirPathHeap = (char*)fs_malloc(dirPathLen + 1, fs_get_allocation_callbacks(pFS));
                 if (pDirPathHeap == NULL) {
+                    fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                    fs_file_free(ppFile);
                     return FS_OUT_OF_MEMORY;
                 }
 
                 dirPathLen = fs_path_directory(pDirPathHeap, dirPathLen + 1, pFilePath, FS_NULL_TERMINATED);
                 if (dirPathLen < 0) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                    fs_file_free(ppFile);
                     fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
                     return FS_ERROR;    /* Should never hit this. */
                 }
@@ -3176,6 +3242,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
             result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
             if (result != FS_SUCCESS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                fs_file_free(ppFile);
                 return result;
             }
         }
@@ -3206,8 +3273,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         */
         if (pFS != NULL && (result == FS_DOES_NOT_EXIST || result == FS_NOT_DIRECTORY)) {
             if (ppFile != NULL) {
-                fs_free(*ppFile, fs_get_allocation_callbacks(pFS));
-                *ppFile = NULL;
+                fs_file_free(ppFile);
             }
 
             result = fs_open_or_info_from_archive(pFS, pFilePath, openMode, ppFile, pInfo);
@@ -3482,8 +3548,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
         /* Getting here means we couldn't open the file from any mount points, nor could we open it directly. */
         if (ppFile != NULL) {
-            fs_free(*ppFile, fs_get_allocation_callbacks(pFS));
-            *ppFile = NULL;
+            fs_file_free(ppFile);
         }
     }
 
@@ -3539,8 +3604,8 @@ FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file**
 
     result = fs_backend_file_open_handle(fs_get_backend_or_default(pFS), pFS, hBackendFile, *ppFile);
     if (result != FS_SUCCESS) {
-        fs_free(*ppFile, fs_get_allocation_callbacks(pFS));
-        *ppFile = NULL;
+        fs_file_free(ppFile);
+        return result;
     }
 
     return FS_SUCCESS;
@@ -3568,7 +3633,7 @@ FS_API void fs_file_close(fs_file* pFile)
         fs_stream_delete_duplicate(pFile->pStreamForBackend, fs_get_allocation_callbacks(pFile->pFS));
     }
 
-    fs_free(pFile, fs_get_allocation_callbacks(pFile->pFS));
+    fs_file_free(&pFile);
 }
 
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)

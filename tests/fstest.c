@@ -408,6 +408,7 @@ static int fstest_archive_io()
 #endif
 
     /* Test archives in archives. */
+    #if 1
     {
         fs_file* pFile1;
         fs_file* pFile2;
@@ -432,6 +433,7 @@ static int fstest_archive_io()
 
         //fs_gc_archives(pFS, FS_GC_POLICY_FULL);
     }
+    #endif
 
 
     fs_mount(pFS, "testvectors/extracted", NULL, FS_WRITE);
