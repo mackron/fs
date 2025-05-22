@@ -1197,7 +1197,8 @@ FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
 FS_API void* fs_get_backend_data(fs* pFS);    /* For use by the backend. Will be the size returned by the alloc_size() function in the vtable. */
 FS_API size_t fs_get_backend_data_size(fs* pFS);
 FS_API fs* fs_ref(fs* pFS);     /* Increments the reference count. Returns pFS. */
-FS_API void fs_unref(fs* pFS);  /* Decrements the reference count. Does not uninitialize. */
+FS_API fs_uint32 fs_unref(fs* pFS);  /* Decrements the reference count. Does not uninitialize. */
+FS_API fs_uint32 fs_refcount(fs* pFS);
 
 FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
 FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive);

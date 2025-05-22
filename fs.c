@@ -2485,10 +2485,12 @@ FS_API fs* fs_ref(fs* pFS)
     return pFS;
 }
 
-FS_API void fs_unref(fs* pFS)
+FS_API fs_uint32 fs_unref(fs* pFS)
 {
+    fs_uint32 newRefCount;
+
     if (pFS == NULL) {
-        return;
+        return 0;
     }
 
     if (pFS->refCount == 1) {
@@ -2497,10 +2499,23 @@ FS_API void fs_unref(fs* pFS)
             FS_ASSERT(!"ref/funref mismatch. Ensure all fs_ref() calls are matched with fs_unref() calls.");
         }
         #endif
-        return;
+        return pFS->refCount;
     }
 
     pFS->refCount -= 1;
+
+    newRefCount = pFS->refCount;
+
+    return newRefCount;
+}
+
+FS_API fs_uint32 fs_refcount(fs* pFS)
+{
+    if (pFS == NULL) {
+        return 0;
+    }
+
+    return pFS->refCount;
 }
 
 
