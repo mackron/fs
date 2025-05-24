@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 FS_API int fs_strncpy(char* dst, const char* src, size_t count);    /* <-- This is not forward declared in the header. It exists in the .c file though. */
 
@@ -399,16 +400,15 @@ static int fstest_archive_io()
 
         result = fs_file_open(pFS, "mnt/../testvectors/miniaudio.h", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION /*| FS_ONLY_MOUNTS*/, &pFile);
         if (result == FS_SUCCESS) {
-            int a = 5; (void)a;
+            assert(!"Test failed. Should not be able to open a file above the mount point.");
+            fs_file_close(pFile);
         }
-
-        fs_file_close(pFile);
     }
     fs_unmount(pFS, "testvectors", FS_READ);
 #endif
 
     /* Test archives in archives. */
-    #if 1
+#if 1
     {
         fs_file* pFile1;
         fs_file* pFile2;
@@ -433,7 +433,7 @@ static int fstest_archive_io()
 
         //fs_gc_archives(pFS, FS_GC_POLICY_FULL);
     }
-    #endif
+#endif
 
 
     fs_mount(pFS, "testvectors/extracted", NULL, FS_WRITE);

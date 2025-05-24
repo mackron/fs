@@ -1110,6 +1110,8 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 
 #define FS_LOWEST_PRIORITY          0x2000  /* Only used with mounting. When set will create the mount with a lower priority to existing mounts. */
 
+#define FS_NO_INCREMENT_REFCOUNT    0x4000  /* Internal use only. Used with fs_open_archive_ex() internally. */
+
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
 #define FS_GC_POLICY_FULL           0x0002  /* Garbage collect every unreferenced opened archive, regardless of how many are open.*/
@@ -1121,6 +1123,13 @@ typedef struct fs_file      fs_file;
 typedef struct fs_file_info fs_file_info;
 typedef struct fs_iterator  fs_iterator;
 typedef struct fs_backend   fs_backend;
+
+/*
+This callback is fired when the reference count of a fs object changes. This is useful if you want
+to do some kind of advanced memory management, such as garbage collection. If the new reference count
+is 1, it means no other objects are referencing the fs object.
+*/
+typedef void (* fs_on_refcount_changed_proc)(void* pUserData, fs* pFS, fs_uint32 newRefCount, fs_uint32 oldRefCount);
 
 typedef struct fs_archive_type
 {
@@ -1152,6 +1161,8 @@ struct fs_config
     fs_stream* pStream;
     const fs_archive_type* pArchiveTypes;
     size_t archiveTypeCount;
+    fs_on_refcount_changed_proc onRefCountChanged;
+    void* pRefCountChangedUserData;
     const fs_allocation_callbacks* pAllocationCallbacks;
 };
 
@@ -1168,7 +1179,7 @@ typedef struct fs_backend
     fs_result    (* remove          )(fs* pFS, const char* pFilePath);
     fs_result    (* rename          )(fs* pFS, const char* pOldName, const char* pNewName);
     fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
-    fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by proxy of passthrough style backends. */
+    fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by passthrough style backends. */
     size_t       (* file_alloc_size )(fs* pFS);
     fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return FS_DOES_NOT_EXIST if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
     fs_result    (* file_open_handle)(fs* pFS, void* hBackendFile, fs_file* pFile);                   /* Optional. Open a file from a file handle. Backend-specific. The format of hBackendFile will be specified by the backend. */

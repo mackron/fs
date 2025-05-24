@@ -1288,268 +1288,6 @@ static void fs_backend_free_iterator(const fs_backend* pBackend, fs_iterator* pI
 
 
 /*
-This is a special backend that we use for archives so we can intercept opening and closing of files within those archives
-and do any necessary reference counting.
-*/
-
-/* Forward declarations. */
-static size_t fs_increment_opened_archive_ref_count(fs* pFS, fs* pArchive);
-static size_t fs_decrement_opened_archive_ref_count(fs* pFS, fs* pArchive);
-
-typedef struct fs_proxy
-{
-    const fs_backend* pBackend;
-    fs_file* pArchiveFile;
-} fs_proxy;
-
-typedef struct fs_proxy_config
-{
-    const fs_backend* pBackend;
-    const void* pBackendConfig;
-} fs_proxy_config;
-
-typedef struct fs_file_proxy
-{
-    fs_bool32 unrefArchiveOnClose;
-} fs_file_proxy;
-
-static fs_proxy* fs_proxy_get_backend_data(fs* pFS)
-{
-    return (fs_proxy*)FS_OFFSET_PTR(fs_get_backend_data(pFS), fs_get_backend_data_size(pFS) - sizeof(fs_proxy));
-}
-
-static const fs_backend* fs_proxy_get_backend(fs* pFS)
-{
-    return fs_proxy_get_backend_data(pFS)->pBackend;
-}
-
-static fs_file* fs_proxy_get_archive_file(fs* pFS)
-{
-    fs_proxy* pProxy;
-
-    pProxy = fs_proxy_get_backend_data(pFS);
-    FS_ASSERT(pProxy != NULL);
-
-    return pProxy->pArchiveFile;
-}
-
-static fs* fs_proxy_get_owner_fs(fs* pFS)
-{
-    return fs_file_get_fs(fs_proxy_get_archive_file(pFS));
-}
-
-
-static fs_file_proxy* fs_file_proxy_get_backend_data(fs_file* pFile)
-{
-    return (fs_file_proxy*)FS_OFFSET_PTR(fs_file_get_backend_data(pFile), fs_file_get_backend_data_size(pFile) - sizeof(fs_file_proxy));
-}
-
-static fs_bool32 fs_file_proxy_get_unref_archive_on_close(fs_file* pFile)
-{
-    fs_file_proxy* pFileProxy = fs_file_proxy_get_backend_data(pFile);
-    FS_ASSERT(pFileProxy != NULL);
-
-    return pFileProxy->unrefArchiveOnClose;
-}
-
-static void fs_file_proxy_set_unref_archive_on_close(fs_file* pFile, fs_bool32 unrefArchiveOnClose)
-{
-    fs_file_proxy* pFileProxy = fs_file_proxy_get_backend_data(pFile);
-    FS_ASSERT(pFileProxy != NULL);
-
-    pFileProxy->unrefArchiveOnClose = unrefArchiveOnClose;
-}
-
-
-static size_t fs_alloc_size_proxy(const void* pBackendConfig)
-{
-    const fs_proxy_config* pProxyConfig = (const fs_proxy_config*)pBackendConfig;
-    FS_ASSERT(pProxyConfig != NULL);    /* <-- We must have a config since that's where the backend is specified. */
-
-    return fs_backend_alloc_size(pProxyConfig->pBackend, pProxyConfig->pBackendConfig) + sizeof(fs_proxy);
-}
-
-static fs_result fs_init_proxy(fs* pFS, const void* pBackendConfig, fs_stream* pStream)
-{
-    const fs_proxy_config* pProxyConfig = (const fs_proxy_config*)pBackendConfig;
-    fs_proxy* pProxy;
-
-    FS_ASSERT(pProxyConfig != NULL);    /* <-- We must have a config since that's where the backend is specified. */
-    FS_ASSERT(pStream      != NULL);    /* <-- This backend is only used with archives which means we must have a stream. */
-
-    pProxy = fs_proxy_get_backend_data(pFS);
-    FS_ASSERT(pProxy != NULL);
-
-    pProxy->pBackend     = pProxyConfig->pBackend;
-    pProxy->pArchiveFile = (fs_file*)pStream; /* The stream will always be a fs_file when using this backend. */
-
-    return fs_backend_init(pProxyConfig->pBackend, pFS, pProxyConfig->pBackendConfig, pStream);
-}
-
-static void fs_uninit_proxy(fs* pFS)
-{
-    fs_backend_uninit(fs_proxy_get_backend(pFS), pFS);
-}
-
-static fs_result fs_ioctl_proxy(fs* pFS, int command, void* pArgs)
-{
-    return fs_backend_ioctl(fs_proxy_get_backend(pFS), pFS, command, pArgs);
-}
-
-static fs_result fs_remove_proxy(fs* pFS, const char* pFilePath)
-{
-    return fs_backend_remove(fs_proxy_get_backend(pFS), pFS, pFilePath);
-}
-
-static fs_result fs_rename_proxy(fs* pFS, const char* pOldName, const char* pNewName)
-{
-    return fs_backend_rename(fs_proxy_get_backend(pFS), pFS, pOldName, pNewName);
-}
-
-static fs_result fs_mkdir_proxy(fs* pFS, const char* pPath)
-{
-    return fs_backend_mkdir(fs_proxy_get_backend(pFS), pFS, pPath);
-}
-
-static fs_result fs_info_proxy(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
-{
-    return fs_backend_info(fs_proxy_get_backend(pFS), pFS, pPath, openMode, pInfo);
-}
-
-static size_t fs_file_alloc_size_proxy(fs* pFS)
-{
-    return fs_backend_file_alloc_size(fs_proxy_get_backend(pFS), pFS) + sizeof(fs_file_proxy);
-}
-
-static fs_result fs_file_open_proxy(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile)
-{
-    return fs_backend_file_open(fs_proxy_get_backend(pFS), pFS, pStream, pFilePath, openMode, pFile);
-}
-
-static fs_result fs_file_open_handle_proxy(fs* pFS, void* hBackendFile, fs_file* pFile)
-{
-    return fs_backend_file_open_handle(fs_proxy_get_backend(pFS), pFS, hBackendFile, pFile);
-}
-
-static void fs_file_close_proxy(fs_file* pFile)
-{
-    fs_backend_file_close(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile);
-
-    /*
-    This right here is the entire reason the backend needs to be proxied. We need to intercept
-    calls to fs_file_close() so we can then tell the FS that owns the archive to decrement the
-    reference count and potentially put the archive FS up for garbage collection.
-
-    You'll note that we don't have a corresponding call to fs_open_archive() in the function
-    fs_file_open_proxy() above. The reason is that fs_open_archive() is called at a higher
-    level when the archive FS is being acquired in the first place.
-    */
-    if (fs_file_proxy_get_unref_archive_on_close(pFile)) {
-        fs_close_archive(fs_file_get_fs(pFile));
-    }
-}
-
-static fs_result fs_file_read_proxy(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
-{
-    return fs_backend_file_read(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, pDst, bytesToRead, pBytesRead);
-}
-
-static fs_result fs_file_write_proxy(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten)
-{
-    return fs_backend_file_write(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, pSrc, bytesToWrite, pBytesWritten);
-}
-
-static fs_result fs_file_seek_proxy(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)
-{
-    return fs_backend_file_seek(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, offset, origin);
-}
-
-static fs_result fs_file_tell_proxy(fs_file* pFile, fs_int64* pCursor)
-{
-    return fs_backend_file_tell(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, pCursor);
-}
-
-static fs_result fs_file_flush_proxy(fs_file* pFile)
-{
-    return fs_backend_file_flush(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile);
-}
-
-static fs_result fs_file_info_proxy(fs_file* pFile, fs_file_info* pInfo)
-{
-    return fs_backend_file_info(fs_proxy_get_backend(fs_file_get_fs(pFile)), pFile, pInfo);
-}
-
-static fs_result fs_file_duplicate_proxy(fs_file* pFile, fs_file* pDuplicatedFile)
-{
-    fs_result result;
-    fs* pFS;
-
-    pFS = fs_file_get_fs(pFile);
-    
-    result = fs_backend_file_duplicate(fs_proxy_get_backend(pFS), pFile, pDuplicatedFile);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
-
-    /* Increment the reference count of the opened archive if necessary. */
-    if (fs_file_proxy_get_unref_archive_on_close(pFile)) {
-        fs* pOwnerFS;
-
-        fs_file_proxy_set_unref_archive_on_close(pDuplicatedFile, FS_TRUE);
-
-        pOwnerFS = fs_proxy_get_owner_fs(pFS);
-        if (pOwnerFS != NULL) {
-            fs_increment_opened_archive_ref_count(pOwnerFS, pFS);
-        }
-    }
-
-    return FS_SUCCESS;
-}
-
-static fs_iterator* fs_first_proxy(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
-{
-    return fs_backend_first(fs_proxy_get_backend(pFS), pFS, pDirectoryPath, directoryPathLen);
-}
-
-static fs_iterator* fs_next_proxy(fs_iterator* pIterator)
-{
-    return fs_backend_next(fs_proxy_get_backend(pIterator->pFS), pIterator);
-}
-
-static void fs_free_iterator_proxy(fs_iterator* pIterator)
-{
-    fs_backend_free_iterator(fs_proxy_get_backend(pIterator->pFS), pIterator);
-}
-
-static fs_backend fs_proxy_backend =
-{
-    fs_alloc_size_proxy,
-    fs_init_proxy,
-    fs_uninit_proxy,
-    fs_ioctl_proxy,
-    fs_remove_proxy,
-    fs_rename_proxy,
-    fs_mkdir_proxy,
-    fs_info_proxy,
-    fs_file_alloc_size_proxy,
-    fs_file_open_proxy,
-    fs_file_open_handle_proxy,
-    fs_file_close_proxy,
-    fs_file_read_proxy,
-    fs_file_write_proxy,
-    fs_file_seek_proxy,
-    fs_file_tell_proxy,
-    fs_file_flush_proxy,
-    fs_file_info_proxy,
-    fs_file_duplicate_proxy,
-    fs_first_proxy,
-    fs_next_proxy,
-    fs_free_iterator_proxy
-};
-const fs_backend* FS_PROXY = &fs_proxy_backend;
-
-
-/*
 This is the maximum number of ureferenced opened archive files that will be kept in memory
 before garbage collection of those archives is triggered.
 */
@@ -1583,7 +1321,6 @@ FS_API fs_config fs_config_init(const fs_backend* pBackend, void* pBackendConfig
 typedef struct fs_opened_archive
 {
     fs* pArchive;
-    size_t refCount;
     char pPath[1];
 } fs_opened_archive;
 
@@ -1609,6 +1346,8 @@ struct fs
     size_t archiveTypesAllocSize;
     fs_bool32 isOwnerOfArchiveTypes;
     size_t backendDataSize;
+    fs_on_refcount_changed_proc onRefCountChanged;
+    void* pRefCountChangedUserData;
     fs_mtx archiveLock;     /* For use with fs_open_archive() and fs_close_archive(). */
     void* pOpenedArchives;  /* One heap allocation. Structure is [fs*][refcount (size_t)][path][null-terminator][padding (aligned to FS_SIZEOF_PTR)] */
     size_t openedArchivesSize;
@@ -1616,7 +1355,8 @@ struct fs
     size_t archiveGCThreshold;
     fs_mount_list* pReadMountPoints;
     fs_mount_list* pWriteMountPoints;
-    size_t refCount;        /* Incremented when a file is opened, decremented when a file is closed. */
+    fs_mtx refLock;
+    fs_uint32 refCount;        /* Incremented when a file is opened, decremented when a file is closed. */
 };
 
 typedef struct fs_file
@@ -1919,6 +1659,7 @@ static fs_opened_archive* fs_find_opened_archive(fs* pFS, const char* pArchivePa
     return NULL;
 }
 
+#if 0
 static fs_opened_archive* fs_find_opened_archive_by_fs(fs* pFS, fs* pArchive)
 {
     size_t cursor;
@@ -1944,6 +1685,7 @@ static fs_opened_archive* fs_find_opened_archive_by_fs(fs* pFS, fs* pArchive)
     /* If we get here it means we couldn't find the archive. */
     return NULL;
 }
+#endif
 
 static fs_result fs_add_opened_archive(fs* pFS, fs* pArchive, const char* pArchivePath, size_t archivePathLen)
 {
@@ -1983,7 +1725,6 @@ static fs_result fs_add_opened_archive(fs* pFS, fs* pArchive, const char* pArchi
 
     pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, pFS->openedArchivesSize);
     pOpenedArchive->pArchive = pArchive;
-    pOpenedArchive->refCount = 0;
     fs_strncpy(pOpenedArchive->pPath, pArchivePath, archivePathLen);
 
     pFS->openedArchivesSize += openedArchiveSize;
@@ -2005,41 +1746,6 @@ static fs_result fs_remove_opened_archive(fs* pFS, fs_opened_archive* pOpenedArc
     pFS->openedArchivesSize -= openedArchiveSize;
 
     return FS_SUCCESS;
-}
-
-static size_t fs_increment_opened_archive_ref_count(fs* pFS, fs* pArchive)
-{
-    fs_opened_archive* pOpenedArchive = fs_find_opened_archive_by_fs(pFS, pArchive);
-    if (pOpenedArchive != NULL) {
-        pOpenedArchive->refCount += 1;
-
-        /* If the owner FS is also an archive, increment it's reference counter as well. */
-        if (pFS->pBackend == FS_PROXY) {
-            fs_increment_opened_archive_ref_count(fs_proxy_get_owner_fs(pFS), pFS);
-        }
-
-        return pOpenedArchive->refCount;
-    }
-
-    return 0;
-}
-
-static size_t fs_decrement_opened_archive_ref_count(fs* pFS, fs* pArchive)
-{
-    fs_opened_archive* pOpenedArchive = fs_find_opened_archive_by_fs(pFS, pArchive);
-    if (pOpenedArchive != NULL) {
-        FS_ASSERT(pOpenedArchive->refCount > 0);    /* <-- If this fails it means there's a bug in the library. Please report. */
-        pOpenedArchive->refCount -= 1;
-
-        /* If the owner FS is also an archive, decrement it's reference counter as well. */
-        if (pFS->pBackend == FS_PROXY) {
-            fs_decrement_opened_archive_ref_count(fs_proxy_get_owner_fs(pFS), pFS);
-        }
-
-        return pOpenedArchive->refCount;
-    }
-
-    return 0;
 }
 
 
@@ -2104,6 +1810,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
     fs_int64 initialStreamCursor = -1;
     size_t archiveTypesAllocSize = 0;
     size_t iArchiveType;
+    fs_result result;
 
     if (ppFS == NULL) {
         return FS_INVALID_ARGS;
@@ -2126,11 +1833,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
         return FS_INVALID_ARGS;
     }
 
-    if (pBackend->alloc_size != NULL) {
-        backendDataSizeInBytes = pBackend->alloc_size(pConfig->pBackendConfig);
-    } else {
-        backendDataSizeInBytes = 0;
-    }
+    backendDataSizeInBytes = fs_backend_alloc_size(pBackend, pConfig->pBackendConfig);
 
     /* We need to allocate space for the archive types which we place just after the "fs" struct. After that will be the backend data. */
     for (iArchiveType = 0; iArchiveType < pConfig->archiveTypeCount; iArchiveType += 1) {
@@ -2147,6 +1850,8 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
     pFS->refCount              = 1;
     pFS->allocationCallbacks   = fs_allocation_callbacks_init_copy(pConfig->pAllocationCallbacks);
     pFS->backendDataSize       = backendDataSizeInBytes;
+    pFS->onRefCountChanged     = pConfig->onRefCountChanged;
+    pFS->pRefCountChangedUserData = pConfig->pRefCountChangedUserData;
     pFS->isOwnerOfArchiveTypes = FS_TRUE;
     pFS->archiveGCThreshold    = FS_DEFAULT_ARCHIVE_GC_THRESHOLD;
     pFS->archiveTypesAllocSize = archiveTypesAllocSize;
@@ -2187,9 +1892,15 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
     */
     fs_mtx_init(&pFS->archiveLock, FS_MTX_RECURSIVE);
 
+    /*
+    We need a mutex for the reference counting. This is needed because we may have multiple threads
+    opening and closing files at the same time.
+    */
+    fs_mtx_init(&pFS->refLock, FS_MTX_RECURSIVE);
+
     /* We're now ready to initialize the backend. */
-    if (pBackend->init != NULL) {
-        fs_result result = pBackend->init(pFS, pConfig->pBackendConfig, pConfig->pStream);
+    result = fs_backend_init(pBackend, pFS, pConfig->pBackendConfig, pConfig->pStream);
+    if (result != FS_NOT_IMPLEMENTED) {
         if (result != FS_SUCCESS) {
             /*
             If we have a stream and the backend failed to initialize, it's possible that the cursor of the stream
@@ -2205,6 +1916,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
         }
     } else {
         /* Getting here means the backend does not implement an init() function. This is not mandatory so we just assume successful.*/
+        result = FS_SUCCESS;
     }
 
     *ppFS = pFS;
@@ -2232,25 +1944,14 @@ FS_API void fs_uninit(fs* pFS)
     */
     #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
     {
-        if (pFS->refCount > 1) {
-            FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. */
-        }
-    }
-    #endif
-
-    /* The caller has a bug if there are still outstanding archives. */
-    #if !defined(FS_ENABLE_OPENED_FILES_ASSERT)
-    {
-        if (pFS->openedArchivesSize > 0) {
+        if (fs_refcount(pFS) > 1) {
             FS_ASSERT(!"You have outstanding opened files. You must close all files before uninitializing the fs object.");    /* <-- If you hit this assert but you're absolutely sure you've closed all your files, please submit a bug report with a reproducible test case. */
         }
     }
     #endif
 
 
-    if (pFS->pBackend->uninit != NULL) {
-        pFS->pBackend->uninit(pFS);
-    }
+    fs_backend_uninit(pFS->pBackend, pFS);
 
     fs_free(pFS->pReadMountPoints, &pFS->allocationCallbacks);
     pFS->pReadMountPoints = NULL;
@@ -2261,6 +1962,7 @@ FS_API void fs_uninit(fs* pFS)
     fs_free(pFS->pOpenedArchives, &pFS->allocationCallbacks);
     pFS->pOpenedArchives = NULL;
 
+    fs_mtx_destroy(&pFS->refLock);
     fs_mtx_destroy(&pFS->archiveLock);
 
     fs_free(pFS, &pFS->allocationCallbacks);
@@ -2474,13 +2176,33 @@ FS_API size_t fs_get_backend_data_size(fs* pFS)
     return pFS->backendDataSize;
 }
 
+
+static void fs_on_refcount_changed(fs* pFS, fs_uint32 newRefCount, fs_uint32 oldRefCount)
+{
+    if (pFS->onRefCountChanged != NULL) {
+        pFS->onRefCountChanged(pFS->pRefCountChangedUserData, pFS, newRefCount, oldRefCount);
+    }
+}
+
 FS_API fs* fs_ref(fs* pFS)
 {
+    fs_uint32 newRefCount;
+    fs_uint32 oldRefCount;
+
     if (pFS == NULL) {
         return NULL;
     }
 
-    pFS->refCount += 1;
+    fs_mtx_lock(&pFS->refLock);
+    {
+        oldRefCount = pFS->refCount;
+        newRefCount = pFS->refCount + 1;
+
+        pFS->refCount = newRefCount;
+
+        fs_on_refcount_changed(pFS, newRefCount, oldRefCount);
+    }
+    fs_mtx_unlock(&pFS->refLock);
 
     return pFS;
 }
@@ -2488,6 +2210,7 @@ FS_API fs* fs_ref(fs* pFS)
 FS_API fs_uint32 fs_unref(fs* pFS)
 {
     fs_uint32 newRefCount;
+    fs_uint32 oldRefCount;
 
     if (pFS == NULL) {
         return 0;
@@ -2502,23 +2225,55 @@ FS_API fs_uint32 fs_unref(fs* pFS)
         return pFS->refCount;
     }
 
-    pFS->refCount -= 1;
+    fs_mtx_lock(&pFS->refLock);
+    {
+        oldRefCount = pFS->refCount;
+        newRefCount = pFS->refCount - 1;
 
-    newRefCount = pFS->refCount;
+        pFS->refCount = newRefCount;
+
+        fs_on_refcount_changed(pFS, newRefCount, oldRefCount);
+    }
+    fs_mtx_unlock(&pFS->refLock);
 
     return newRefCount;
 }
 
 FS_API fs_uint32 fs_refcount(fs* pFS)
 {
+    fs_uint32 refCount;
+
     if (pFS == NULL) {
         return 0;
     }
 
-    return pFS->refCount;
+    fs_mtx_lock(&pFS->refLock);
+    {
+        refCount = pFS->refCount;
+    }
+    fs_mtx_unlock(&pFS->refLock);
+
+    return refCount;
 }
 
 
+static void fs_on_refcount_changed_internal(void* pUserData, fs* pFS, fs_uint32 newRefCount, fs_uint32 oldRefCount)
+{
+    fs* pOwnerFS;
+
+    (void)pUserData;
+    (void)pFS;
+    (void)newRefCount;
+    (void)oldRefCount;
+
+    pOwnerFS = (fs*)pUserData;
+    FS_ASSERT(pOwnerFS != NULL);
+
+    if (newRefCount == 1) {
+        /* In this case there are no more files referencing this archive. We'll want to do some garbage collection. */
+        fs_gc_archives(pOwnerFS, FS_GC_POLICY_THRESHOLD);
+    }
+}
 
 static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
 {
@@ -2529,7 +2284,6 @@ static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, voi
     char pArchivePathNTStack[1024];
     char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
     char* pArchivePathNT;
-    fs_proxy_config proxyConfig;
     fs_opened_archive* pOpenedArchive;
 
     /*
@@ -2538,80 +2292,72 @@ static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, voi
     */
     pOpenedArchive = fs_find_opened_archive(pFS, pArchivePath, archivePathLen);
     if (pOpenedArchive != NULL) {
-        if (pOpenedArchive->refCount == 0) {
-            pOpenedArchive->refCount += 1;
-        } else {
-            fs_increment_opened_archive_ref_count(pFS, pOpenedArchive->pArchive);
-        }
-
-        *ppArchive = pOpenedArchive->pArchive;
-        return FS_SUCCESS;
-    }
-
-    /*
-    Getting here means the archive is not cached. We'll need to open it. Unfortunately our path is
-    not null terminated so we'll need to do that now. We'll try to avoid a heap allocation if we
-    can.
-    */
-    if (archivePathLen == FS_NULL_TERMINATED) {
-        pArchivePathNT = (char*)pArchivePath;   /* <-- Safe cast. We won't be modifying this. */
+        pArchive = pOpenedArchive->pArchive;
     } else {
-        if (archivePathLen >= sizeof(pArchivePathNTStack)) {
-            pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
-            if (pArchivePathNTHeap == NULL) {
-                return FS_OUT_OF_MEMORY;
+        /*
+        Getting here means the archive is not cached. We'll need to open it. Unfortunately our path is
+        not null terminated so we'll need to do that now. We'll try to avoid a heap allocation if we
+        can.
+        */
+        if (archivePathLen == FS_NULL_TERMINATED) {
+            pArchivePathNT = (char*)pArchivePath;   /* <-- Safe cast. We won't be modifying this. */
+        } else {
+            if (archivePathLen >= sizeof(pArchivePathNTStack)) {
+                pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
+                if (pArchivePathNTHeap == NULL) {
+                    return FS_OUT_OF_MEMORY;
+                }
+
+                pArchivePathNT = pArchivePathNTHeap;
+            } else {
+                pArchivePathNT = pArchivePathNTStack;
             }
 
-            pArchivePathNT = pArchivePathNTHeap;
-        } else {
-            pArchivePathNT = pArchivePathNTStack;
+            FS_COPY_MEMORY(pArchivePathNT, pArchivePath, archivePathLen);
+            pArchivePathNT[archivePathLen] = '\0';
         }
 
-        FS_COPY_MEMORY(pArchivePathNT, pArchivePath, archivePathLen);
-        pArchivePathNT[archivePathLen] = '\0';
-    }
+        result = fs_file_open(pFS, pArchivePathNT, openMode, &pArchiveFile);
+        if (result != FS_SUCCESS) {
+            fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
 
-    result = fs_file_open(pFS, pArchivePathNT, openMode, &pArchiveFile);
-    if (result != FS_SUCCESS) {
+        archiveConfig = fs_config_init(pBackend, pBackendConfig, fs_file_get_stream(pArchiveFile));
+        archiveConfig.pAllocationCallbacks = fs_get_allocation_callbacks(pFS);
+        archiveConfig.onRefCountChanged = fs_on_refcount_changed_internal;
+        archiveConfig.pRefCountChangedUserData = pFS;   /* The user data is always the fs object that owns this archive. */
+
+        result = fs_init(&archiveConfig, &pArchive);
         fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
-        return result;
+
+        if (result != FS_SUCCESS) { /* <-- This is the result of fs_init().*/
+            fs_file_close(pArchiveFile);
+            return result;
+        }
+
+        /*
+        We need to support the ability to open archives within archives. To do this, the archive fs
+        object needs to inherit the registered archive types. Fortunately this is easy because we do
+        this as one single allocation which means we can just reference it directly. The API has a
+        restriction that archive type registration cannot be modified after a file has been opened.
+        */
+        pArchive->pArchiveTypes         = pFS->pArchiveTypes;
+        pArchive->archiveTypesAllocSize = pFS->archiveTypesAllocSize;
+        pArchive->isOwnerOfArchiveTypes = FS_FALSE;
+
+        /* Add the new archive to the cache. */
+        result = fs_add_opened_archive(pFS, pArchive, pArchivePath, archivePathLen);
+        if (result != FS_SUCCESS) {
+            fs_uninit(pArchive);
+            fs_file_close(pArchiveFile);
+            return result;
+        }
     }
 
-    proxyConfig.pBackend = pBackend;
-    proxyConfig.pBackendConfig = pBackendConfig;
+    FS_ASSERT(pArchive != NULL);
 
-    archiveConfig = fs_config_init(FS_PROXY, &proxyConfig, fs_file_get_stream(pArchiveFile));
-    archiveConfig.pAllocationCallbacks = fs_get_allocation_callbacks(pFS);
-
-    result = fs_init(&archiveConfig, &pArchive);
-    fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
-
-    if (result != FS_SUCCESS) { /* <-- This is the result of fs_init().*/
-        fs_file_close(pArchiveFile);
-        return result;
-    }
-
-    /*
-    We need to support the ability to open archives within archives. To do this, the archive fs
-    object needs to inherit the registered archive types. Fortunately this is easy because we do
-    this as one single allocation which means we can just reference it directly. The API has a
-    restriction that archive type registration cannot be modified after a file has been opened.
-    */
-    pArchive->pArchiveTypes         = pFS->pArchiveTypes;
-    pArchive->archiveTypesAllocSize = pFS->archiveTypesAllocSize;
-    pArchive->isOwnerOfArchiveTypes = FS_FALSE;
-
-    /* Add the new archive to the cache. */
-    result = fs_add_opened_archive(pFS, pArchive, pArchivePath, archivePathLen);
-    if (result != FS_SUCCESS) {
-        fs_uninit(pArchive);
-        fs_file_close(pArchiveFile);
-        return result;
-    }
-
-    fs_increment_opened_archive_ref_count(pFS, pArchive);
-
-    *ppArchive = pArchive;
+    *ppArchive = ((openMode & FS_NO_INCREMENT_REFCOUNT) == 0) ? fs_ref(pArchive) : pArchive;
     return FS_SUCCESS;
 }
 
@@ -2683,33 +2429,30 @@ FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode
 
 FS_API void fs_close_archive(fs* pArchive)
 {
-    fs* pOwnerFS;
+    fs_uint32 newRefCount;
 
-    /* This function should only ever be called for archives that were opened with fs_open_archive(). */
-    FS_ASSERT(pArchive->pBackend == FS_PROXY);
-
-    pOwnerFS = fs_proxy_get_owner_fs(pArchive);
-    FS_ASSERT(pOwnerFS != NULL);
-
-    fs_mtx_lock(&pOwnerFS->archiveLock);
-    {
-        fs_decrement_opened_archive_ref_count(pOwnerFS, pArchive);
+    if (pArchive == NULL) {
+        return;
     }
-    fs_mtx_unlock(&pOwnerFS->archiveLock);
+
+    /* In fs_open_archive() we incremented the reference count. Now we need to decrement it. */
+    newRefCount = fs_unref(pArchive);
 
     /*
-    Now we need to do a bit of garbage collection of opened archives. When files are opened sequentially
-    from a single archive, it's more efficient to keep the archive open for a bit rather than constantly
-    loading and unloading the archive for every single file. Zip, for example, can be inefficient because
-    it requires re-reading and processing the central directory every time you open the archive. The
-    issue is that we probably don't want to have too many archives open at a time since it's a bit
-    wasteful on memory.
-
-    What we're going to do is use a threshold of how many archives we want to keep open at any given
-    time. If we're over this threshold, we'll unload any archives that are no longer in use until we
-    get below the threshold.
+    If the reference count of the archive is 1 it means we don't currently have any files opened. We should
+    look at garbage collecting.
     */
-    fs_gc_archives(pOwnerFS, FS_GC_POLICY_THRESHOLD);
+    if (newRefCount == 1) {
+        /*
+        This is a bit hacky and should probably change. When we initialized the archive in fs_open_archive() we set the user
+        data of the onRefCountChanged callback to be the fs object that owns this archive. We'll just use that to fire the
+        garbage collection process.
+        */
+        fs* pArchiveOwnerFS = (fs*)pArchive->pRefCountChangedUserData;
+        FS_ASSERT(pArchiveOwnerFS != NULL);
+
+        fs_gc_archives(pArchiveOwnerFS, FS_GC_POLICY_THRESHOLD);
+    }
 }
 
 static void fs_gc_archives_nolock(fs* pFS, int policy)
@@ -2741,7 +2484,7 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
     while (cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
 
-        if (pOpenedArchive->refCount == 0) {
+        if (fs_refcount(pOpenedArchive->pArchive) == 1) {
             unreferencedCount += 1;
         }
 
@@ -2766,10 +2509,12 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
     cursor = 0;
     while (collectionCount > 0 && cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
-        if (pOpenedArchive->refCount == 0) {
+
+        if (fs_refcount(pOpenedArchive->pArchive) == 1) {
             fs_file* pArchiveFile;
 
-            pArchiveFile = fs_proxy_get_archive_file(pOpenedArchive->pArchive);
+            /* For our cached archives, the stream should always be a file. */
+            pArchiveFile = (fs_file*)pOpenedArchive->pArchive->pStream;
             FS_ASSERT(pArchiveFile != NULL);
 
             fs_uninit(pOpenedArchive->pArchive);
@@ -2977,7 +2722,7 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                 } else {
                     fs* pArchive;
 
-                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength, FS_OPAQUE | openMode, &pArchive);
+                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
                     if (result != FS_SUCCESS) {
                         /*
                         We failed to open the archive. If it's due to the archive not existing we just continue searching. Otherwise
@@ -2992,16 +2737,13 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
 
                     result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);
                     if (result != FS_SUCCESS) {
-                        fs_close_archive(pArchive);
+                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
                         return result;
                     }
 
-                    if (ppFile != NULL) {
-                        /* The archive must be unreferenced when closing the file. */
-                        fs_file_proxy_set_unref_archive_on_close(*ppFile, FS_TRUE);
-                    } else {
-                        /* We were only grabbing file info. We can close the archive straight away. */
-                        fs_close_archive(pArchive);
+                    if (ppFile == NULL) {
+                        /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
+                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
                     }
 
                     return FS_SUCCESS;
@@ -3065,7 +2807,7 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                         pArchivePathNT[archivePathLen] = '\0';
 
                         /* At this point we've constructed the archive name and we can now open it. */
-                        result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_OPAQUE | openMode, &pArchive);
+                        result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
                         fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
 
                         if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
@@ -3078,7 +2820,7 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                         */
                         result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);  /* +1 to skip the separator. */
                         if (result != FS_SUCCESS) {
-                            fs_close_archive(pArchive);
+                            if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
                             continue;  /* Failed to open the file. Keep looking. */
                         }
 
@@ -3086,12 +2828,9 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                         fs_backend_free_iterator(fs_get_backend_or_default(pFS), pIterator);
                         pIterator = NULL;
 
-                        if (ppFile != NULL) {
-                            /* The archive must be unreferenced when closing the file. */
-                            fs_file_proxy_set_unref_archive_on_close(*ppFile, FS_TRUE);
-                        } else {
-                            /* We were only grabbing file info. We can close the archive straight away. */
-                            fs_close_archive(pArchive);
+                        if (ppFile == NULL) {
+                            /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
+                            if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
                         }
 
                         /* Getting here means we successfully opened the file. We're done. */
@@ -3221,8 +2960,8 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     file path should already be prefixed with the mount point.
 
     UPDATE: Actually don't want to explicitly append FS_IGNORE_MOUNTS here because it can affect the behavior of
-    proxy and passthrough style backends. Some backends, particularly FS_SUB, will call straight into the owner
-    `fs` object which might depend on those mounts being handled for correct behaviour.
+    passthrough style backends. Some backends, particularly FS_SUB, will call straight into the owner `fs` object
+    which might depend on those mounts being handled for correct behaviour.
     */
     /*openMode |= FS_IGNORE_MOUNTS;*/
 
@@ -3493,20 +3232,6 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                     /* The mount point is an archive. This is the simpler case. We just load the file directly from the archive. */
                     result = fs_file_open_or_info(iMountPoint.pArchive, pFileSubPathClean, openMode, ppFile, pInfo);
                     if (result == FS_SUCCESS) {
-                        /*
-                        The reference count of the archive must be incremented or else it'll get prematurely garbage collected. We only
-                        need to do this if we're opening the file. It's not necessary if we're just grabbing file info.
-                        */
-                        if (ppFile != NULL) {
-                            fs_increment_opened_archive_ref_count(pFS, iMountPoint.pArchive);
-
-                            /*
-                            Since we incremented the reference count of the archive, we need to ensure it gets decremented when
-                            the file is closed.
-                            */
-                            fs_file_proxy_set_unref_archive_on_close(*ppFile, FS_TRUE);
-                        }
-
                         return FS_SUCCESS;
                     } else {
                         /* Failed to load from this archive. Keep looking. */
@@ -4785,7 +4510,9 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, in
     */
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
         if (pOtherFS == iterator.pArchive && strcmp(pVirtualPath, iterator.pMountPointPath) == 0) {
-            return FS_SUCCESS;  /* Just pretend we're successful. */
+            /* File system is already mounted to the virtual path. Just pretend we're successful. */
+            fs_ref(pOtherFS);
+            return FS_SUCCESS;
         }
     }
 
@@ -4800,7 +4527,7 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, in
 
     pFS->pReadMountPoints = pMountPoints;
 
-    pNewMountPoint->pArchive = pOtherFS;
+    pNewMountPoint->pArchive = fs_ref(pOtherFS);
     pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
 
     return FS_SUCCESS;
@@ -4820,6 +4547,7 @@ FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options)
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
         if (iterator.pArchive == pOtherFS) {
             fs_mount_list_remove(pFS->pReadMountPoints, iterator.internal.pMountPoint);
+            fs_unref(pOtherFS);
             return FS_SUCCESS;
         }
     }
