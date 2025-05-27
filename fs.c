@@ -4587,7 +4587,12 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
     fs_result result;
     fs_file* pFile;
 
-    if (pFilePath == NULL || pData == NULL) {
+    if (pFilePath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* The data pointer can be null, but only if the data size is 0. In this case the file is just made empty which is a valid use case. */
+    if (pData == NULL && dataSize > 0) {
         return FS_INVALID_ARGS;
     }
 
@@ -4596,7 +4601,9 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
         return result;
     }
 
-    result = fs_file_write(pFile, pData, dataSize, NULL);
+    if (dataSize > 0) {
+        result = fs_file_write(pFile, pData, dataSize, NULL);
+    }
 
     fs_file_close(pFile);
 
