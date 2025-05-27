@@ -946,6 +946,7 @@ typedef enum fs_result
     FS_DIRECTORY_NOT_EMPTY = -16,
     FS_AT_END              = -17,
     FS_BUSY                = -19,
+    FS_INTERRUPT           = -21,
     FS_BAD_SEEK            = -25,
     FS_NOT_IMPLEMENTED     = -29,
     FS_TIMEOUT             = -34,
