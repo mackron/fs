@@ -1270,14 +1270,9 @@ extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for
 /* END fs.h */
 
 
-/* BEG fs_helpers.h */
-/*
-This section just contains various helper functions, mainly for custom backends.
-*/
-
-/* Converts an errno code to our own error code. */
+/* BEG fs_errno.h */
 FS_API fs_result fs_result_from_errno(int error);
-/* END fs_helpers.h */
+/* END fs_errno.h */
 
 
 /* BEG fs_path.h */

@@ -6219,7 +6219,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 /* END fs_mktmp.c */
 
 
-/* BEG fs_helpers.c */
+/* BEG fs_errno.c */
 FS_API fs_result fs_result_from_errno(int error)
 {
     switch (error)
@@ -6236,7 +6236,7 @@ FS_API fs_result fs_result_from_errno(int error)
     /* Fall back to a generic error. */
     return FS_ERROR;
 }
-/* END fs_helpers.c */
+/* END fs_errno.c */
 
 
 
