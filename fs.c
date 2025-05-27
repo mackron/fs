@@ -5817,6 +5817,7 @@ HRESULT fs_get_folder_path_win32(char* pPath, int nFolder)
 }
 #else
 #include <pwd.h>
+#include <unistd.h> /* For getuid() */
 
 static const char* fs_sysdir_home(void)
 {
@@ -6049,11 +6050,6 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 
 
 /* BEG fs_mktmp.c */
-#if defined(_WIN32)
-#else
-#include <unistd.h>     /* For close() */
-#endif
-
 FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
 {
     size_t baseDirLen;
