@@ -4960,7 +4960,7 @@ static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file
         /* Use Win32 to convert from UTF-8 to wchar_t. */
         pathLen = MultiByteToWideChar(CP_UTF8, 0, pPath, -1, NULL, 0);
         if (pathLen == 0) {
-            return fs_result_from_errno(GetLastError());
+            return fs_result_from_GetLastError(GetLastError());
         }
 
         if (pathLen <= (int)FS_COUNTOF(pPathWStack)) {
@@ -5345,7 +5345,7 @@ FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFil
     }
 
     if (!DuplicateHandle(GetCurrentProcess(), hFile, GetCurrentProcess(), &hFileDuplicate, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
-        return fs_result_from_errno(GetLastError());
+        return fs_result_from_GetLastError(GetLastError());
     }
 
     fdDuplicate = _open_osfhandle((fs_intptr)hFileDuplicate, _O_RDONLY);
@@ -6149,7 +6149,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
         }
 
         if (GetTempFileNameA(pTmpPath, pPrefixName, 0, pTmpPathWin) == 0) {
-            return fs_result_from_errno(GetLastError());
+            return fs_result_from_GetLastError(GetLastError());
         }
 
         /*
@@ -6171,7 +6171,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
             DeleteFileA(pTmpPathWin);
 
             if (CreateDirectoryA(pTmpPathWin, NULL) == 0) {
-                return fs_result_from_errno(GetLastError());
+                return fs_result_from_GetLastError(GetLastError());
             }
         } else {
             /* We're creating a temp file. The OS will have already created the file in GetTempFileNameA() so no need to create it explicitly. */
