@@ -18,6 +18,7 @@
 #define FS_PAK_ABS(x)   (((x) > 0) ? (x) : -(x))
 
 
+/* BEG fs_pak.c */
 static FS_INLINE fs_bool32 fs_pak_is_le(void)
 {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
