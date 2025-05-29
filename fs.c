@@ -4183,11 +4183,12 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
     result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
-    if (result != FS_SUCCESS) {
+    if (result != FS_SUCCESS && result != FS_DOES_NOT_EXIST) {
         return result;
     }
 
-    if (fileInfo.directory) {
+    /* If we failed to find the info (result == FS_DOES_NOT_EXIST), we can just assume we're trying to mount a directory. */
+    if (fileInfo.directory || result == FS_DOES_NOT_EXIST) {
         pNewMountPoint->pArchive = NULL;
         pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
     } else {
