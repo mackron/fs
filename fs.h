@@ -296,7 +296,7 @@ archive should be compressed.
 1.3. Mounting
 -------------
 There is no ability to change the working directory in this library. Instead you can mount a
-physical directory to virtual path, similar in concept to Unix operating systems. The difference,
+physical directory to a virtual path, similar in concept to Unix operating systems. The difference,
 however, is that you can mount multiple directories to the same mount point in which case a
 prioritization system will be used. There are separate mount points for reading and writing. Below
 is an example of mounting for reading:
@@ -305,14 +305,15 @@ is an example of mounting for reading:
 fs_mount(pFS, "/some/actual/path", NULL, FS_READ);
 ```
 
-Do unmount, you need to specify the actual path, not the virtual path:
+To unmount, you need to specify the actual path, not the virtual path:
 
 ```c
 fs_unmount(pFS, "/some/actual/path", FS_READ);
 ```
 
-In the example above, `NULL` is equivalent to an empty path. If, for example, you have a file with
-the path "/some/actual/path/file.txt", you can open it like the following:
+In the example above, using `NULL` for the virtual path is equivalent to an empty path. If, for
+example, you have a file with the path "/some/actual/path/file.txt", you can open it like the
+following:
 
 ```c
 fs_file_open(pFS, "file.txt", FS_READ, &pFile);
@@ -412,7 +413,7 @@ fs_file_open(pFS, "/gamedata/file.txt", FS_READ, &pFile);   // Note how the path
 ```
 
 
-You can also mount an archives to a virtual path:
+You can also mount a archives to a virtual path:
 
 ```c
 fs_mount(pFS, "/usr/share/mygame/gamedata.zip", "gamedata", FS_READ);
@@ -491,8 +492,9 @@ Internally, `fs_first()` will gather all of the enumerated files. This means you
 
 Enumerated entries will be sorted by name in terms of `strcmp()`.
 
-Enumeration is not recursive. If you want to enumerate recursively you can inspect the `directory`
-member of the `info` member in `fs_iterator`.
+Enumeration is not recursive. If you want to enumerate recursively you will need to do it manually.
+You can inspect the `directory` member of the `info` member in `fs_iterator` to determine if the
+entry is a directory.
 
 
 1.5. System Directories
@@ -512,7 +514,6 @@ if (pathLen > 0) {
 } else {
     // An error occurred.
 }
-
 ```
 
 `fs_sysdir()` will return the length of the path written to `pPath`, or 0 if an error occurred. If
