@@ -4982,6 +4982,13 @@ static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file
         fs_free(pPathWHeap, fs_get_allocation_callbacks(pFS));
         pPathWHeap = NULL;
 
+        if (hFind == INVALID_HANDLE_VALUE) {
+            return fs_result_from_errno(GetLastError());
+        }
+
+        FindClose(hFind);
+        hFind = NULL;
+
         *pInfo = fs_file_info_from_WIN32_FIND_DATAW(&fd);
     }
     #else
