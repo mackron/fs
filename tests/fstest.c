@@ -190,7 +190,7 @@ static int fstest_path_normalize(const char* pPath, const char* pExpected)
     return result;
 }
 
-static int fstest_paths()
+static int fstest_paths(void)
 {
     int result = 0;
 
@@ -368,7 +368,7 @@ static int fstest_archive_io_file(fs* pFS, const char* pFilePath, const char* pO
     return 0;
 }
 
-static int fstest_archive_io()
+static int fstest_archive_io(void)
 {
     int result;
     fs* pFS;
@@ -464,7 +464,7 @@ static int fstest_archive_io()
     return result;
 }
 
-static int fstest_write_io()
+static int fstest_write_io(void)
 {
     int result;
     fs* pFS;
@@ -506,7 +506,7 @@ static int fstest_write_io()
     return 0;
 }
 
-static int fstest_iteration()
+static int fstest_iteration(void)
 {
     int result;
     fs* pFS;
@@ -557,7 +557,7 @@ static int fstest_iteration()
 
 }
 
-static int fstest_io()
+static int fstest_io(void)
 {
     int result = 0;
 

@@ -6876,9 +6876,16 @@ static fs_result fs_memory_stream_tell_internal(fs_stream* pStream, fs_int64* pC
         return result;
     }
 
-    if (cursor > FS_INT64_MAX) {    /* <-- INT64_MAX may not be defined on some compilers. Need to check this. Can easily define this ourselves. */
+#if defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
+#endif
+    if (cursor > FS_INT64_MAX) {
         return FS_ERROR;
     }
+#if defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
 
     *pCursor = (fs_int64)cursor;
 
