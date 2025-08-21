@@ -3,6 +3,16 @@
 
 #include "fs.h"
 
+/* TODO: Remove this. To replicate errors, Just comment out this _XOPEN_SOURCE section and compile with `-std=c89` on GCC. */
+/* This is for `-std=c89` compatibility. Without this there will be a few pthread related issues as well as some stdio functions being unavailable. They will need workarounds. */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE   700
+#else
+    #if _XOPEN_SOURCE < 500
+    #error _XOPEN_SOURCE must be >= 500. fs is not usable.
+    #endif
+#endif
+
 #include <errno.h>
 
 /* BEG fs_common_macros.c */
@@ -499,14 +509,6 @@ Parameter ordering is the same as c89thread to make amalgamation easier.
 #if defined(_WIN32) && !defined(FS_USE_PTHREAD)
     /* Win32. Don't include windows.h here. */
 #else
-    #ifndef _XOPEN_SOURCE
-    #define _XOPEN_SOURCE   700
-    #else
-        #if _XOPEN_SOURCE < 500
-        #error _XOPEN_SOURCE must be >= 500. c89thread is not usable.
-        #endif
-    #endif
-
     #include <pthread.h>
     typedef pthread_t           fs_pthread;
     typedef pthread_mutex_t     fs_pthread_mutex;
