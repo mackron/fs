@@ -7320,6 +7320,12 @@ logic in stb_sprintf() which we might be able to do via the amalgamator.
 #define FS_SPRINTF_NOUNALIGNED
 #endif
 
+/* We'll get -Wlong-long warnings when forcing C89. Just force disable them. */
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wlong-long"
+#endif
+
 /* We need to disable the implicit-fallthrough warning on GCC. */
 #if defined(__GNUC__) && (__GNUC__ >= 7 || (__GNUC__ == 6 && __GNUC_MINOR__ >= 1))
     #pragma GCC diagnostic push
@@ -8982,7 +8988,10 @@ static fs_int32 fs_real_to_str(char const* *start, fs_uint32 *len, char* out, fs
 /* END stb_sprintf.c */
 
 #if defined(__GNUC__) && (__GNUC__ >= 7 || (__GNUC__ == 6 && __GNUC_MINOR__ >= 1))
-    #pragma GCC diagnostic pop
+    #pragma GCC diagnostic pop  /* Fallthrough warnings. */
+#endif
+#if defined(__clang__) || (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)))
+    #pragma GCC diagnostic pop  /* -Wlong-long */
 #endif
 /* END fs_snprintf.c */
 
