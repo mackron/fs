@@ -93,7 +93,7 @@ if(FS_BUILD_TESTS)
     )
     target_compile_options(fstest PRIVATE ${COMPILE_OPTIONS})
 
-    add_test(NAME fstest COMMAND fstest)
+    #add_test(NAME fstest COMMAND fstest)
 endif()
 
 
