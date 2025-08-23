@@ -431,15 +431,15 @@ static int fstest_archive_io(void)
         fs_file_close(pFile2);
 
 
-        //fs_gc_archives(pFS, FS_GC_POLICY_FULL);
+        /*fs_gc_archives(pFS, FS_GC_POLICY_FULL);*/
     }
 #endif
 
 
     fs_mount(pFS, "testvectors/extracted", NULL, FS_WRITE);
 
-    //fs_mount(pFS, "test", NULL, FS_READ);
-    //fs_mount(pFS, "blah", NULL, FS_READ);
+    /*fs_mount(pFS, "test", NULL, FS_READ);*/
+    /*fs_mount(pFS, "blah", NULL, FS_READ);*/
 
     result |= fstest_archive_io_file(pFS, "testvectors/testvectors.zip/miniaudio.h", "", FS_VERBOSE);
     result |= fstest_archive_io_file(pFS, "testvectors/miniaudio.h",                 "", FS_TRANSPARENT);
