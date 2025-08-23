@@ -1300,6 +1300,17 @@ static void fs_backend_free_iterator(const fs_backend* pBackend, fs_iterator* pI
 }
 
 
+FS_API fs_archive_type fs_archive_type_init(const fs_backend* pBackend, const char* pExtension)
+{
+    fs_archive_type archiveType;
+
+    archiveType.pBackend   = pBackend;
+    archiveType.pExtension = pExtension;
+
+    return archiveType;
+}
+
+
 /*
 This is the maximum number of ureferenced opened archive files that will be kept in memory
 before garbage collection of those archives is triggered.

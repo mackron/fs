@@ -373,13 +373,12 @@ static int fstest_archive_io(void)
     int result;
     fs* pFS;
     fs_config fsConfig;
-    fs_archive_type pArchiveTypes[] =
-    {
-        {FS_ZIP, "zip"},
-        {FS_PAK, "pak"}
-    };
+    fs_archive_type pArchiveTypes[2];
 
     printf("Archive I/O\n");
+
+    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
+    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "pak");
 
     fsConfig = fs_config_init_default();
     fsConfig.pArchiveTypes    = pArchiveTypes;
@@ -511,12 +510,11 @@ static int fstest_iteration(void)
     int result;
     fs* pFS;
     fs_config fsConfig;
-    fs_archive_type pArchiveTypes[] =
-    {
-        {FS_ZIP, "zip"}
-    };
+    fs_archive_type pArchiveTypes[1];
 
     printf("Iteration\n");
+
+    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
 
     /* Default iteration. */
     printf("  Default\n");

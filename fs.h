@@ -1139,6 +1139,9 @@ typedef struct fs_archive_type
     const char* pExtension;
 } fs_archive_type;
 
+FS_API fs_archive_type fs_archive_type_init(const fs_backend* pBackend, const char* pExtension);
+
+
 struct fs_file_info
 {
     fs_uint64 size;
