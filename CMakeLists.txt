@@ -98,13 +98,17 @@ endif()
 
 
 # Examples
+#
+# Note that we don't add COMPILE_OPTIONS for examples because it introduces -Wpedantic warnings
+# when compiling with `-std=c89` which we just don't care about for the sake of an example. Instead
+# we defer these warnings to tests where it doesn't matter so much if the code is a bit messier in
+# order to silence warnings.
 if(FS_BUILD_EXAMPLES)
     # hello_world
     add_executable(hello_world examples/hello_world.c)
     target_link_libraries(hello_world PRIVATE
         fs
     )
-    target_compile_options(hello_world PRIVATE ${COMPILE_OPTIONS})
 
     # archives
     add_executable(archives examples/archives.c)
@@ -113,7 +117,6 @@ if(FS_BUILD_EXAMPLES)
         fszip
         fspak
     )
-    target_compile_options(archives PRIVATE ${COMPILE_OPTIONS})
 
     # mounting
     add_executable(mounting examples/mounting.c)
@@ -122,7 +125,6 @@ if(FS_BUILD_EXAMPLES)
         fszip
         fspak
     )
-    target_compile_options(mounting PRIVATE ${COMPILE_OPTIONS})
 endif()
 
 
