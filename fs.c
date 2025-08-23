@@ -13,10 +13,6 @@ Note that this causes errors on Apple platforms, so we exclude Apple from this.
 #ifndef __APPLE__
     #ifndef _XOPEN_SOURCE
     #define _XOPEN_SOURCE   700
-    #else
-        #if _XOPEN_SOURCE < 500
-        #error _XOPEN_SOURCE must be >= 500. fs is not usable.
-        #endif
     #endif
 #endif
 
