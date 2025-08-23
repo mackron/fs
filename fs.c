@@ -505,7 +505,7 @@ code. These are the differences:
     * The c89 namespace is replaced with "fs_".
     * There is no c89mtx_timedlock() equivalent.
     * `fs_mtx_plain`, etc. have been capitalized and taken out of the enum.
-    * c89thread_success is FS_SUCCESS
+    * c89thrd_success is FS_SUCCESS
     * c89thrd_error is EINVAL
     * c89thrd_busy is EBUSY
     * c89thrd_pthread_* is fs_pthread_*
@@ -523,25 +523,44 @@ Parameter ordering is the same as c89thread to make amalgamation easier.
 #endif
 
 #if defined(_WIN32)
-typedef struct
-{
-    void* handle;    /* HANDLE, CreateMutex(), CreateEvent() */
-    int type;
-} fs_mtx;
+    typedef struct
+    {
+        void* handle;    /* HANDLE, CreateMutex(), CreateEvent() */
+        int type;
+    } fs_mtx;
 #else
-typedef fs_pthread_mutex fs_mtx;
+    /*
+    We may need to force the use of a manual recursive mutex which will happen when compiling
+    on very old compilers, or with `-std=c89`.
+    */
+
+    /* If __STDC_VERSION__ is not defined it means we're compiling in C89 mode. */
+    #if !defined(FS_USE_MANUAL_RECURSIVE_MUTEX) && !defined(__STDC_VERSION__)
+        #define FS_USE_MANUAL_RECURSIVE_MUTEX
+    #endif
+
+    /* This is for checking if PTHREAD_MUTEX_RECURSIVE is available. */
+    #if !defined(FS_USE_MANUAL_RECURSIVE_MUTEX) && (!defined(__USE_UNIX98) && !defined(__USE_XOPEN2K8))
+        #define FS_USE_MANUAL_RECURSIVE_MUTEX
+    #endif
+
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+        typedef struct
+        {
+            pthread_mutex_t mutex;    /* The underlying pthread mutex. */
+            pthread_mutex_t guard;    /* Guard for metadata (owner and recursionCount). */
+            pthread_t owner;
+            int recursionCount;
+            int type;
+        } fs_mtx;
+    #else
+        typedef pthread_mutex_t fs_mtx;
+    #endif
 #endif
 
 #define FS_MTX_PLAIN        0
 #define FS_MTX_TIMED        1
 #define FS_MTX_RECURSIVE    2
-
-enum
-{
-    fs_mtx_plain     = 0x00000000,
-    fs_mtx_timed     = 0x00000001,
-    fs_mtx_recursive = 0x00000002
-};
 
 #if defined(_WIN32)
 FS_API int fs_mtx_init(fs_mtx* mutex, int type)
@@ -642,27 +661,55 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
 FS_API int fs_mtx_init(fs_mtx* mutex, int type)
 {
     int result;
-    pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
 
     if (mutex == NULL) {
         return EINVAL;
     }
 
-    pthread_mutexattr_init(&attr);
-    if ((type & FS_MTX_RECURSIVE) != 0) {
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    } else {
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        /* Initialize the main mutex */
+        result = pthread_mutex_init(&mutex->mutex, NULL);
+        if (result != 0) {
+            return EINVAL;
+        }
+        
+        /* For recursive mutexes, we need the guard mutex and metadata */
+        if ((type & FS_MTX_RECURSIVE) != 0) {
+            if (pthread_mutex_init(&mutex->guard, NULL) != 0) {
+                pthread_mutex_destroy(&mutex->mutex);
+                return EINVAL;
+            }
+
+            mutex->owner = 0;  /* No owner initially. */
+            mutex->recursionCount = 0;
+        }
+        
+        mutex->type = type;
+        
+        return FS_SUCCESS;
     }
+    #else
+    {
+        pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
 
-    result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
-    pthread_mutexattr_destroy(&attr);
+        pthread_mutexattr_init(&attr);
+        if ((type & FS_MTX_RECURSIVE) != 0) {
+            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+        } else {
+            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
+        }
 
-    if (result != 0) {
-        return EINVAL;
+        result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
+        pthread_mutexattr_destroy(&attr);
+
+        if (result != 0) {
+            return EINVAL;
+        }
+
+        return FS_SUCCESS;
     }
-
-    return FS_SUCCESS;
+    #endif
 }
 
 FS_API void fs_mtx_destroy(fs_mtx* mutex)
@@ -671,7 +718,20 @@ FS_API void fs_mtx_destroy(fs_mtx* mutex)
         return;
     }
 
-    pthread_mutex_destroy((pthread_mutex_t*)mutex);
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        /* Only destroy the guard mutex if it was initialized (for recursive mutexes) */
+        if ((mutex->type & FS_MTX_RECURSIVE) != 0) {
+            pthread_mutex_destroy(&mutex->guard);
+        }
+
+        pthread_mutex_destroy(&mutex->mutex);
+    }
+    #else
+    {
+        pthread_mutex_destroy((pthread_mutex_t*)mutex);
+    }
+    #endif
 }
 
 FS_API int fs_mtx_lock(fs_mtx* mutex)
@@ -682,12 +742,68 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
         return EINVAL;
     }
 
-    result = pthread_mutex_lock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        return EINVAL;
-    }
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
 
-    return FS_SUCCESS;
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & FS_MTX_RECURSIVE) == 0) {
+            result = pthread_mutex_lock(&mutex->mutex);
+            if (result != 0) {
+                return EINVAL;
+            }
+
+            return FS_SUCCESS;
+        }
+
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* First, lock the guard mutex to safely access the metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return EINVAL;
+        }
+
+        /* We can bomb out early if the current thread already owns this mutex. */
+        if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            mutex->recursionCount += 1;
+            pthread_mutex_unlock(&mutex->guard);
+            return FS_SUCCESS;
+        }
+
+        /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
+        pthread_mutex_unlock(&mutex->guard);
+        
+        result = pthread_mutex_lock(&mutex->mutex);
+        if (result != 0) {
+            return EINVAL;
+        }
+        
+        /* Update metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            pthread_mutex_unlock(&mutex->mutex);
+            return EINVAL;
+        }
+        
+        mutex->owner = currentThread;
+        mutex->recursionCount = 1;
+        
+        pthread_mutex_unlock(&mutex->guard);
+
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        result = pthread_mutex_lock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            return EINVAL;
+        }
+
+        return FS_SUCCESS;
+    }
+    #endif
 }
 
 FS_API int fs_mtx_trylock(fs_mtx* mutex)
@@ -698,16 +814,79 @@ FS_API int fs_mtx_trylock(fs_mtx* mutex)
         return EINVAL;
     }
 
-    result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        if (result == EBUSY) {
-            return EBUSY;
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
+
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & FS_MTX_RECURSIVE) == 0) {
+            result = pthread_mutex_trylock(&mutex->mutex);
+            if (result != 0) {
+                if (result == EBUSY) {
+                    return EBUSY;
+                }
+
+                return EINVAL;
+            }
+
+            return FS_SUCCESS;
         }
 
-        return EINVAL;
-    }
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* Lock the guard mutex to safely access the metadata. */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return EINVAL;
+        }
+        
+        /* We can bomb out early if the current thread already owns this mutex. */
+        if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            mutex->recursionCount += 1;
+            pthread_mutex_unlock(&mutex->guard);
+            return FS_SUCCESS;
+        }
+        
+        /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
+        pthread_mutex_unlock(&mutex->guard);
+        
+        result = pthread_mutex_trylock(&mutex->mutex);
+        if (result != 0) {
+            if (result == EBUSY) {
+                return EBUSY;
+            }
 
-    return FS_SUCCESS;
+            return EINVAL;
+        }
+        
+        /* Update metadata. */
+        if (pthread_mutex_lock(&mutex->guard) != 0) {
+            pthread_mutex_unlock(&mutex->mutex);
+            return EINVAL;
+        }
+        
+        mutex->owner = currentThread;
+        mutex->recursionCount = 1;
+        
+        pthread_mutex_unlock(&mutex->guard);
+
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        result = pthread_mutex_trylock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            if (result == EBUSY) {
+                return EBUSY;
+            }
+
+            return EINVAL;
+        }
+
+        return FS_SUCCESS;
+    }
+    #endif
 }
 
 FS_API int fs_mtx_unlock(fs_mtx* mutex)
@@ -718,12 +897,64 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
         return EINVAL;
     }
 
-    result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
-    if (result != 0) {
-        return EINVAL;
-    }
+    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
+    {
+        pthread_t currentThread;
 
-    return FS_SUCCESS;
+        /* Optimized path for plain mutexes. */
+        if ((mutex->type & FS_MTX_RECURSIVE) == 0) {
+            result = pthread_mutex_unlock(&mutex->mutex);
+            if (result != 0) {
+                return EINVAL;
+            }
+
+            return FS_SUCCESS;
+        }
+        
+        /* Getting here means it's a recursive mutex. */
+        currentThread = pthread_self();
+        
+        /* Lock the guard mutex to safely access the metadata */
+        result = pthread_mutex_lock(&mutex->guard);
+        if (result != 0) {
+            return EINVAL;
+        }
+        
+        /* Check if the current thread owns the mutex */
+        if (mutex->recursionCount == 0 || !pthread_equal(mutex->owner, currentThread)) {
+            /* Getting here means we are trying to unlock a mutex that is not owned by this thread. Bomb out. */
+            pthread_mutex_unlock(&mutex->guard);
+            return EINVAL;
+        }
+        
+        mutex->recursionCount -= 1;
+
+        if (mutex->recursionCount == 0) {
+            /* Last unlock. Clear ownership and unlock the main mutex. */
+            mutex->owner = 0;
+            pthread_mutex_unlock(&mutex->guard);
+
+            result = pthread_mutex_unlock(&mutex->mutex);
+            if (result != 0) {
+                return EINVAL;
+            }
+        } else {
+            /* Still recursively locked, just unlock the guard mutex. */
+            pthread_mutex_unlock(&mutex->guard);
+        }
+        
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
+        if (result != 0) {
+            return EINVAL;
+        }
+
+        return FS_SUCCESS;
+    }
+    #endif
 }
 #endif
 /* END fs_thread.c */
