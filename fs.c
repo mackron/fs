@@ -6234,6 +6234,239 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 
 
 /* BEG fs_mktmp.c */
+#ifndef _WIN32
+
+/*
+We need to detect whether or not mkdtemp() and mkstemp() are available. If it's not we'll fall back to a
+non-optimal implementation. These are the rules:
+
+  - POSIX.1-2008 and later
+  - glibc 2.1.91+ (when _GNU_SOURCE is defined)
+  - Not available in strict C89 mode
+  - Not available on some older systems
+*/
+#if !defined(FS_USE_MKDTEMP_FALLBACK)
+    #if !defined(FS_HAS_MKDTEMP) && (defined(_GNU_SOURCE) || defined(_BSD_SOURCE))
+        #define FS_HAS_MKDTEMP
+    #endif
+    #if !defined(FS_HAS_MKDTEMP) && defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200809L
+        #define FS_HAS_MKDTEMP
+    #endif
+    #if !defined(FS_HAS_MKDTEMP) && defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 700
+        #define FS_HAS_MKDTEMP
+    #endif
+    #if !defined(FS_HAS_MKDTEMP) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L && !defined(__STRICT_ANSI__)
+        #define FS_HAS_MKDTEMP
+    #endif
+#endif
+
+#if !defined(FS_HAS_MKDTEMP)
+#include <time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+static int fs_get_random_bytes(unsigned char* pBytes, size_t count)
+{
+    int fd;
+    ssize_t bytesRead;
+
+    /* Try /dev/urandom first. */
+    fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        bytesRead = read(fd, pBytes, count);
+        close(fd);
+
+        if ((size_t)bytesRead == count) {
+            return 0;  /* Success. */
+        }
+
+        /* Getting here means reading failed. Fall through to the fallback case. */
+    }
+
+    /* Getting here means /dev/urandom failed. We can fall back to a simple time/pid/stack based entropy. */
+    {
+        unsigned long stackAddress = 0;
+        unsigned long seed;
+        size_t i;
+        
+        /* Create a seed using multiple entropy sources. */
+        seed  = (unsigned long)time(NULL);
+        seed ^= (unsigned long)getpid();
+        seed ^= (unsigned long)(size_t)&stackAddress;  /* <-- Stack address entropy. */
+        seed ^= (unsigned long)clock();
+
+        /* LCG */
+        for (i = 0; i < count; i += 1) {
+            seed = seed * 1103515245U + 12345U;
+            pBytes[i] = (unsigned char)(seed >> 16);
+        }
+        
+        return 0;
+    }
+}
+
+static char* fs_mkdtemp_fallback(char* pTemplate)
+{
+    size_t templateLen;
+    char* pXXXXXX;
+    int attempts;
+    int i;
+    
+    if (pTemplate == NULL) {
+        return NULL;
+    }
+    
+    /* The template must end with XXXXXX. */
+    templateLen = strlen(pTemplate);
+    if (templateLen < 6) {
+        return NULL;
+    }
+    
+    pXXXXXX = pTemplate + templateLen - 6;
+    for (i = 0; i < 6; i += 1) {
+        if (pXXXXXX[i] != 'X') {
+            return NULL; /* Last 6 characters are not "XXXXXX". */
+        }
+    }
+
+    /* We can now fill out the random part and try creating the directory. */
+    for (attempts = 0; attempts < 100; attempts += 1) {
+        unsigned char randomBytes[6];
+        
+        if (fs_get_random_bytes(randomBytes, 6) != 0) {
+            return NULL;
+        }
+        
+        /* Fill out the random part using the random bytes */
+        for (i = 0; i < 6; i += 1) {
+            int r = randomBytes[i] % 62;
+            if (r < 10) {
+                pXXXXXX[i] = '0' + r;
+            } else if (r < 36) {
+                pXXXXXX[i] = 'A' + (r - 10);
+            } else {
+                pXXXXXX[i] = 'a' + (r - 36);
+            }
+        }
+
+        /* With the random part filled out we're now ready to try creating the directory */
+        if (mkdir(pTemplate, S_IRWXU) == 0) {
+            return pTemplate; /* Success */
+        }
+
+        /*
+        Getting here means we failed to create the directory. If it's because the directory already exists (EEXIST)
+        we can just continue iterating. Otherwise it was an unexpected error and we need to bomb out.
+        */
+        if (errno != EEXIST) {
+            return NULL;
+        }
+    }
+    
+    /* Getting here means we failed after several attempts. */
+    return NULL;
+}
+
+static int fs_mkstemp_fallback(char* pTemplate)
+{
+    size_t templateLen;
+    char* pXXXXXX;
+    int attempts;
+    int i;
+    int fd;
+    
+    if (pTemplate == NULL) {
+        return -1;
+    }
+    
+    /* The template must end with XXXXXX. */
+    templateLen = strlen(pTemplate);
+    if (templateLen < 6) {
+        return -1;
+    }
+    
+    pXXXXXX = pTemplate + templateLen - 6;
+    for (i = 0; i < 6; i += 1) {
+        if (pXXXXXX[i] != 'X') {
+            return -1; /* Last 6 characters are not "XXXXXX". */
+        }
+    }
+
+    /* We can now fill out the random part and try creating the file. */
+    for (attempts = 0; attempts < 100; attempts += 1) {
+        unsigned char randomBytes[6];
+        
+        if (fs_get_random_bytes(randomBytes, 6) != 0) {
+            return -1;
+        }
+        
+        /* Fill out the random part using the random bytes */
+        for (i = 0; i < 6; i += 1) {
+            int r = randomBytes[i] % 62;
+            if (r < 10) {
+                pXXXXXX[i] = '0' + r;
+            } else if (r < 36) {
+                pXXXXXX[i] = 'A' + (r - 10);
+            } else {
+                pXXXXXX[i] = 'a' + (r - 36);
+            }
+        }
+
+        /* With the random part filled out we're now ready to try creating the file */
+        fd = open(pTemplate, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+        if (fd >= 0) {
+            return fd; /* Success */
+        }
+
+        /*
+        Getting here means we failed to create the file. If it's because the file already exists (EEXIST)
+        we can just continue iterating. Otherwise it was an unexpected error and we need to bomb out.
+        */
+        if (errno != EEXIST) {
+            return -1;
+        }
+    }
+    
+    /* Getting here means we failed after several attempts. */
+    return -1;
+}
+#endif
+
+static char* fs_mkdtemp(char* pTemplate)
+{
+    if (pTemplate == NULL) {
+        return NULL;
+    }
+    
+    #if defined(FS_HAS_MKDTEMP)
+    {
+        return mkdtemp(pTemplate);
+    }
+    #else
+    {
+        return fs_mkdtemp_fallback(pTemplate);
+    }
+    #endif
+}
+
+static int fs_mkstemp(char* pTemplate)
+{
+    if (pTemplate == NULL) {
+        return -1;
+    }
+    
+    #if defined(FS_HAS_MKDTEMP)
+    {
+        return mkstemp(pTemplate);
+    }
+    #else
+    {
+        return fs_mkstemp_fallback(pTemplate);
+    }
+    #endif
+}
+#endif
+
 FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options)
 {
     size_t baseDirLen;
@@ -6383,12 +6616,12 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
         /* At this point the full path has been constructed. We can now create the file or directory. */
         if ((options & FS_MKTMP_DIR) != 0) {
             /* We're creating a temp directory. */
-            if (mkdtemp(pTmpPath) == NULL) {
+            if (fs_mkdtemp(pTmpPath) == NULL) {
                 return fs_result_from_errno(errno);
             }
         } else {
             /* We're creating a temp file. */
-            int fd = mkstemp(pTmpPath);
+            int fd = fs_mkstemp(pTmpPath);
             if (fd == -1) {
                 return fs_result_from_errno(errno);
             }
