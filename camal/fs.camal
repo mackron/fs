@@ -1,0 +1,81 @@
+fs_h := <../fs.h>;
+fs_c := <../fs.c>;
+c89thread_h :: <../../c89thread/c89thread.h>;
+
+rename_c89thread_namespace :: function(src:string) string
+{
+    return @(src)
+        ["\bC89THREAD_"]                             <= "FS_"
+        ["\bc89thread_"]                             <= "fs_"
+        ["\bc89mtx_t\b"]                             <= "fs_mtx"
+        ["\bc89mtx_"]                                <= "fs_mtx_"
+        ["\bc89thrd_success\b"]                      <= "FS_SUCCESS"
+        ["\bc89thrd_error\b"]                        <= "FS_ERROR"
+        ["\bc89thrd_busy\b"]                         <= "FS_BUSY"
+        ["\bc89thrd_result_from_errno\b"]            <= "fs_result_from_errno"
+        ["\bc89thrd_result_from_GetLastError\(\)"] <= "fs_result_from_GetLastError(GetLastError())"
+        ["\bfs_handle\b"]                            <= "void*"
+    ;
+}
+
+convert_c89thread_basic_types :: function(src:string) string
+{
+    return rename_c89thread_namespace(src)
+        // We don't need condition variables.
+        ["(?m)^.*fs_pthread_cond_t.*\R"] <= ""
+
+        // Some pedantic alignment fixes.
+        ["  fs_pthread"]          <= "fs_pthread"
+        ["fs_uintptr fs_pthread"] <= "fs_uintptr      fs_pthread"
+    ;
+}
+
+convert_c89thread_mtx_h :: function(src:string) string
+{
+    return rename_c89thread_namespace(src)
+        // We don't need forward declarations.
+        ["\R(?m)^.*fs_mtx_init.*\R"] <= ""
+        ["(?m)^.*fs_mtx_destroy.*\R"] <= ""
+        ["(?m)^.*fs_mtx_lock.*\R"] <= ""
+        ["(?m)^.*fs_mtx_timedlock.*\R"] <= ""
+        ["(?m)^.*fs_mtx_trylock.*\R"] <= ""
+        ["\R(?m)^.*fs_mtx_unlock.*"] <= ""
+    ;
+}
+
+convert_c89thread_mtx_c :: function(src:string) string
+{
+    return rename_c89thread_namespace(src)
+        ["int fs_mtx_init"]     <= "static int fs_mtx_init"
+        ["void fs_mtx_destroy"] <= "static void fs_mtx_destroy"
+        ["int fs_mtx_lock"]     <= "static int fs_mtx_lock"
+        ["int fs_mtx_unlock"]   <= "static int fs_mtx_unlock"
+    ;
+}
+
+build_c89thread_mtx_c :: function() string
+{
+    win32 := convert_c89thread_mtx_c(@(c89thread_h("/\* BEG c89mtx_win32.c \*/\R"   : "\R/\* END c89mtx_win32.c \*/"  )));
+    win32["\R/\* BEG fs_mtx_trylock_win32.c \*/\R"   : "\R/\* END fs_mtx_trylock_win32.c \*/\R"]   = "";
+    win32["\R/\* BEG fs_mtx_timedlock_win32.c \*/\R" : "\R/\* END fs_mtx_timedlock_win32.c \*/\R"] = "";
+
+    pthread := convert_c89thread_mtx_c(@(c89thread_h("/\* BEG c89mtx_pthread.c \*/\R" : "\R/\* END c89mtx_pthread.c \*/")));
+    pthread["\R/\* BEG fs_mtx_trylock_pthread.c \*/\R"   : "\R/\* END fs_mtx_trylock_pthread.c \*/\R"]   = "";
+    pthread["\R/\* BEG fs_mtx_timedlock_pthread.c \*/\R" : "\R/\* END fs_mtx_timedlock_pthread.c \*/\R"] = "";
+
+    result : string;
+
+    result["$"] = "#if defined(FS_WIN32) && !defined(FS_USE_PTHREAD)\n";
+    result["$"] = win32;
+    result["$"] = "\n";
+    result["$"] = "#else\n";
+    result["$"] = pthread;
+    result["$"] = "\n";
+    result["$"] = "#endif";
+
+    return result;
+}
+
+fs_c("/\* BEG fs_thread_basic_types.c \*/\R" : "\R/\* END fs_thread_basic_types.c \*/") = convert_c89thread_basic_types(@(c89thread_h("/\* BEG c89thread_basic_types.h \*/\R" : "\R/\* END c89thread_basic_types.h \*/")));
+fs_c("/\* BEG fs_thread_mtx.h \*/\R" : "\R/\* END fs_thread_mtx.h \*/") = convert_c89thread_mtx_h(@(c89thread_h("/\* BEG c89thread_mtx.h \*/\R" : "\R/\* END c89thread_mtx.h \*/")));
+fs_c("/\* BEG fs_thread_mtx.c \*/\R" : "\R/\* END fs_thread_mtx.c \*/") = build_c89thread_mtx_c();
