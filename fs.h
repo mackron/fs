@@ -1098,6 +1098,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 #define FS_APPEND                   (FS_WRITE | 0x0004)
 #define FS_OVERWRITE                (FS_WRITE | 0x0008)
 #define FS_TRUNCATE                 (FS_WRITE)
+
 #define FS_TEMP                     (FS_TRUNCATE | 0x0010)
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
