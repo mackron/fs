@@ -99,11 +99,7 @@ int extract(int argc, char** argv)
     fs_result result;
     fs* pFS;
     fs_config fsConfig;
-    fs_archive_type pArchiveTypes[] =
-    {
-        {FS_ZIP, "zip"},
-        {FS_PAK, "pak"}
-    };
+    fs_archive_type pArchiveTypes[2];
     fs* pArchive;
 
     if (argc < 2) {
@@ -118,6 +114,9 @@ int extract(int argc, char** argv)
     } else {
         pOutputPath = ".";
     }
+
+    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
+    pArchiveTypes[1] = fs_archive_type_init(FS_PAK, "pak");
 
     fsConfig = fs_config_init_default();
     fsConfig.pArchiveTypes = pArchiveTypes;
