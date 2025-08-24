@@ -1,9 +1,5 @@
 /*
 POSIX file system support.
-
-The handle type for fs_file_open_from_handle() is an `int`:
-
-    fs_file_open_from_handle(pFS, (void*)STDOUT_FILENO, &file);
 */
 #ifndef fs_posix_h
 #define fs_posix_h

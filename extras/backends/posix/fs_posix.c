@@ -3,6 +3,9 @@
 
 #include "fs_posix.h"
 
+/* If it's not Windows, assume POSIX support. This can be adjusted later as other platforms come up. */
+#if !defined(_WIN32)
+
 /* TODO: Remove this when this file is amalgamated into the main file. */
 #ifndef FS_MAX
 #define FS_MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -519,5 +522,8 @@ static fs_backend fs_posix_backend =
 };
 
 const fs_backend* FS_POSIX = &fs_posix_backend;
+#else
+const fs_backend* FS_POSIX = NULL;
+#endif
 
 #endif  /* fs_posix_c */
