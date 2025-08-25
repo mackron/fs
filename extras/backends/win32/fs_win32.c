@@ -668,7 +668,9 @@ static fs_result fs_file_duplicate_win32(fs_file* pFile, fs_file* pDuplicate)
 {
     fs_file_win32* pFileWin32      = (fs_file_win32*)fs_file_get_backend_data(pFile);
     fs_file_win32* pDuplicateWin32 = (fs_file_win32*)fs_file_get_backend_data(pDuplicate);
-    
+    fs_result result;
+    BY_HANDLE_FILE_INFORMATION info1, info2;
+
     if (pFileWin32->isStandardHandle) {
         pDuplicateWin32->hFile = pFileWin32->hFile;
         pDuplicateWin32->isStandardHandle = FS_TRUE;
@@ -685,7 +687,27 @@ static fs_result fs_file_duplicate_win32(fs_file* pFile, fs_file* pDuplicate)
         return FS_INVALID_OPERATION;
     }
 
-    return fs_file_open_win32(fs_file_get_fs(pFile), NULL, pFileWin32->pFilePath, pFileWin32->openMode, pDuplicate);
+    result = fs_file_open_win32(fs_file_get_fs(pFile), NULL, pFileWin32->pFilePath, pFileWin32->openMode, pDuplicate);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Now check the file information in case it got replaced with a different file from under us. */
+    if (GetFileInformationByHandle(pFileWin32->hFile, &info1) == FS_FALSE) {
+        fs_file_close_win32(pDuplicate);
+        return fs_result_from_GetLastError();
+    }
+    if (GetFileInformationByHandle(pDuplicateWin32->hFile, &info2) == FS_FALSE) {
+        fs_file_close_win32(pDuplicate);
+        return fs_result_from_GetLastError();
+    }
+
+    if ((info1.dwVolumeSerialNumber != info2.dwVolumeSerialNumber) || (info1.nFileIndexLow != info2.nFileIndexLow) || (info1.nFileIndexHigh != info2.nFileIndexHigh)) {
+        fs_file_close_win32(pDuplicate);
+        return FS_INVALID_OPERATION;
+    }
+
+    return FS_SUCCESS;
 }
 
 
