@@ -1082,10 +1082,6 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* R
 
 
 /* BEG fs_mktmp.h */
-/* Make sure these options do not conflict with FS_NO_CREATE_DIRS. */
-#define FS_MKTMP_DIR  0x0800  /* Create a temporary directory. */
-#define FS_MKTMP_FILE 0x1000  /* Create a temporary file. */
-
 FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
 /* END fs_mktmp.h */
 
@@ -1093,25 +1089,29 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 /* BEG fs.h */
 /* Open mode flags. */
 #define FS_READ                     0x0001
-#define FS_WRITE                    0x0002              /* Will truncate by default. */
-#define FS_APPEND                   (FS_WRITE | 0x0004) /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
-#define FS_EXCLUSIVE                (FS_WRITE | 0x0008) /* Only valid with write mode. Will fail if the file already exists. */
+#define FS_WRITE                    0x0002  /* Will truncate by default. */
+#define FS_APPEND                   0x0004  /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
+#define FS_EXCLUSIVE                0x0008  /* Only valid with write mode. Will fail if the file already exists. */
 
-#define FS_TEMP                     (FS_EXCLUSIVE | 0x0010)
+#define FS_TEMP                     0x0010  /* When passed into fs_file_open(), will create a temp file. Should not be combined with any other flag except FS_READ and/or FS_WRITE. */
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
-#define FS_OPAQUE                   0x0010  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
-#define FS_VERBOSE                  0x0020  /* When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt" */
+#define FS_OPAQUE                   0x0020  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
+#define FS_VERBOSE                  0x0040  /* When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt" */
 
-#define FS_NO_CREATE_DIRS           0x0040  /* When used, directories will not be created automatically when opening files for writing. */
-#define FS_IGNORE_MOUNTS            0x0080  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
-#define FS_ONLY_MOUNTS              0x0100  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
-#define FS_NO_SPECIAL_DIRS          0x0200  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
-#define FS_NO_ABOVE_ROOT_NAVIGATION 0x0400  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
+#define FS_NO_CREATE_DIRS           0x0080  /* When used, directories will not be created automatically when opening files for writing. */
+#define FS_IGNORE_MOUNTS            0x0100  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
+#define FS_ONLY_MOUNTS              0x0200  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
+#define FS_NO_SPECIAL_DIRS          0x0400  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
+#define FS_NO_ABOVE_ROOT_NAVIGATION 0x0800  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
 
-#define FS_LOWEST_PRIORITY          0x2000  /* Only used with mounting. When set will create the mount with a lower priority to existing mounts. */
+#define FS_LOWEST_PRIORITY          0x1000  /* Only used with mounting. When set will create the mount with a lower priority to existing mounts. */
 
-#define FS_NO_INCREMENT_REFCOUNT    0x4000  /* Internal use only. Used with fs_open_archive_ex() internally. */
+#define FS_MKTMP_DIR                0x2000  /* Only used with fs_mktmp(). Create a temporary directory. */
+#define FS_MKTMP_FILE               0x4000  /* Only used with fs_mktmp(). Create a temporary file. */
+
+#define FS_NO_INCREMENT_REFCOUNT    0x8000  /* Internal use only. Used with fs_open_archive_ex() internally. */
+
 
 /* Garbage collection policies.*/
 #define FS_GC_POLICY_THRESHOLD      0x0001  /* Only garbage collect unreferenced opened archives until the count is below the configured threshold. */
