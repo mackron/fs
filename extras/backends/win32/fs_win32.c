@@ -791,7 +791,7 @@ static fs_iterator* fs_iterator_win32_resolve(fs_iterator_win32* pIteratorWin32,
     }
     #else
     {
-        nameLenIncludingNullTerminator = strlen(pFD->cFileName) + 1;  /* +1 for the null terminator. */
+        nameLenIncludingNullTerminator = (int)strlen(pFD->cFileName) + 1;  /* +1 for the null terminator. */
     }
     #endif
 
