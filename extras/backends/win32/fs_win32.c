@@ -85,7 +85,7 @@ static void fs_win32_path_init_internal(fs_win32_path* pPath)
     pPath->pathHeap = NULL;
 }
 
-static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8, const fs_allocation_callbacks* pAllocationCallbacks)
+static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8, size_t pathUTF8Len, const fs_allocation_callbacks* pAllocationCallbacks)
 {
     size_t i;
 
@@ -94,14 +94,21 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
     #if defined(UNICODE) || defined(_UNICODE)
     {
         int wideCharLen;
+        int cbMultiByte;
 
-        wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, -1, NULL, 0);
+        if (pathUTF8Len == (size_t)-1) {
+            cbMultiByte = (int)-1;
+        } else {
+            cbMultiByte = (int)pathUTF8Len + 1;
+        }
+
+        wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, NULL, 0);
         if (wideCharLen == 0) {
             return FS_ERROR;
         }
 
         /* Use the stack if possible. If not, allocate on the heap. */
-        if (wideCharLen <= FS_COUNTOF(pPath->pathStack)) {
+        if (wideCharLen <= (int)FS_COUNTOF(pPath->pathStack)) {
             pPath->path = pPath->pathStack;
         } else {
             pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * wideCharLen, pAllocationCallbacks);
@@ -112,7 +119,7 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
             pPath->path = pPath->pathHeap;
         }
 
-        MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, -1, pPath->path, wideCharLen);
+        MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, pPath->path, wideCharLen);
         pPath->len = wideCharLen - 1;  /* The count returned by MultiByteToWideChar() includes the null terminator, so subtract 1 to compensate. */
 
         /* Convert forward slashes to back slashes for compatibility. */
@@ -130,7 +137,12 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
         Not doing any conversion here. Just assuming the path is an ANSI path. We need to copy over the string
         and convert slashes to backslashes.
         */
-        pPath->len = strlen(pPathUTF8);
+        if (pathUTF8Len == (size_t)-1) {
+            pPath->len = strlen(pPathUTF8);
+        } else {
+            pPath->len = pathUTF8Len;
+        }
+
         if (pPath->len >= sizeof(pPath->pathStack)) {
             pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * (pPath->len + 1), pAllocationCallbacks);
             if (pPath->pathHeap == NULL) {
@@ -160,7 +172,7 @@ static fs_result fs_win32_path_append(fs_win32_path* pPath, const char* pAppendU
     fs_win32_path append;
     size_t newLen;
 
-    result = fs_win32_path_init(&append, pAppendUTF8, pAllocationCallbacks);
+    result = fs_win32_path_init(&append, pAppendUTF8, (size_t)-1, pAllocationCallbacks);
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -288,7 +300,7 @@ static fs_result fs_remove_win32(fs* pFS, const char* pFilePath)
     fs_result result;
     fs_win32_path path;
 
-    result = fs_win32_path_init(&path, pFilePath, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&path, pFilePath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -334,12 +346,12 @@ static fs_result fs_rename_win32(fs* pFS, const char* pOldName, const char* pNew
     fs_win32_path pathOld;
     fs_win32_path pathNew;
 
-    result = fs_win32_path_init(&pathOld, pOldName, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&pathOld, pOldName, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
 
-    result = fs_win32_path_init(&pathNew, pNewName, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&pathNew, pNewName, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         fs_win32_path_uninit(&pathOld, fs_get_allocation_callbacks(pFS));
         return result;
@@ -370,7 +382,7 @@ static fs_result fs_mkdir_win32(fs* pFS, const char* pPath)
         }
     }
 
-    result = fs_win32_path_init(&path, pPath, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&path, pPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -417,7 +429,7 @@ static fs_result fs_info_win32(fs* pFS, const char* pPath, int openMode, fs_file
         return fs_info_from_stdio_win32(GetStdHandle(STD_ERROR_HANDLE ), pInfo);
     }
 
-    result = fs_win32_path_init(&path, pPath, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&path, pPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -514,7 +526,7 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
         return FS_INVALID_ARGS;
     }
 
-    result = fs_win32_path_init(&path, pFilePath, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&path, pFilePath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -848,7 +860,7 @@ static fs_iterator* fs_first_win32(fs* pFS, const char* pDirectoryPath, size_t d
         directoryPathLen = 1;
     }
 
-    result = fs_win32_path_init(&query, pDirectoryPath, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&query, pDirectoryPath, directoryPathLen, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return NULL;
     }

@@ -5010,7 +5010,7 @@ static fs_uint64 fs_FILETIME_to_unix(const FILETIME* pFT)
     li.HighPart = pFT->dwHighDateTime;
     li.LowPart  = pFT->dwLowDateTime;
 
-    return (fs_uint64)(li.QuadPart / 10000000UL - 11644473600UL);   /* Convert from Windows epoch to Unix epoch. */
+    return (fs_uint64)(li.QuadPart / 10000000UL - ((fs_uint64)116444736UL * 100UL));   /* Convert from Windows epoch to Unix epoch. */
 }
 
 static fs_file_info fs_file_info_from_WIN32_FIND_DATAW(const WIN32_FIND_DATAW* pFD)
@@ -7286,14 +7286,18 @@ static fs_result fs_memory_stream_tell_internal(fs_stream* pStream, fs_int64* pC
         return result;
     }
 
-#if defined(__clang__)
+#if defined(__clang__) || defined(__GNUC__)
     #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
+    #if defined(__clang__)
+        #pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
+    #elif defined(__GNUC__)
+        #pragma GCC diagnostic ignored "-Wtype-limits"
+    #endif
 #endif
     if (cursor > FS_INT64_MAX) {
         return FS_ERROR;
     }
-#if defined(__clang__)
+#if defined(__clang__) || defined(__GNUC__)
     #pragma GCC diagnostic pop
 #endif
 
