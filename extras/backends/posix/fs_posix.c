@@ -158,13 +158,16 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
         flags |= O_WRONLY | O_CREAT;
     }
 
-    if ((openMode & FS_APPEND) != 0) {
-        flags |= O_APPEND;
-    } else {
-        flags |= O_TRUNC;
+    if ((openMode & FS_WRITE) != 0) {
+        /*if ((openMode & FS_EXCLUSIVE) != 0) {
+            flags |= O_EXCL;
+        } else*/ if ((openMode & FS_APPEND) != 0) {
+            flags |= O_APPEND;
+        } else {
+            flags |= O_TRUNC;
+        }
     }
 
-    /* TODO: Add support for the O_EXCL flag. */
 
     /* For ancient versions of Linux. */
     #if defined(O_LARGEFILE)
