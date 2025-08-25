@@ -28,11 +28,33 @@ static fs_result fs_result_from_GetLastError()
 {
     switch (GetLastError())
     {
-        case ERROR_SUCCESS:           return FS_SUCCESS;
-        case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
-        case ERROR_BUSY:              return FS_BUSY;
-        case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
-        case ERROR_ALREADY_EXISTS:    return FS_ALREADY_EXISTS;
+        case ERROR_SUCCESS:                return FS_SUCCESS;
+        case ERROR_NOT_ENOUGH_MEMORY:      return FS_OUT_OF_MEMORY;
+        case ERROR_OUTOFMEMORY:            return FS_OUT_OF_MEMORY;
+        case ERROR_BUSY:                   return FS_BUSY;
+        case ERROR_SEM_TIMEOUT:            return FS_TIMEOUT;
+        case ERROR_ALREADY_EXISTS:         return FS_ALREADY_EXISTS;
+        case ERROR_FILE_EXISTS:            return FS_ALREADY_EXISTS;
+        case ERROR_ACCESS_DENIED:          return FS_ACCESS_DENIED;
+        case ERROR_WRITE_PROTECT:          return FS_ACCESS_DENIED;
+        case ERROR_PRIVILEGE_NOT_HELD:     return FS_ACCESS_DENIED;
+        case ERROR_SHARING_VIOLATION:      return FS_ACCESS_DENIED;
+        case ERROR_LOCK_VIOLATION:         return FS_ACCESS_DENIED;
+        case ERROR_FILE_NOT_FOUND:         return FS_DOES_NOT_EXIST;
+        case ERROR_PATH_NOT_FOUND:         return FS_DOES_NOT_EXIST;
+        case ERROR_INVALID_NAME:           return FS_INVALID_ARGS;
+        case ERROR_BAD_PATHNAME:           return FS_INVALID_ARGS;
+        case ERROR_INVALID_PARAMETER:      return FS_INVALID_ARGS;
+        case ERROR_INVALID_HANDLE:         return FS_INVALID_ARGS;
+        case ERROR_FILENAME_EXCED_RANGE:   return FS_PATH_TOO_LONG;
+        case ERROR_DIRECTORY:              return FS_NOT_DIRECTORY;
+        case ERROR_DIR_NOT_EMPTY:          return FS_DIRECTORY_NOT_EMPTY;
+        case ERROR_FILE_TOO_LARGE:         return FS_TOO_BIG;
+        case ERROR_DISK_FULL:              return FS_OUT_OF_RANGE;
+        case ERROR_HANDLE_EOF:             return FS_AT_END;
+        case ERROR_SEEK:                   return FS_BAD_SEEK;
+        case ERROR_OPERATION_ABORTED:      return FS_INTERRUPT;
+        case ERROR_CANCELLED:              return FS_INTERRUPT;
         default: break;
     }
 

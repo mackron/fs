@@ -386,15 +386,38 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 #if defined(_WIN32)
 #include <windows.h>    /* <-- Just can't get away from this darn thing... Needed for mutexes and file iteration. */
 
-static fs_result fs_result_from_GetLastError(DWORD error)
+static fs_result fs_result_from_GetLastError()
 {
+    DWORD error = GetLastError();
     switch (error)
     {
-        case ERROR_SUCCESS:           return FS_SUCCESS;
-        case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
-        case ERROR_BUSY:              return FS_BUSY;
-        case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
-        case ERROR_ALREADY_EXISTS:    return FS_ALREADY_EXISTS;
+        case ERROR_SUCCESS:                return FS_SUCCESS;
+        case ERROR_NOT_ENOUGH_MEMORY:      return FS_OUT_OF_MEMORY;
+        case ERROR_OUTOFMEMORY:            return FS_OUT_OF_MEMORY;
+        case ERROR_BUSY:                   return FS_BUSY;
+        case ERROR_SEM_TIMEOUT:            return FS_TIMEOUT;
+        case ERROR_ALREADY_EXISTS:         return FS_ALREADY_EXISTS;
+        case ERROR_FILE_EXISTS:            return FS_ALREADY_EXISTS;
+        case ERROR_ACCESS_DENIED:          return FS_ACCESS_DENIED;
+        case ERROR_WRITE_PROTECT:          return FS_ACCESS_DENIED;
+        case ERROR_PRIVILEGE_NOT_HELD:     return FS_ACCESS_DENIED;
+        case ERROR_SHARING_VIOLATION:      return FS_ACCESS_DENIED;
+        case ERROR_LOCK_VIOLATION:         return FS_ACCESS_DENIED;
+        case ERROR_FILE_NOT_FOUND:         return FS_DOES_NOT_EXIST;
+        case ERROR_PATH_NOT_FOUND:         return FS_DOES_NOT_EXIST;
+        case ERROR_INVALID_NAME:           return FS_INVALID_ARGS;
+        case ERROR_BAD_PATHNAME:           return FS_INVALID_ARGS;
+        case ERROR_INVALID_PARAMETER:      return FS_INVALID_ARGS;
+        case ERROR_INVALID_HANDLE:         return FS_INVALID_ARGS;
+        case ERROR_FILENAME_EXCED_RANGE:   return FS_PATH_TOO_LONG;
+        case ERROR_DIRECTORY:              return FS_NOT_DIRECTORY;
+        case ERROR_DIR_NOT_EMPTY:          return FS_DIRECTORY_NOT_EMPTY;
+        case ERROR_FILE_TOO_LARGE:         return FS_TOO_BIG;
+        case ERROR_DISK_FULL:              return FS_OUT_OF_RANGE;
+        case ERROR_HANDLE_EOF:             return FS_AT_END;
+        case ERROR_SEEK:                   return FS_BAD_SEEK;
+        case ERROR_OPERATION_ABORTED:      return FS_INTERRUPT;
+        case ERROR_CANCELLED:              return FS_INTERRUPT;
         default: break;
     }
 
@@ -607,7 +630,7 @@ static int fs_mtx_init(fs_mtx* mutex, int type)
     }
 
     if (hMutex == NULL) {
-        return fs_result_from_GetLastError(GetLastError());
+        return fs_result_from_GetLastError();
     }
 
     mutex->handle = (void*)hMutex;
@@ -5139,7 +5162,7 @@ static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file
         /* Use Win32 to convert from UTF-8 to wchar_t. */
         pathLen = MultiByteToWideChar(CP_UTF8, 0, pPath, -1, NULL, 0);
         if (pathLen == 0) {
-            return fs_result_from_GetLastError(GetLastError());
+            return fs_result_from_GetLastError();
         }
 
         if (pathLen <= (int)FS_COUNTOF(pPathWStack)) {
@@ -5507,7 +5530,7 @@ FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFil
     }
 
     if (!DuplicateHandle(GetCurrentProcess(), hFile, GetCurrentProcess(), &hFileDuplicate, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
-        return fs_result_from_GetLastError(GetLastError());
+        return fs_result_from_GetLastError();
     }
 
     fdDuplicate = _open_osfhandle((fs_intptr)hFileDuplicate, _O_RDONLY);
@@ -6544,7 +6567,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
         }
 
         if (GetTempFileNameA(pTmpPath, pPrefixName, 0, pTmpPathWin) == 0) {
-            return fs_result_from_GetLastError(GetLastError());
+            return fs_result_from_GetLastError();
         }
 
         /*
@@ -6566,7 +6589,7 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
             DeleteFileA(pTmpPathWin);
 
             if (CreateDirectoryA(pTmpPathWin, NULL) == 0) {
-                return fs_result_from_GetLastError(GetLastError());
+                return fs_result_from_GetLastError();
             }
         } else {
             /* We're creating a temp file. The OS will have already created the file in GetTempFileNameA() so no need to create it explicitly. */
