@@ -299,6 +299,24 @@ static fs_result fs_file_flush_posix(fs_file* pFile)
     return FS_SUCCESS;
 }
 
+static fs_result fs_file_truncate_posix(fs_file* pFile)
+{
+    /* Truncate based on the current position. */
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    off_t currentPos;
+    
+    currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
+    if (currentPos < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    if (ftruncate(pFilePosix->fd, currentPos) < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    return FS_SUCCESS;
+}
+
 static fs_result fs_file_info_posix(fs_file* pFile, fs_file_info* pInfo)
 {
     fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
