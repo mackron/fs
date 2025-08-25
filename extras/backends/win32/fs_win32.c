@@ -388,7 +388,7 @@ done:
     return FS_SUCCESS;
 }
 
-static fs_result fs_info_from_stdio_win32(fs* pFS, HANDLE hFile, fs_file_info* pInfo)
+static fs_result fs_info_from_stdio_win32(HANDLE hFile, fs_file_info* pInfo)
 {
     BY_HANDLE_FILE_INFORMATION fileInfo;
 
@@ -410,11 +410,11 @@ static fs_result fs_info_win32(fs* pFS, const char* pPath, int openMode, fs_file
 
     /* Special case for standard IO files. */
     /*  */ if (pPath == FS_STDIN ) {
-        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_INPUT_HANDLE ), pInfo);
+        return fs_info_from_stdio_win32(GetStdHandle(STD_INPUT_HANDLE ), pInfo);
     } else if (pPath == FS_STDOUT) {
-        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_OUTPUT_HANDLE), pInfo);
+        return fs_info_from_stdio_win32(GetStdHandle(STD_OUTPUT_HANDLE), pInfo);
     } else if (pPath == FS_STDERR) {
-        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_ERROR_HANDLE ), pInfo);
+        return fs_info_from_stdio_win32(GetStdHandle(STD_ERROR_HANDLE ), pInfo);
     }
 
     result = fs_win32_path_init(&path, pPath, fs_get_allocation_callbacks(pFS));
@@ -439,6 +439,7 @@ static fs_result fs_info_win32(fs* pFS, const char* pPath, int openMode, fs_file
     *pInfo = fs_file_info_from_WIN32_FIND_DATA(&fd);
 
 done:
+    (void)openMode;
     (void)pFS;
     return result;
 }
@@ -592,6 +593,12 @@ static fs_result fs_file_read_win32(fs_file* pFile, void* pDst, size_t bytesToRe
         pRunningDst    += bytesReadNow;
     }
 
+    *pBytesRead = bytesToRead - bytesRemaining;
+    
+    if (*pBytesRead == 0) {
+        return FS_AT_END;
+    }
+
     return FS_SUCCESS;
 }
 
@@ -618,6 +625,8 @@ static fs_result fs_file_write_win32(fs_file* pFile, const void* pSrc, size_t by
         bytesRemaining -= bytesWrittenNow;
         pRunningSrc    += bytesWrittenNow;
     }
+
+    *pBytesWritten = bytesToWrite - bytesRemaining;
 
     return FS_SUCCESS;
 }
