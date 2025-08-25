@@ -628,9 +628,9 @@ static fs_backend fs_posix_backend =
     fs_free_iterator_posix
 };
 
-const fs_backend* FS_POSIX = &fs_posix_backend;
+const fs_backend* FS_BACKEND_POSIX = &fs_posix_backend;
 #else
-const fs_backend* FS_POSIX = NULL;
+const fs_backend* FS_BACKEND_POSIX = NULL;
 #endif
 
 #endif  /* fs_posix_c */

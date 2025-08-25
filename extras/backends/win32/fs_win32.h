@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 /* BEG fs_win32.h */
-extern const fs_backend* FS_WIN32;
+extern const fs_backend* FS_BACKEND_WIN32;
 /* END fs_win32.h */
 
 #if defined(__cplusplus)

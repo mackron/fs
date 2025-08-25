@@ -937,9 +937,9 @@ static fs_backend fs_win32_backend =
     fs_free_iterator_win32
 };
 
-const fs_backend* FS_WIN32 = &fs_win32_backend;
+const fs_backend* FS_BACKEND_WIN32 = &fs_win32_backend;
 #else
-const fs_backend* FS_WIN32 = NULL;
+const fs_backend* FS_BACKEND_WIN32 = NULL;
 #endif
 
 #endif  /* fs_win32_c */
