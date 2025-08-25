@@ -451,9 +451,9 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
         dwCreationDisposition = CREATE_ALWAYS;  /* In write mode, our default is to always truncate. */
 
         /* If we're trying to open in exclusive mode, the file must not already exist. */
-        /*if ((openMode & FS_EXCLUSIVE) != 0) {
+        if ((openMode & FS_EXCLUSIVE) != 0) {
             dwCreationDisposition = CREATE_NEW;
-        } else*/ if ((openMode & FS_APPEND) != 0) {
+        } else if ((openMode & FS_APPEND) != 0) {
             dwCreationDisposition = OPEN_ALWAYS;
         }
     }

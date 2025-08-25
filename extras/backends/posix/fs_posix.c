@@ -159,9 +159,9 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
     }
 
     if ((openMode & FS_WRITE) != 0) {
-        /*if ((openMode & FS_EXCLUSIVE) != 0) {
+        if ((openMode & FS_EXCLUSIVE) != 0) {
             flags |= O_EXCL;
-        } else*/ if ((openMode & FS_APPEND) != 0) {
+        } else if ((openMode & FS_APPEND) != 0) {
             flags |= O_APPEND;
         } else {
             flags |= O_TRUNC;

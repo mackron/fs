@@ -1094,11 +1094,12 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 /* BEG fs.h */
 /* Open mode flags. */
 #define FS_READ                     0x0001
-#define FS_WRITE                    0x0002
-#define FS_APPEND                   (FS_WRITE | 0x0004)
+#define FS_WRITE                    0x0002              /* Will truncate by default. */
+#define FS_APPEND                   (FS_WRITE | 0x0004) /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
+#define FS_EXCLUSIVE                (FS_WRITE | 0x0008) /* Only valid with write mode. Will fail if the file already exists. */
 #define FS_TRUNCATE                 (FS_WRITE)
 
-#define FS_TEMP                     (FS_TRUNCATE | 0x0010)
+#define FS_TEMP                     (FS_EXCLUSIVE | 0x0010)
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
 #define FS_OPAQUE                   0x0010  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
