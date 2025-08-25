@@ -7,6 +7,9 @@
 #if !defined(_WIN32)
 
 /* TODO: Remove this when this file is amalgamated into the main file. */
+#ifndef FS_COUNTOF
+#define FS_COUNTOF(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
 #ifndef FS_MAX
 #define FS_MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
@@ -37,12 +40,6 @@ typedef struct fs_posix
 {
     int _unused;
 } fs_posix;
-
-typedef struct fs_file_posix
-{
-    int fd;
-    fs_bool32 isOpenedFromHandle;
-} fs_file_posix;
 
 static size_t fs_alloc_size_posix(const void* pBackendConfig)
 {
@@ -136,6 +133,17 @@ static fs_result fs_info_posix(fs* pFS, const char* pPath, int openMode, fs_file
     return FS_SUCCESS;
 }
 
+
+typedef struct fs_file_posix
+{
+    int fd;
+    fs_bool32 isStandardHandle;
+    int openMode;       /* The original open mode for duplication purposes. */
+    char* pFilePath;    /* A copy of the original file path for duplication purposes. */
+    char  pFilePathStack[128];
+    char* pFilePathHeap;
+} fs_file_posix;
+
 static size_t fs_file_alloc_size_posix(fs* pFS)
 {
     (void)pFS;
@@ -147,6 +155,7 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
     fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
     int fd;
     int flags = 0;
+    size_t filePathLen;
 
     if ((openMode & FS_READ) != 0) {
         if ((openMode & FS_WRITE) != 0) {
@@ -176,10 +185,13 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
 
     /*  */ if (strcmp(pFilePath, FS_STDIN ) == 0) {
         fd = STDIN_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
     } else if (strcmp(pFilePath, FS_STDOUT) == 0) {
         fd = STDOUT_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
     } else if (strcmp(pFilePath, FS_STDERR) == 0) {
         fd = STDERR_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
     } else {
         fd = open(pFilePath, flags);
     }
@@ -189,6 +201,32 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
     }
 
     pFilePosix->fd = fd;
+
+    /*
+    In order to support duplication we need to keep track of the original file path and open modes. Using dup() is
+    not an option because that results in a shared read/write pointer, whereas we need them to be separate. We need
+    not do this for standard handles.
+    */
+    if (!pFilePosix->isStandardHandle) {  
+        pFilePosix->openMode = openMode;
+
+        filePathLen = strlen(pFilePath);
+
+        if (filePathLen < FS_COUNTOF(pFilePosix->pFilePathStack)) {
+            pFilePosix->pFilePath = pFilePosix->pFilePathStack;
+        } else {
+            pFilePosix->pFilePathHeap = (char*)fs_malloc(filePathLen + 1, fs_get_allocation_callbacks(pFS));
+            if (pFilePosix->pFilePathHeap == NULL) {
+                close(fd);
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pFilePosix->pFilePath = pFilePosix->pFilePathHeap;
+        }
+
+        fs_strcpy(pFilePosix->pFilePath, pFilePath);
+    }
+
 
     (void)pFS;
     (void)pStream;
@@ -200,11 +238,12 @@ static void fs_file_close_posix(fs_file* pFile)
     fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
 
     /* No need to do anything if the file was opened from stdin, stdout, or stderr. */
-    if (pFilePosix->fd == STDIN_FILENO || pFilePosix->fd == STDOUT_FILENO || pFilePosix->fd == STDERR_FILENO) {
+    if (pFilePosix->isStandardHandle) {
         return;
     }
 
     close(pFilePosix->fd);
+    fs_free(pFilePosix->pFilePathHeap, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
 }
 
 static fs_result fs_file_read_posix(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
@@ -339,12 +378,24 @@ static fs_result fs_file_duplicate_posix(fs_file* pFile, fs_file* pDuplicate)
     fs_file_posix* pFilePosix      = (fs_file_posix*)fs_file_get_backend_data(pFile);
     fs_file_posix* pDuplicatePosix = (fs_file_posix*)fs_file_get_backend_data(pDuplicate);
 
-    pDuplicatePosix->fd = dup(pFilePosix->fd);
-    if (pDuplicatePosix->fd < 0) {
-        return fs_result_from_errno(errno);
+    /* Simple case for standard handles. */
+    if (pFilePosix->isStandardHandle) {
+        pDuplicatePosix->fd = pFilePosix->fd;
+        pDuplicatePosix->isStandardHandle = FS_TRUE;
+
+        return FS_SUCCESS;
     }
 
-    return FS_SUCCESS;
+    /*
+    We cannot duplicate the handle with dup() because that will result in a shared read/write pointer. We
+    need to open the file again with the same path and flags. We're not going to allow duplication of files
+    that were opened in write mode.
+    */
+    if ((pFilePosix->openMode & FS_WRITE) != 0) {
+        return FS_INVALID_OPERATION;
+    }
+
+    return fs_file_open_posix(fs_file_get_fs(pFile), NULL, pFilePosix->pFilePath, pFilePosix->openMode, pDuplicate);
 }
 
 

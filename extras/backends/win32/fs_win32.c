@@ -416,7 +416,7 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     fs_win32_path path;
     HANDLE hFile;
     DWORD dwDesiredAccess = 0;
-    DWORD dwShareMode     = 0;
+    DWORD dwShareMode = 0;
     DWORD dwCreationDisposition = OPEN_EXISTING;
 
     /*  */ if (strcmp(pFilePath, FS_STDIN ) == 0) {
@@ -430,6 +430,11 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
         pFileWin32->isStandardHandle = FS_TRUE;
     } else {
         pFileWin32->isStandardHandle = FS_FALSE;
+    }
+
+    if (pFileWin32->isStandardHandle) {
+        pFileWin32->hFile = hFile;
+        return FS_SUCCESS;
     }
 
 
@@ -661,11 +666,13 @@ static fs_result fs_file_info_win32(fs_file* pFile, fs_file_info* pInfo)
 
 static fs_result fs_file_duplicate_win32(fs_file* pFile, fs_file* pDuplicate)
 {
-    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    fs_file_win32* pFileWin32      = (fs_file_win32*)fs_file_get_backend_data(pFile);
     fs_file_win32* pDuplicateWin32 = (fs_file_win32*)fs_file_get_backend_data(pDuplicate);
     
     if (pFileWin32->isStandardHandle) {
         pDuplicateWin32->hFile = pFileWin32->hFile;
+        pDuplicateWin32->isStandardHandle = FS_TRUE;
+        
         return FS_SUCCESS;
     }
 
