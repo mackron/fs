@@ -1096,7 +1096,6 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 #define FS_READ                     0x0001
 #define FS_WRITE                    0x0002
 #define FS_APPEND                   (FS_WRITE | 0x0004)
-#define FS_OVERWRITE                (FS_WRITE | 0x0008)
 #define FS_TRUNCATE                 (FS_WRITE)
 
 #define FS_TEMP                     (FS_TRUNCATE | 0x0010)

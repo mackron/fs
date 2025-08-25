@@ -5218,8 +5218,6 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
             /* Read and write. */
             if ((openMode & FS_APPEND) == FS_APPEND) {
                 pFileStdio->openMode[0] = 'a'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, appending. */
-            } else if ((openMode & FS_OVERWRITE) == FS_OVERWRITE) {
-                pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, overwriting. */
             } else {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, truncating. */
             }
@@ -5227,8 +5225,6 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
             /* Write-only. */
             if ((openMode & FS_APPEND) == FS_APPEND) {
                 pFileStdio->openMode[0] = 'a'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, appending. */
-            } else if ((openMode & FS_OVERWRITE) == FS_OVERWRITE) {
-                pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Write-only, overwriting. Need to use the "+" option here because there does not appear to be an option for a write-only overwrite mode. */
             } else {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, truncating. */
             }

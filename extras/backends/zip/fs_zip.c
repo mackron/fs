@@ -1832,7 +1832,7 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     FS_ZIP_ASSERT(pZipFile != NULL);
 
     /* Write mode is currently unsupported. */
-    if ((openMode & (FS_WRITE | FS_APPEND | FS_OVERWRITE | FS_TRUNCATE)) != 0) {
+    if ((openMode & FS_WRITE) != 0) {
         return FS_INVALID_OPERATION;
     }
 
