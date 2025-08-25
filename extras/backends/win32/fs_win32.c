@@ -32,6 +32,7 @@ static fs_result fs_result_from_GetLastError()
         case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
         case ERROR_BUSY:              return FS_BUSY;
         case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
+        case ERROR_ALREADY_EXISTS:    return FS_ALREADY_EXISTS;
         default: break;
     }
 
@@ -347,13 +348,6 @@ static fs_result fs_mkdir_win32(fs* pFS, const char* pPath)
 
     resultWin32 = CreateDirectory(path.path, NULL);
     if (resultWin32 == FS_FALSE) {
-        /* Special case here. In our library, we want to treat existing directories as successful. */
-        DWORD error = GetLastError();
-        if (error == ERROR_ALREADY_EXISTS) {
-            result = FS_SUCCESS;
-            goto done;
-        }
-
         result = fs_result_from_GetLastError();
         goto done;
     }

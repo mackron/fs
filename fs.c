@@ -394,6 +394,7 @@ static fs_result fs_result_from_GetLastError(DWORD error)
         case ERROR_NOT_ENOUGH_MEMORY: return FS_OUT_OF_MEMORY;
         case ERROR_BUSY:              return FS_BUSY;
         case ERROR_SEM_TIMEOUT:       return FS_TIMEOUT;
+        case ERROR_ALREADY_EXISTS:    return FS_ALREADY_EXISTS;
         default: break;
     }
 

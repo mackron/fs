@@ -680,8 +680,8 @@ destination are in different directories. If the destination already exists, it 
 overwritten. This function is optional and can be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
 
 The `mkdir` function is used to create a directory. This is not recursive. If the directory already
-exists, the backend should return `FS_SUCCESS`. This function is optional and can be left as `NULL`
-or return `FS_NOT_IMPLEMENTED`.
+exists, the backend should return `FS_ALREADY_EXISTS`. This function is optional and can be left as
+`NULL` or return `FS_NOT_IMPLEMENTED`.
 
 The `info` function is used to get information about a file. If the backend does not have the
 notion of the last modified or access time, it can set those values to 0. Set `directory` to 1 (or
@@ -1182,7 +1182,7 @@ struct fs_backend
     fs_result    (* ioctl           )(fs* pFS, int op, void* pArg);                                          /* Optional. */
     fs_result    (* remove          )(fs* pFS, const char* pFilePath);
     fs_result    (* rename          )(fs* pFS, const char* pOldName, const char* pNewName);
-    fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_SUCCESS if directory already exists. */
+    fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_ALREADY_EXISTS if directory already exists. */
     fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by passthrough style backends. */
     size_t       (* file_alloc_size )(fs* pFS);
     fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return FS_DOES_NOT_EXIST if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
