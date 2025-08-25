@@ -85,6 +85,12 @@ add_library(fsposix STATIC
 )
 target_compile_options(fsposix PRIVATE ${COMPILE_OPTIONS})
 
+add_library(fswin32 STATIC
+    extras/backends/win32/fs_win32.c
+    extras/backends/win32/fs_win32.h
+)
+target_compile_options(fswin32 PRIVATE ${COMPILE_OPTIONS})
+
 
 # Tests
 if(FS_BUILD_TESTS)
