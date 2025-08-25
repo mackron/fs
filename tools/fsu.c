@@ -43,7 +43,7 @@ fs_result extract_iterator(fs* pFS, fs* pArchive, fs_iterator* pIterator, const 
                 return FS_SUCCESS;
             }
 
-            result = fs_file_open(pFS, pFullPath, FS_TRUNCATE | FS_OPAQUE, &pFileO);
+            result = fs_file_open(pFS, pFullPath, FS_WRITE | FS_OPAQUE, &pFileO);
             if (result != FS_SUCCESS) {
                 printf("Failed to open output file \"%s\" with code %d\n", pFullPath, result);
                 return result;

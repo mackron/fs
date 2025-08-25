@@ -84,11 +84,11 @@ if (result != FS_SUCCESS) {
 result = fs_file_write(pFile, pBuffer, bytesToWrite, &bytesWritten);
 ```
 
-The `FS_WRITE` option will default to `FS_TRUNCATE`. You can also use `FS_APPEND` and
-`FS_OVERWRITE`:
+The `FS_WRITE` option will default to truncate mode. You can use `FS_APPEND` if you want to append
+to the file instead of truncating it.
 
 ```c
-fs_file_open(pFS, "file.txt", FS_APPEND, &pFile);   // You need not specify FS_WRITE when using FS_TRUNCATE, FS_APPEND or FS_OVERWRITE as it is implied.
+fs_file_open(pFS, "file.txt", FS_WRITE | FS_APPEND, &pFile);
 ```
 
 Files can be opened for both reading and writing by simply combining the two:
@@ -699,11 +699,10 @@ The `file_open` function is where the backend should open the file. If the `fs` 
 the file was initialized with a stream, i.e. it's an archive, the stream will be non-null. You
 should store this pointer for later use in `file_read`, etc. Do *not* make a duplicate of the
 stream with `fs_stream_duplicate()`. Instead just take a copy of the pointer. The `openMode`
-parameter will be a combination of `FS_READ`, `FS_WRITE`, `FS_TRUNCATE`, `FS_APPEND` and
-`FS_OVERWRITE`. When opening in write mode (`FS_WRITE`), it will default to truncate mode. You
-should ignore the `FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist,
-the backend should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return
-`FS_IS_DIRECTORY`.
+parameter will be a combination of `FS_READ`, `FS_WRITE`, `FS_APPEND` and `FS_EXCLUSIVE`.
+When opening in write mode (`FS_WRITE`), it will default to truncate mode. You should ignore the
+`FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist, the backend
+should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return `FS_IS_DIRECTORY`.
 
 The file should be closed with `file_close`. This is where the backend should release any resources
 associated with the file. Do not uninitialize the stream here - it'll be cleaned up at a higher
@@ -1097,7 +1096,6 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 #define FS_WRITE                    0x0002              /* Will truncate by default. */
 #define FS_APPEND                   (FS_WRITE | 0x0004) /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
 #define FS_EXCLUSIVE                (FS_WRITE | 0x0008) /* Only valid with write mode. Will fail if the file already exists. */
-#define FS_TRUNCATE                 (FS_WRITE)
 
 #define FS_TEMP                     (FS_EXCLUSIVE | 0x0010)
 
@@ -1208,7 +1206,7 @@ FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);    /* Does not consider mounts. */
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
-FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_OVERWRITE are ignored. */
+FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_APPEND, and FS_EXCLUSIVE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
 FS_API void* fs_get_backend_data(fs* pFS);    /* For use by the backend. Will be the size returned by the alloc_size() function in the vtable. */
