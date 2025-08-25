@@ -18,6 +18,9 @@
 #ifndef FS_MAX
 #define FS_MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
+#ifndef FS_MIN
+#define FS_MIN(x, y) (((x) < (y)) ? (x) : (y))
+#endif
 FS_API char* fs_strcpy(char* dst, const char* src);
 FS_API int fs_strncpy_s(char* dst, size_t dstCap, const char* src, size_t count);
 
@@ -480,7 +483,7 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     if (path.len < FS_COUNTOF(pFileWin32->pFilePathStack)) {
         pFileWin32->pFilePath = pFileWin32->pFilePathStack;
     } else {
-        pFileWin32->pFilePathHeap = fs_malloc(path.len + 1, fs_get_allocation_callbacks(pFS));
+        pFileWin32->pFilePathHeap = (char*)fs_malloc(path.len + 1, fs_get_allocation_callbacks(pFS));
         if (pFileWin32->pFilePathHeap == NULL) {
             result = FS_OUT_OF_MEMORY;
             if (pFileWin32->isStandardHandle == FS_FALSE) {
@@ -527,7 +530,7 @@ static fs_result fs_file_read_win32(fs_file* pFile, void* pDst, size_t bytesToRe
     our bytesToRead argument is larger than 4GB.
     */
     while (bytesRemaining > 0) {
-        DWORD bytesToReadNow = (DWORD)min(bytesRemaining, (size_t)0xFFFFFFFF);
+        DWORD bytesToReadNow = (DWORD)FS_MIN(bytesRemaining, (size_t)0xFFFFFFFF);
         DWORD bytesReadNow;
 
         resultWin32 = ReadFile(pFileWin32->hFile, pRunningDst, bytesToReadNow, &bytesReadNow, NULL);
@@ -554,7 +557,7 @@ static fs_result fs_file_write_win32(fs_file* pFile, const void* pSrc, size_t by
     our bytesToWrite argument is larger than 4GB.
     */
     while (bytesRemaining > 0) {
-        DWORD bytesToWriteNow = (DWORD)min(bytesRemaining, (size_t)0xFFFFFFFF);
+        DWORD bytesToWriteNow = (DWORD)FS_MIN(bytesRemaining, (size_t)0xFFFFFFFF);
         DWORD bytesWrittenNow;
 
         resultWin32 = WriteFile(pFileWin32->hFile, pRunningSrc, bytesToWriteNow, &bytesWrittenNow, NULL);
