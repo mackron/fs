@@ -160,8 +160,6 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
 
     if ((openMode & FS_APPEND) != 0) {
         flags |= O_APPEND;
-    } else if ((openMode & FS_OVERWRITE) != 0) {
-        /* No flags necessary. */
     } else {
         flags |= O_TRUNC;
     }
