@@ -378,7 +378,7 @@ static int fstest_archive_io(void)
     printf("Archive I/O\n");
 
     pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
-    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "pak");
+    pArchiveTypes[1] = fs_archive_type_init(FS_ZIP, "pak");
 
     fsConfig = fs_config_init_default();
     fsConfig.pArchiveTypes    = pArchiveTypes;
