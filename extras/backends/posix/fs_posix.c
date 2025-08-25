@@ -17,12 +17,6 @@ FS_API char* fs_strcpy(char* dst, const char* src);
 FS_API int fs_strncpy_s(char* dst, size_t dstCap, const char* src, size_t count);
 
 
-/* TODO: Move this into the main file. */
-#define FS_STDIN  ":stdi:"
-#define FS_STDOUT ":stdo:"
-#define FS_STDERR ":stde:"
-
-
 /* For 64-bit seeks. */
 #ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
@@ -121,8 +115,19 @@ static fs_file_info fs_file_info_from_stat_posix(struct stat* pStat)
 static fs_result fs_info_posix(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     struct stat info;
+    int result;
 
-    if (stat(pPath, &info) != 0) {
+    /*  */ if (pPath == FS_STDIN ) {
+        result = fstat(STDIN_FILENO,  &info);
+    } else if (pPath == FS_STDOUT) {
+        result = fstat(STDOUT_FILENO, &info);
+    } else if (pPath == FS_STDERR) {
+        result = fstat(STDERR_FILENO, &info);
+    } else {
+        result = stat(pPath, &info);
+    }
+
+    if (result != 0) {
         return fs_result_from_errno(errno);
     }
 
@@ -183,13 +188,13 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
     flags |= O_LARGEFILE;
     #endif
 
-    /*  */ if (strcmp(pFilePath, FS_STDIN ) == 0) {
+    /*  */ if (pFilePath == FS_STDIN ) {
         fd = STDIN_FILENO;
         pFilePosix->isStandardHandle = FS_TRUE;
-    } else if (strcmp(pFilePath, FS_STDOUT) == 0) {
+    } else if (pFilePath == FS_STDOUT) {
         fd = STDOUT_FILENO;
         pFilePosix->isStandardHandle = FS_TRUE;
-    } else if (strcmp(pFilePath, FS_STDERR) == 0) {
+    } else if (pFilePath == FS_STDERR) {
         fd = STDERR_FILENO;
         pFilePosix->isStandardHandle = FS_TRUE;
     } else {
@@ -600,7 +605,6 @@ static fs_backend fs_posix_backend =
     fs_info_posix,
     fs_file_alloc_size_posix,
     fs_file_open_posix,
-    NULL,
     fs_file_close_posix,
     fs_file_read_posix,
     fs_file_write_posix,

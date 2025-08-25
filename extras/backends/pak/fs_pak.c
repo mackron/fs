@@ -560,7 +560,6 @@ fs_backend fs_pak_backend =
     fs_info_pak,
     fs_file_alloc_size_pak,
     fs_file_open_pak,
-    NULL,   /* open_handle */
     fs_file_close_pak,
     fs_file_read_pak,
     NULL,   /* write */

@@ -40,12 +40,6 @@ static fs_result fs_result_from_GetLastError()
 }
 
 
-/* TODO: Move this into the main file. */
-#define FS_STDIN  ":stdi:"
-#define FS_STDOUT ":stdo:"
-#define FS_STDERR ":stde:"
-
-
 
 #if defined(UNICODE) || defined(_UNICODE)
 #define fs_win32_char wchar_t
@@ -218,6 +212,19 @@ static fs_file_info fs_file_info_from_WIN32_FIND_DATA(const WIN32_FIND_DATA* pFD
     return info;
 }
 
+static fs_file_info fs_file_info_from_HANDLE_FILE_INFORMATION(const BY_HANDLE_FILE_INFORMATION* pFileInfo)
+{
+    fs_file_info info;
+
+    FS_ZERO_OBJECT(&info);
+    info.size             = ((fs_uint64)pFileInfo->nFileSizeHigh << 32) | (fs_uint64)pFileInfo->nFileSizeLow;
+    info.lastModifiedTime = fs_FILETIME_to_unix(&pFileInfo->ftLastWriteTime);
+    info.lastAccessTime   = fs_FILETIME_to_unix(&pFileInfo->ftLastAccessTime);
+    info.directory        = (pFileInfo->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+
+    return info;
+}
+
 
 typedef struct fs_win32
 {
@@ -359,12 +366,34 @@ done:
     return FS_SUCCESS;
 }
 
+static fs_result fs_info_from_stdio_win32(fs* pFS, HANDLE hFile, fs_file_info* pInfo)
+{
+    BY_HANDLE_FILE_INFORMATION fileInfo;
+
+    if (GetFileInformationByHandle(hFile, &fileInfo) == FS_FALSE) {
+        return fs_result_from_GetLastError();
+    }
+
+    *pInfo = fs_file_info_from_HANDLE_FILE_INFORMATION(&fileInfo);
+
+    return FS_SUCCESS;
+}
+
 static fs_result fs_info_win32(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
     HANDLE hFind;
     WIN32_FIND_DATA fd;
     fs_result result;
     fs_win32_path path;
+
+    /* Special case for standard IO files. */
+    /*  */ if (pPath == FS_STDIN ) {
+        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_INPUT_HANDLE ), pInfo);
+    } else if (pPath == FS_STDOUT) {
+        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_OUTPUT_HANDLE), pInfo);
+    } else if (pPath == FS_STDERR) {
+        return fs_info_from_stdio_win32(pFS, GetStdHandle(STD_ERROR_HANDLE ), pInfo);
+    }
 
     result = fs_win32_path_init(&path, pPath, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
@@ -419,13 +448,13 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     DWORD dwShareMode = 0;
     DWORD dwCreationDisposition = OPEN_EXISTING;
 
-    /*  */ if (strcmp(pFilePath, FS_STDIN ) == 0) {
+    /*  */ if (pFilePath == FS_STDIN ) {
         hFile = GetStdHandle(STD_INPUT_HANDLE);
         pFileWin32->isStandardHandle = FS_TRUE;
-    } else if (strcmp(pFilePath, FS_STDOUT) == 0) {
+    } else if (pFilePath == FS_STDOUT) {
         hFile = GetStdHandle(STD_OUTPUT_HANDLE);
         pFileWin32->isStandardHandle = FS_TRUE;
-    } else if (strcmp(pFilePath, FS_STDERR) == 0) {
+    } else if (pFilePath == FS_STDERR) {
         hFile = GetStdHandle(STD_ERROR_HANDLE);
         pFileWin32->isStandardHandle = FS_TRUE;
     } else {
@@ -655,11 +684,7 @@ static fs_result fs_file_info_win32(fs_file* pFile, fs_file_info* pInfo)
         return fs_result_from_GetLastError();
     }
 
-    FS_ZERO_OBJECT(pInfo);
-    pInfo->size             = ((fs_int64)fileInfo.nFileSizeHigh << 32) | fileInfo.nFileSizeLow;
-    pInfo->lastAccessTime   = fs_FILETIME_to_unix(&fileInfo.ftLastAccessTime);
-    pInfo->lastModifiedTime = fs_FILETIME_to_unix(&fileInfo.ftLastWriteTime);
-    pInfo->directory        = (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    *pInfo = fs_file_info_from_HANDLE_FILE_INFORMATION(&fileInfo);
 
     return FS_SUCCESS;
 }
@@ -855,7 +880,6 @@ static fs_backend fs_win32_backend =
     fs_info_win32,
     fs_file_alloc_size_win32,
     fs_file_open_win32,
-    NULL,
     fs_file_close_win32,
     fs_file_read_win32,
     fs_file_write_win32,

@@ -1201,6 +1201,10 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
 
 
 /* BEG fs.c */
+const char* FS_STDIN  = "<si>";
+const char* FS_STDOUT = "<so>";
+const char* FS_STDERR = "<se>";
+
 static size_t fs_backend_alloc_size(const fs_backend* pBackend, const void* pBackendConfig)
 {
     FS_ASSERT(pBackend != NULL);
@@ -1308,17 +1312,6 @@ static fs_result fs_backend_file_open(const fs_backend* pBackend, fs* pFS, fs_st
         return FS_NOT_IMPLEMENTED;
     } else {
         return pBackend->file_open(pFS, pStream, pFilePath, openMode, pFile);
-    }
-}
-
-static fs_result fs_backend_file_open_handle(const fs_backend* pBackend, fs* pFS, void* hBackendFile, fs_file* pFile)
-{
-    FS_ASSERT(pBackend != NULL);
-
-    if (pBackend->file_open_handle == NULL) {
-        return FS_NOT_IMPLEMENTED;
-    } else {
-        return pBackend->file_open_handle(pFS, hBackendFile, pFile);
     }
 }
 
@@ -3103,6 +3096,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
 {
     fs_result result;
     const fs_backend* pBackend;
+    fs_bool32 isStandardIOFile;
 
     pBackend = fs_get_backend_or_default(pFS);
     if (pBackend == NULL) {
@@ -3132,6 +3126,8 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         }
     }
 
+    isStandardIOFile = (pFilePath == FS_STDIN || pFilePath == FS_STDOUT || pFilePath == FS_STDERR);
+
     /*
     This is the lowest level opening function. We never want to look at mounts when opening from here. The input
     file path should already be prefixed with the mount point.
@@ -3144,7 +3140,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
 
     if (ppFile != NULL) {
         /* Create the directory structure if necessary. */
-        if ((openMode & FS_WRITE) != 0 && (openMode & FS_NO_CREATE_DIRS) == 0) {
+        if ((openMode & FS_WRITE) != 0 && (openMode & FS_NO_CREATE_DIRS) == 0 && !isStandardIOFile) {
             char pDirPathStack[1024];
             char* pDirPathHeap = NULL;
             char* pDirPath;
@@ -3198,7 +3194,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         }
     }
 
-    if (!FS_IS_OPAQUE(openMode) && (openMode & FS_WRITE) == 0) {
+    if (!FS_IS_OPAQUE(openMode) && (openMode & FS_WRITE) == 0 && !isStandardIOFile) {
         /*
         If we failed to open the file because it doesn't exist we need to try loading it from an
         archive. We can only do this if the file is being loaded by an explicitly initialized fs
@@ -3252,6 +3248,11 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
     /* The open mode cannot be 0 when opening a file. It can only be 0 when retrieving info. */
     if (ppFile != NULL && openMode == 0) {
         return FS_INVALID_ARGS;
+    }
+
+    /* Special case for standard IO files. */
+    if (pFilePath == FS_STDIN || pFilePath == FS_STDOUT || pFilePath == FS_STDERR) {
+        return fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
     }
 
     result = fs_validate_path(pFilePath, FS_NULL_TERMINATED, openMode);
@@ -3503,31 +3504,6 @@ FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_f
     } else {
         return fs_file_open_or_info(pFS, pFilePath, openMode, ppFile, NULL);
     }
-}
-
-FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file** ppFile)
-{
-    fs_result result;
-
-    if (ppFile == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    *ppFile = NULL;
-
-    result = fs_file_alloc_if_necessary(pFS, ppFile);
-    if (result != FS_SUCCESS) {
-        *ppFile = NULL;
-        return result;
-    }
-
-    result = fs_backend_file_open_handle(fs_get_backend_or_default(pFS), pFS, hBackendFile, *ppFile);
-    if (result != FS_SUCCESS) {
-        fs_file_free(ppFile);
-        return result;
-    }
-
-    return FS_SUCCESS;
 }
 
 static void fs_file_uninit(fs_file* pFile)
@@ -5192,7 +5168,6 @@ typedef struct fs_file_stdio
 {
     FILE* pFile;
     char openMode[4];   /* For duplication. */
-    fs_bool32 isRegisteredOrHandle; /* When set to true, will not be closed with fs_file_close(). */
 } fs_file_stdio;
 
 static size_t fs_file_alloc_size_stdio(fs* pFS)
@@ -5288,23 +5263,6 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
     return FS_SUCCESS;
 }
 
-static fs_result fs_file_open_handle_stdio(fs* pFS, void* hBackendFile, fs_file* pFile)
-{
-    fs_file_stdio* pFileStdio;
-
-    FS_UNUSED(pFS);
-
-    pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
-    if (pFileStdio == NULL) {
-        return FS_INVALID_ARGS;
-    }
-    
-    pFileStdio->pFile = (FILE*)hBackendFile;
-    pFileStdio->isRegisteredOrHandle = FS_TRUE;
-
-    return FS_SUCCESS;
-}
-
 static void fs_file_close_stdio(fs_file* pFile)
 {
     fs_file_stdio* pFileStdio = (fs_file_stdio*)fs_file_get_backend_data(pFile);
@@ -5312,9 +5270,7 @@ static void fs_file_close_stdio(fs_file* pFile)
         return;
     }
 
-    if (!pFileStdio->isRegisteredOrHandle) {
-        fclose(pFileStdio->pFile);
-    }
+    fclose(pFileStdio->pFile);
 }
 
 static fs_result fs_file_read_stdio(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
@@ -5899,7 +5855,6 @@ fs_backend fs_stdio_backend =
     fs_info_stdio,
     fs_file_alloc_size_stdio,
     fs_file_open_stdio,
-    fs_file_open_handle_stdio,
     fs_file_close_stdio,
     fs_file_read_stdio,
     fs_file_write_stdio,

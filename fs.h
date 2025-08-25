@@ -700,7 +700,7 @@ the file was initialized with a stream, i.e. it's an archive, the stream will be
 should store this pointer for later use in `file_read`, etc. Do *not* make a duplicate of the
 stream with `fs_stream_duplicate()`. Instead just take a copy of the pointer. The `openMode`
 parameter will be a combination of `FS_READ`, `FS_WRITE`, `FS_APPEND` and `FS_EXCLUSIVE`.
-When opening in write mode (`FS_WRITE`), it will default to truncate mode. You should ignore the
+When opening in write mode (`FS_WRITE`), it should default to truncate mode. You should ignore the
 `FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist, the backend
 should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return `FS_IS_DIRECTORY`.
 
@@ -1125,6 +1125,13 @@ typedef struct fs_file_info fs_file_info;
 typedef struct fs_iterator  fs_iterator;
 typedef struct fs_backend   fs_backend;
 
+
+/* File paths for stdin, stdout and stderr. Use these with fs_file_open(). */
+extern const char* FS_STDIN;
+extern const char* FS_STDOUT;
+extern const char* FS_STDERR;
+
+
 /*
 This callback is fired when the reference count of a fs object changes. This is useful if you want
 to do some kind of advanced memory management, such as garbage collection. If the new reference count
@@ -1186,7 +1193,6 @@ struct fs_backend
     fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by passthrough style backends. */
     size_t       (* file_alloc_size )(fs* pFS);
     fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return FS_DOES_NOT_EXIST if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
-    fs_result    (* file_open_handle)(fs* pFS, void* hBackendFile, fs_file* pFile);                   /* Optional. Open a file from a file handle. Backend-specific. The format of hBackendFile will be specified by the backend. */
     void         (* file_close      )(fs_file* pFile);
     fs_result    (* file_read       )(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead);   /* Return 0 on success, or FS_AT_END on end of file. Only return FS_AT_END if *pBytesRead is 0. Return an errno code on error. Implementations must support reading when already at EOF, in which case FS_AT_END should be returned and *pBytesRead should be 0. */
     fs_result    (* file_write      )(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
@@ -1223,7 +1229,6 @@ FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
 FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
 
 FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile);
-FS_API fs_result fs_file_open_from_handle(fs* pFS, void* hBackendFile, fs_file** ppFile);
 FS_API void fs_file_close(fs_file* pFile);
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead); /* Returns 0 on success, FS_AT_END on end of file, or an errno result code on error. Will only return FS_AT_END if *pBytesRead is 0. */
 FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);

@@ -308,20 +308,6 @@ static fs_result fs_file_open_sub(fs* pFS, fs_stream* pStream, const char* pFile
     return result;
 }
 
-static fs_result fs_file_open_handle_sub(fs* pFS, void* hBackendFile, fs_file* pFile)
-{
-    fs_sub* pSubFS;
-    fs_file_sub* pSubFSFile;
-
-    pSubFS = (fs_sub*)fs_get_backend_data(pFS);
-    FS_SUB_ASSERT(pSubFS != NULL);
-
-    pSubFSFile = (fs_file_sub*)fs_file_get_backend_data(pFile);
-    FS_SUB_ASSERT(pSubFSFile != NULL);
-
-    return fs_file_open_from_handle(pSubFS->pOwnerFS, hBackendFile, &pSubFSFile->pActualFile);
-}
-
 static void fs_file_close_sub(fs_file* pFile)
 {
     fs_file_sub* pSubFSFile = (fs_file_sub*)fs_file_get_backend_data(pFile);
@@ -435,7 +421,6 @@ fs_backend fs_sub_backend =
     fs_info_sub,
     fs_file_alloc_size_sub,
     fs_file_open_sub,
-    fs_file_open_handle_sub,
     fs_file_close_sub,
     fs_file_read_sub,
     fs_file_write_sub,
