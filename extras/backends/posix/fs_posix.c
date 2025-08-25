@@ -377,6 +377,8 @@ static fs_result fs_file_duplicate_posix(fs_file* pFile, fs_file* pDuplicate)
 {
     fs_file_posix* pFilePosix      = (fs_file_posix*)fs_file_get_backend_data(pFile);
     fs_file_posix* pDuplicatePosix = (fs_file_posix*)fs_file_get_backend_data(pDuplicate);
+    fs_result result;
+    struct stat st1, st2;
 
     /* Simple case for standard handles. */
     if (pFilePosix->isStandardHandle) {
@@ -395,7 +397,28 @@ static fs_result fs_file_duplicate_posix(fs_file* pFile, fs_file* pDuplicate)
         return FS_INVALID_OPERATION;
     }
 
-    return fs_file_open_posix(fs_file_get_fs(pFile), NULL, pFilePosix->pFilePath, pFilePosix->openMode, pDuplicate);
+    result = fs_file_open_posix(fs_file_get_fs(pFile), NULL, pFilePosix->pFilePath, pFilePosix->openMode, pDuplicate);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Do a quick check that it's still pointing to the same file. */
+    if (fstat(pFilePosix->fd, &st1) < 0) {
+        fs_file_close_posix(pDuplicate);
+        return fs_result_from_errno(errno);
+    }
+
+    if (fstat(pDuplicatePosix->fd, &st2) < 0) {
+        fs_file_close_posix(pDuplicate);
+        return fs_result_from_errno(errno);
+    }
+
+    if (st1.st_ino != st2.st_ino || st1.st_dev != st2.st_dev) {
+        fs_file_close_posix(pDuplicate);
+        return FS_INVALID_OPERATION;    /* It looks like the files have changed. */
+    }
+
+    return FS_SUCCESS;
 }
 
 
