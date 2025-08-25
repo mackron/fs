@@ -198,7 +198,7 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
         fd = STDERR_FILENO;
         pFilePosix->isStandardHandle = FS_TRUE;
     } else {
-        fd = open(pFilePath, flags);
+        fd = open(pFilePath, flags, 0666);
     }
 
     if (fd < 0) {
