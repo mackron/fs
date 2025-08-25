@@ -724,12 +724,17 @@ when the file is opened in read and write mode.
 The `file_flush` function is used to flush any buffered data to the file. This is optional and can
 be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
 
+The `file_truncate` function is used to truncate a file to the current cursor position. This is
+only useful for write mode, so is therefore optional and can be left as `NULL` or return
+`FS_NOT_IMPLEMENTED`.
+
 The `file_info` function is used to get information about an opened file. It returns the same
 information as `info` but for an opened file. This is mandatory.
 
 The `file_duplicate` function is used to duplicate a file. The destination file will be a new file
 and already allocated. The backend need only copy the necessary backend-specific data to the new
-file.
+file. The backend must ensure that the duplicated file is totally independent of the original file
+and has its own separate read/write pointers.
 
 The `first`, `next` and `free_iterator` functions are used to enumerate the contents of a directory.
 If the directory is empty, or an error occurs, `fs_first` should return `NULL`. The `next` function
@@ -1199,6 +1204,7 @@ struct fs_backend
     fs_result    (* file_seek       )(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
     fs_result    (* file_tell       )(fs_file* pFile, fs_int64* pCursor);
     fs_result    (* file_flush      )(fs_file* pFile);
+    fs_result    (* file_truncate   )(fs_file* pFile);
     fs_result    (* file_info       )(fs_file* pFile, fs_file_info* pInfo);
     fs_result    (* file_duplicate  )(fs_file* pFile, fs_file* pDuplicate);                                  /* Duplicate the file handle. */
     fs_iterator* (* first           )(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen);
@@ -1237,6 +1243,7 @@ FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args);
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
 FS_API fs_result fs_file_tell(fs_file* pFile, fs_int64* pCursor);
 FS_API fs_result fs_file_flush(fs_file* pFile);
+FS_API fs_result fs_file_truncate(fs_file* pFile);
 FS_API fs_result fs_file_get_info(fs_file* pFile, fs_file_info* pInfo);
 FS_API fs_result fs_file_duplicate(fs_file* pFile, fs_file** ppDuplicate);  /* Duplicate the file handle. */
 FS_API void* fs_file_get_backend_data(fs_file* pFile);

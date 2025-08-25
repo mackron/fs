@@ -611,6 +611,7 @@ static fs_backend fs_posix_backend =
     fs_file_seek_posix,
     fs_file_tell_posix,
     fs_file_flush_posix,
+    fs_file_truncate_posix,
     fs_file_info_posix,
     fs_file_duplicate_posix,
     fs_first_posix,

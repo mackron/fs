@@ -566,6 +566,7 @@ fs_backend fs_pak_backend =
     fs_file_seek_pak,
     fs_file_tell_pak,
     fs_file_flush_pak,
+    NULL,   /* truncate */
     fs_file_info_pak,
     fs_file_duplicate_pak,
     fs_first_pak,

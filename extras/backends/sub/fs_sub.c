@@ -356,6 +356,14 @@ static fs_result fs_file_flush_sub(fs_file* pFile)
     return fs_file_flush(pSubFSFile->pActualFile);
 }
 
+static fs_result fs_file_truncate_sub(fs_file* pFile)
+{
+    fs_file_sub* pSubFSFile = (fs_file_sub*)fs_file_get_backend_data(pFile);
+    FS_SUB_ASSERT(pSubFSFile != NULL);
+    
+    return fs_file_truncate(pSubFSFile->pActualFile);
+}
+
 static fs_result fs_file_info_sub(fs_file* pFile, fs_file_info* pInfo)
 {
     fs_file_sub* pSubFSFile = (fs_file_sub*)fs_file_get_backend_data(pFile);
@@ -427,6 +435,7 @@ fs_backend fs_sub_backend =
     fs_file_seek_sub,
     fs_file_tell_sub,
     fs_file_flush_sub,
+    fs_file_truncate_sub,
     fs_file_info_sub,
     fs_file_duplicate_sub,
     fs_first_sub,

@@ -664,7 +664,7 @@ static fs_result fs_file_flush_win32(fs_file* pFile)
     return FS_SUCCESS;
 }
 
-static fs_result fs_file_truncate(fs_file* pFile)
+static fs_result fs_file_truncate_win32(fs_file* pFile)
 {
     fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
 
@@ -886,6 +886,7 @@ static fs_backend fs_win32_backend =
     fs_file_seek_win32,
     fs_file_tell_win32,
     fs_file_flush_win32,
+    fs_file_truncate_win32,
     fs_file_info_win32,
     fs_file_duplicate_win32,
     fs_first_win32,

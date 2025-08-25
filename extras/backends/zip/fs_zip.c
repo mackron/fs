@@ -2555,6 +2555,7 @@ fs_backend fs_zip_backend =
     fs_file_seek_zip,
     fs_file_tell_zip,
     fs_file_flush_zip,
+    NULL,   /* truncate */
     fs_file_info_zip,
     fs_file_duplicate_zip,
     fs_first_zip,

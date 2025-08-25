@@ -1381,6 +1381,17 @@ static fs_result fs_backend_file_flush(const fs_backend* pBackend, fs_file* pFil
     }
 }
 
+static fs_result fs_backend_file_truncate(const fs_backend* pBackend, fs_file* pFile)
+{
+    FS_ASSERT(pBackend != NULL);
+
+    if (pBackend->file_truncate == NULL) {
+        return FS_NOT_IMPLEMENTED;
+    } else {
+        return pBackend->file_truncate(pFile);
+    }
+}
+
 static fs_result fs_backend_file_info(const fs_backend* pBackend, fs_file* pFile, fs_file_info* pInfo)
 {
     FS_ASSERT(pBackend != NULL);
@@ -3681,6 +3692,20 @@ FS_API fs_result fs_file_flush(fs_file* pFile)
     return fs_backend_file_flush(pBackend, pFile);
 }
 
+FS_API fs_result fs_file_truncate(fs_file* pFile)
+{
+    const fs_backend* pBackend;
+
+    if (pFile == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    pBackend = fs_file_get_backend(pFile);
+    FS_ASSERT(pBackend != NULL);
+
+    return fs_backend_file_truncate(pBackend, pFile);
+}
+
 FS_API fs_result fs_file_get_info(fs_file* pFile, fs_file_info* pInfo)
 {
     const fs_backend* pBackend;
@@ -5861,6 +5886,7 @@ fs_backend fs_stdio_backend =
     fs_file_seek_stdio,
     fs_file_tell_stdio,
     fs_file_flush_stdio,
+    NULL,
     fs_file_info_stdio,
     fs_file_duplicate_stdio,
     fs_first_stdio,
