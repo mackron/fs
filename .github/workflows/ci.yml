@@ -17,11 +17,13 @@ jobs:
         compiler: [gcc, clang]
         config:
           - name: "Default"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
           - name: "Force C++"
-            cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
           - name: "Force C89"
-            cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
+          - name: "_FILE_OFFSET_BITS=32"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror' -DCMAKE_CXX_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror'"
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +65,14 @@ jobs:
             cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
           - name: "Force C89"
             cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+          - name: "UNICODE"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            c_flags: "-DUNICODE"
+            cxx_flags: "-DUNICODE"
+          - name: "Non-UNICODE"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            c_flags: "-UMBCS"
+            cxx_flags: "-UMBCS"
     steps:
       - uses: actions/checkout@v4
 
@@ -83,12 +93,12 @@ jobs:
 
       - name: Configure CMake (MSVC)
         if: matrix.compiler == 'msvc'
-        run: cmake -B build ${{ matrix.config.cmake_args }}
+        run: cmake -B build ${{ matrix.config.cmake_args }} -DCMAKE_C_FLAGS="/WX ${{ matrix.config.c_flags || '' }}" -DCMAKE_CXX_FLAGS="/WX ${{ matrix.config.cxx_flags || '' }}"
 
       - name: Configure CMake (MinGW)
         if: matrix.compiler == 'mingw'
         shell: msys2 {0}
-        run: cmake -B build -G "MinGW Makefiles" ${{ matrix.config.cmake_args }}
+        run: cmake -B build -G "MinGW Makefiles" ${{ matrix.config.cmake_args }} -DCMAKE_C_FLAGS="-Werror ${{ matrix.config.c_flags || '' }}" -DCMAKE_CXX_FLAGS="-Werror ${{ matrix.config.cxx_flags || '' }}"
 
       - name: Build (MSVC)
         if: matrix.compiler == 'msvc'
@@ -117,11 +127,13 @@ jobs:
       matrix:
         config:
           - name: "Default"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
           - name: "Force C++"
-            cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
           - name: "Force C89"
-            cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
+          - name: "_FILE_OFFSET_BITS=32"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror' -DCMAKE_CXX_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror'"
     steps:
       - uses: actions/checkout@v4
 
@@ -144,7 +156,7 @@ jobs:
         arch: [arm64-v8a, armeabi-v7a, x86_64]
         config:
           - name: "Default"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
     steps:
       - uses: actions/checkout@v4
       - name: Setup Android NDK
@@ -171,7 +183,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"}
+          - {name: "_FILE_OFFSET_BITS=32", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror' -DCMAKE_CXX_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror'"}
     steps:
       - uses: actions/checkout@v4
       - name: Test on FreeBSD
@@ -194,7 +207,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"}
+          - {name: "_FILE_OFFSET_BITS=32", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror' -DCMAKE_CXX_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror'"}
     steps:
       - uses: actions/checkout@v4
       - name: Test on OpenBSD
@@ -217,7 +231,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"}
+          - {name: "_FILE_OFFSET_BITS=32", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror' -DCMAKE_CXX_FLAGS='-D_FILE_OFFSET_BITS=32 -Werror'"}
     steps:
       - uses: actions/checkout@v4
       - name: Test on NetBSD
