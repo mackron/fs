@@ -215,15 +215,10 @@ static fs_file_info fs_file_info_from_HANDLE_FILE_INFORMATION(const BY_HANDLE_FI
 }
 
 
-typedef struct fs_win32
-{
-    int _unused;
-} fs_win32;
-
 static size_t fs_alloc_size_win32(const void* pBackendConfig)
 {
     (void)pBackendConfig;
-    return sizeof(fs_win32);
+    return 0;
 }
 
 static fs_result fs_init_win32(fs* pFS, const void* pBackendConfig, fs_stream* pStream)

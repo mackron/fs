@@ -30,15 +30,11 @@ FS_API int fs_strncpy_s(char* dst, size_t dstCap, const char* src, size_t count)
 #include <dirent.h>
 #include <sys/stat.h>
 
-typedef struct fs_posix
-{
-    int _unused;
-} fs_posix;
 
 static size_t fs_alloc_size_posix(const void* pBackendConfig)
 {
     (void)pBackendConfig;
-    return sizeof(fs_posix);
+    return 0;
 }
 
 static fs_result fs_init_posix(fs* pFS, const void* pBackendConfig, fs_stream* pStream)
