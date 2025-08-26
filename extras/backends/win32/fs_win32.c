@@ -694,7 +694,8 @@ static fs_result fs_file_tell_win32(fs_file* pFile, fs_int64* pCursor)
     fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
     LARGE_INTEGER liCursor;
 
-    liCursor.LowPart = SetFilePointer(pFileWin32->hFile, 0, &liCursor.HighPart, FILE_CURRENT);
+    liCursor.HighPart = 0;
+    liCursor.LowPart  = SetFilePointer(pFileWin32->hFile, 0, &liCursor.HighPart, FILE_CURRENT);
 
     if (liCursor.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
         return fs_result_from_GetLastError();
