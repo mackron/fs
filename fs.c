@@ -3124,22 +3124,12 @@ static fs_result fs_file_alloc(fs* pFS, fs_file** ppFile)
     return FS_SUCCESS;
 }
 
-static fs_result fs_file_alloc_if_necessary(fs* pFS, fs_file** ppFile)
-{
-    FS_ASSERT(ppFile != NULL);
-
-    if (*ppFile == NULL) {
-        return fs_file_alloc(pFS, ppFile);
-    } else {
-        return FS_SUCCESS;
-    }
-}
-
 static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile, fs_file_info* pInfo)
 {
     fs_result result;
     const fs_backend* pBackend;
     fs_bool32 isStandardIOFile;
+    fs_bool32 wasFileAllocatedHere = FS_FALSE;
 
     pBackend = fs_get_backend_or_default(pFS);
     if (pBackend == NULL) {
@@ -3147,7 +3137,15 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     }
 
     if (ppFile != NULL) {
-        result = fs_file_alloc_if_necessary(pFS, ppFile);
+        if (*ppFile == NULL) {
+            result = fs_file_alloc(pFS, ppFile);
+            if (result == FS_SUCCESS) {
+                wasFileAllocatedHere = FS_TRUE;
+            }
+        } else {
+            result = FS_SUCCESS;
+        }
+
         if (result != FS_SUCCESS) {
             *ppFile = NULL;
             return result;
@@ -3163,8 +3161,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         if (pFSStream != NULL) {
             result = fs_stream_duplicate(pFSStream, fs_get_allocation_callbacks(pFS), &(*ppFile)->pStreamForBackend);
             if (result != FS_SUCCESS) {
-                fs_file_free(ppFile);
-                return result;
+                goto error;
             }
         }
     }
@@ -3194,16 +3191,17 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
                 pDirPathHeap = (char*)fs_malloc(dirPathLen + 1, fs_get_allocation_callbacks(pFS));
                 if (pDirPathHeap == NULL) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                    fs_file_free(ppFile);
-                    return FS_OUT_OF_MEMORY;
+                    result = FS_OUT_OF_MEMORY;
+                    goto error;
                 }
 
                 dirPathLen = fs_path_directory(pDirPathHeap, dirPathLen + 1, pFilePath, FS_NULL_TERMINATED);
                 if (dirPathLen < 0) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                    fs_file_free(ppFile);
                     fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
-                    return FS_ERROR;    /* Should never hit this. */
+
+                    result = FS_ERROR;
+                    goto error;    /* Should never hit this. */
                 }
 
                 pDirPath = pDirPathHeap;
@@ -3214,8 +3212,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
             result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
             if (result != FS_SUCCESS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                fs_file_free(ppFile);
-                return result;
+                goto error;
             }
         }
 
@@ -3223,6 +3220,9 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
 
         if (result != FS_SUCCESS) {
             fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+            if (wasFileAllocatedHere) {
+                fs_file_free(ppFile);
+            }
         }
 
         /* Grab the info from the opened file if we're also grabbing that. */
@@ -3244,12 +3244,19 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         object.
         */
         if (pFS != NULL && (result == FS_DOES_NOT_EXIST || result == FS_NOT_DIRECTORY)) {
-            if (ppFile != NULL) {
+            if (wasFileAllocatedHere) {
                 fs_file_free(ppFile);
             }
 
             result = fs_open_or_info_from_archive(pFS, pFilePath, openMode, ppFile, pInfo);
         }
+    }
+
+    return result;
+
+error:
+    if (wasFileAllocatedHere) {
+        fs_file_free(ppFile);
     }
 
     return result;
