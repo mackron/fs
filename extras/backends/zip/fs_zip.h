@@ -3,7 +3,7 @@ Zip file support.
 
 This only supports STORE and DEFLATE. It does not support DEFLATE64.
 
-To use this, you'll first need to a fs_stream containing a Zip archive file. You can get this
+To use this, you'll first need a fs_stream containing a Zip archive file. You can get this
 easily from a fs object.
 
     fs_file* pZipArchiveFile;
