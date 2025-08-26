@@ -2296,7 +2296,16 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
         runningPathLen += iSegment.segmentLength;
         pRunningPath[runningPathLen] = '\0';
 
-        result = fs_backend_mkdir(pBackend, pFS, pRunningPath);
+        /*
+        The running path might be an empty string due to the way we parse our path. For example, a path
+        such as `/foo/bar` will have an empty segment before the first slash. In this case we want to
+        treat the empty segment as a valid already-existing directory.
+        */
+        if (runningPathLen > 0) {
+            result = fs_backend_mkdir(pBackend, pFS, pRunningPath);
+        } else {
+            result = FS_ALREADY_EXISTS;
+        }
 
         /* We just pretend to be successful if the directory already exists. */
         if (result == FS_ALREADY_EXISTS) {
