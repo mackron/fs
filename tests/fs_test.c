@@ -1,0 +1,938 @@
+#include "../fs.c"
+#include "../extras/backends/posix/fs_posix.c"
+#include "../extras/backends/win32/fs_win32.c"
+
+/* BEG fs_test.c */
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+
+typedef struct fs_test fs_test;
+
+typedef int (* fs_test_proc)(fs_test* pUserData);
+
+struct fs_test
+{
+    const char* name;
+    fs_test_proc proc;
+    void* pUserData;
+    int result;
+    fs_test* pFirstChild;
+    fs_test* pNextSibling;
+};
+
+void fs_test_init(fs_test* pTest, const char* name, fs_test_proc proc, void* pUserData, fs_test* pParent)
+{
+    if (pTest == NULL) {
+        return;
+    }
+
+    memset(pTest, 0, sizeof(fs_test));
+    pTest->name = name;
+    pTest->proc = proc;
+    pTest->pUserData = pUserData;
+    pTest->result = FS_SUCCESS;  /* Default to success */
+    pTest->pFirstChild = NULL;
+    pTest->pNextSibling = NULL;
+
+    if (pParent != NULL) {
+        if (pParent->pFirstChild == NULL) {
+            pParent->pFirstChild = pTest;
+        } else {
+            fs_test* pSibling = pParent->pFirstChild;
+            while (pSibling->pNextSibling != NULL) {
+                pSibling = pSibling->pNextSibling;
+            }
+
+            pSibling->pNextSibling = pTest;
+        }
+    }
+}
+
+int fs_test_run(fs_test* pTest)
+{
+    if (pTest == NULL) {
+        return FS_ERROR;
+    }
+
+    if (pTest->name != NULL && pTest->proc != NULL) {
+        printf("Running Test: %s\n", pTest->name);
+    }
+
+    if (pTest->proc != NULL) {
+        pTest->result = pTest->proc(pTest);
+        if (pTest->result != FS_SUCCESS) {
+            return pTest->result;
+        }
+    }
+
+    /* Now we need to recursively execute children. If any child test fails, the parent test needs to be marked as failed as well. */
+    {
+        fs_test* pChild = pTest->pFirstChild;
+        while (pChild != NULL) {
+            int result = fs_test_run(pChild);
+            if (result != FS_SUCCESS) {
+                pTest->result = result;
+            }
+
+            pChild = pChild->pNextSibling;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
+void fs_test_print_local_result(fs_test* pTest, int level)
+{
+    if (pTest == NULL) {
+        return;
+    }
+
+    printf("[%s] %*s%s\n", pTest->result == FS_SUCCESS ? "PASS" : "FAIL", level * 2, "", pTest->name);
+}
+
+void fs_test_print_child_results(fs_test* pTest, int level)
+{
+    fs_test* pChild;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    pChild = pTest->pFirstChild;
+    while (pChild != NULL) {
+        fs_test_print_local_result(pChild, level);
+        fs_test_print_child_results(pChild, level + 1);
+
+        pChild = pChild->pNextSibling;
+    }
+}
+
+void fs_test_print_result(fs_test* pTest, int level)
+{
+    fs_test* pChild;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    if (pTest->name != NULL) {
+        printf("[%s] %*s%s\n", pTest->result == FS_SUCCESS ? "PASS" : "FAIL", level * 2, "", pTest->name);
+        level += 1;
+    }
+
+    pChild = pTest->pFirstChild;
+    while (pChild != NULL) {
+        fs_test_print_result(pChild, level);
+        pChild = pChild->pNextSibling;
+    }
+}
+
+void fs_test_count(fs_test* pTest, int* pCount, int* pPassed)
+{
+    fs_test* pChild;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    *pCount += 1;
+
+    if (pTest->result == FS_SUCCESS) {
+        *pPassed += 1;
+    }
+
+    pChild = pTest->pFirstChild;
+    while (pChild != NULL) {
+        fs_test_count(pChild, pCount, pPassed);
+        pChild = pChild->pNextSibling;
+    }
+}
+
+void fs_test_print_summary(fs_test* pTest)
+{
+    /* Start our counts at -1 to exclude the root test. */
+    int testCount = -1;
+    int passedCount = -1;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    /* This should only be called on a root test. */
+    assert(pTest->name == NULL);
+
+    printf("=== Test Summary ===\n");
+    fs_test_print_result(pTest, 0);
+
+    /* We need to count how many tests failed. */
+    fs_test_count(pTest, &testCount, &passedCount);
+    printf("---\n%s%d / %d tests passed.\n", (testCount == passedCount) ? "[PASS]: " : "[FAIL]: ", passedCount, testCount);
+}
+/* END fs_test.c */
+
+
+/* BEG system */
+typedef struct
+{
+    const fs_backend* pBackend;
+    fs* pFS;
+    char pTempDir[1024];
+} fs_test_system_state;
+
+fs_test_system_state fs_test_system_state_init(void)
+{
+    fs_test_system_state state;
+
+    memset(&state, 0, sizeof(state));
+
+    /*  */ if (FS_BACKEND_POSIX != NULL) {
+        state.pBackend = FS_BACKEND_POSIX;
+        printf("Using Backend %s\n", "POSIX");
+    } else if (FS_BACKEND_WIN32 != NULL) {
+        state.pBackend = FS_BACKEND_WIN32;
+        printf("Using Backend %s\n", "WIN32");
+    } else {
+        state.pBackend = NULL;
+    }
+
+    return state;
+}
+/* END system */
+
+/* BEG system_sysdir */
+int fs_test_system_sysdir_internal(fs_test* pTest, fs_sysdir_type type, const char* pTypeName)
+{
+    char path[1024];
+    size_t pathLen;
+
+    pathLen = fs_sysdir(type, path, sizeof(path));
+    if (pathLen == 0) {
+        printf("%s: Failed to get system directory path for %s\n", pTest->name, pTypeName);
+        return 1;
+    }
+
+    printf("%s: %s = %s\n", pTest->name, pTypeName, path);
+
+    return 0;
+}
+
+int fs_test_system_sysdir(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_HOME,   "HOME"  );
+    errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_TEMP,   "TEMP"  );
+    errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_CONFIG, "CONFIG");
+    errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_DATA,   "DATA"  );
+    errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_CACHE,  "CACHE" );
+
+    if (errorCount == 0) {
+        return FS_SUCCESS;
+    } else {
+        return FS_ERROR;
+    }
+}
+/* END system_sysdir */
+
+/* BEG system_init */
+int fs_test_system_init(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_config fsConfig;
+    fs* pFS;
+
+    fsConfig = fs_config_init(pTestState->pBackend, NULL, NULL);
+
+    result = fs_init(&fsConfig, &pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    pTestState->pFS = pFS;
+
+    return FS_SUCCESS;
+}
+/* END system_init */
+
+/* BEG system_mktmp */
+int fs_test_system_mktmp(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    char pTempFile[1024];
+
+    if (pTestState->pFS == NULL) {
+        printf("%s: File system not initialized. Aborting test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Start with creating a temporary directory. If this works, the output from this will be where we output our test files going forward in future tests. */
+    result = fs_mktmp(".fs_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create temporary directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    printf("%s: [DIR]  %s\n", pTest->name, pTestState->pTempDir);
+
+
+    /* Now for a file. We just discard with this straight away. */
+    result = fs_mktmp(".fs_", pTempFile, sizeof(pTempFile), FS_MKTMP_FILE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create temporary file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    printf("%s: [FILE] %s\n", pTest->name, pTempFile);
+
+    /* We're going to delete the temp file just to keep the temp folder cleaner and easier to find actual test files. */
+    result = fs_remove(pTestState->pFS, pTempFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to delete temporary file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_mktmp */
+
+/* BEG system_mkdir */
+int fs_test_system_mkdir(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file_info info;
+    char pDirPath[1024];
+
+    fs_path_append(pDirPath, sizeof(pDirPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
+
+    /* Normal mkdir(). */
+    result = fs_mkdir(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create directory %s\n", pTest->name, pDirPath);
+        return FS_ERROR;
+    }
+
+    /* Recursive. */
+    fs_path_append(pDirPath, sizeof(pDirPath), pTestState->pTempDir, (size_t)-1, "dir1/dir2/dir3", (size_t)-1);
+
+    result = fs_mkdir(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create directory %s\n", pTest->name, pDirPath);
+        return FS_ERROR;
+    }
+
+    /* Check that the folder was actually created. */
+    result = fs_info(pTestState->pFS, pDirPath, FS_READ, &info);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get info for directory %s\n", pTest->name, pDirPath);
+        return FS_ERROR;
+    }
+
+    if (info.directory == 0) {
+        printf("%s: ERROR: Path %s is not a directory.\n", pTest->name, pDirPath);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_mkdir */
+
+/* BEG system_write_new */
+int fs_test_system_write_new(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+    const char data[4] = {1, 2, 3, 4};
+    char dataRead[4];
+    size_t bytesWritten;
+
+    if (pTestState->pFS == NULL) {
+        printf("%s: File system not initialized. Aborting test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create new file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, data, sizeof(data), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to new file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    if (bytesWritten != sizeof(data)) {
+        printf("%s: ERROR: Expecting %d bytes written, but got %d.\n", pTest->name, (int)sizeof(data), (int)bytesWritten);
+        return FS_ERROR;
+    }
+
+
+    /* Now we need to open the file and verify. */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* The file should be exactly sizeof(data) bytes. */
+    result = fs_file_get_info(pFile, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != sizeof(data)) {
+        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)sizeof(data), (unsigned int)fileInfo.size);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read from file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesWritten != sizeof(dataRead)) {
+        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesWritten);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    if (memcmp(dataRead, data, sizeof(dataRead)) != 0) {
+        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_write_new */
+
+/* BEG system_write_append */
+int fs_test_system_write_append(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+    const char dataToAppend[4] = {5, 6, 7, 8};
+    char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    char dataRead[8];
+    size_t bytesWritten;
+
+    if (pTestState->pFS == NULL) {
+        printf("%s: File system not initialized. Aborting test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create new file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, dataToAppend, sizeof(dataToAppend), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to new file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    if (bytesWritten != sizeof(dataToAppend)) {
+        printf("%s: ERROR: Expecting %d bytes written, but got %d.\n", pTest->name, (int)sizeof(dataToAppend), (int)bytesWritten);
+        return FS_ERROR;
+    }
+
+
+    /* Now we need to open the file and verify. */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* The file should be exactly sizeof(data) bytes. */
+    result = fs_file_get_info(pFile, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != sizeof(dataExpected)) {
+        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)sizeof(dataExpected), (unsigned int)fileInfo.size);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read from file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesWritten != sizeof(dataRead)) {
+        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesWritten);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    if (memcmp(dataRead, dataExpected, sizeof(dataRead)) != 0) {
+        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+
+    /*
+    A detail with append mode is that it should not be able to make holes. To test this we'll seek
+    beyond the end of the file and write out another 8 bytes, bringing the total length to 16. If
+    the file is larger than this, it means it erroneously created a hole.
+    */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for writing.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, 8, FS_SEEK_END);   /* <-- This should still succeed even though writes in append mode do not create holes. */
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, dataExpected, sizeof(dataExpected), &bytesWritten);
+    if (result != FS_SUCCESS || bytesWritten != sizeof(dataExpected)) {
+        printf("%s: Failed to write to file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Verify that we did not get left with a hole. */
+    result = fs_info(pTestState->pFS, pFilePath, FS_READ, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != 16) {
+        printf("%s: ERROR: Expecting file size to be 16 bytes, but got %u.\n", pTest->name, (unsigned int)fileInfo.size);
+        return FS_ERROR;
+    }
+
+
+    return FS_SUCCESS;
+}
+/* END system_write_append */
+
+/* BEG system_write_exclusive */
+int fs_test_system_write_exclusive(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    char pFilePathA[1024];
+    char pFilePathB[1024];
+
+    if (pTestState->pFS == NULL) {
+        printf("%s: File system not initialized. Aborting test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_path_append(pFilePathA, sizeof(pFilePathA), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+    fs_path_append(pFilePathB, sizeof(pFilePathB), pTestState->pTempDir, (size_t)-1, "b", (size_t)-1);
+
+
+    /* The first test we expect to fail because the file should already exist. This is the "a" file that we created from earlier tests. */
+    result = fs_file_open(pTestState->pFS, pFilePathA, FS_WRITE | FS_EXCLUSIVE | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success opening file exclusively.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+
+    /* The second test we expect to succeed. */
+    result = fs_file_open(pTestState->pFS, pFilePathB, FS_WRITE | FS_EXCLUSIVE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create new file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END system_write_exclusive */
+
+/* BEG system_write_truncate */
+int fs_test_system_write_truncate(fs_test* pTest)
+{
+    /*
+    The truncate test is the same as the "new" test, with the only difference being that this test will
+    be opening an existing file rather than creating a new one. This is functionally the same so we can
+    just call straight into the "new" test rather than duplicating code here.
+    */
+    return fs_test_system_write_new(pTest);
+}
+/* END system_write_truncate */
+
+/* BEG system_write_truncate2 */
+int fs_test_system_write_truncate2(fs_test* pTest)
+{
+    /*
+    This tests the fs_file_truncate() function. We'll open the file "a", which should be 4 bytes in length
+    at the time of running this test, and then truncate the last two bytes, leaving it 2 bytes in length.
+    We'll then read the file back and verify the new size.
+
+    A detail with this test. When running with POSIX, we can expect a FS_NOT_IMPLEMENTED when running in
+    struct C89 mode (`-std=c89`) which is due to `ftruncate()` being unavailable.
+    */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create new file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, 2, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_truncate(pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to truncate file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* Now get the info and check the size. We didn't modify any content so nothing should have changed. */
+    result = fs_info(pTestState->pFS, pFilePath, FS_READ, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != 2) {
+        printf("%s: Unexpected file size after truncation. Expected 2, got %u.\n", pTest->name, (unsigned int)fileInfo.size);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_write_truncate2 */
+
+/* BEG system_write_seek */
+int fs_test_system_write_seek(fs_test* pTest)
+{
+    /*
+    This test will open the "a" file in append mode, seek to the start, write out 6 bytes, and then
+    verify the content. It should *not* overwrite the first two bytes. The final size should be 8
+    bytes in length.
+
+    Then we'll test that the three seeking origins all work as expected. These will be verified with
+    fs_file_tell() which will also act as the test for pointer retrieval.
+    */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+    size_t bytesWritten;
+    size_t bytesRead;
+    char data[6] = {3, 4, 5, 6, 7, 8};
+    char dataRead[8];
+    char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    fs_int64 cursor;
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, 0, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, data, sizeof(data), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesWritten != sizeof(data)) {
+        printf("%s: ERROR: Expecting %d bytes written, but got %d.\n", pTest->name, (int)sizeof(data), (int)bytesWritten);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* Now we need to open the file in read mode and verify the data was written correctly. */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_get_info(pFile, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != 8) {
+        printf("%s: ERROR: Unexpected file size. Expected 8, got %u.\n", pTest->name, (unsigned int)fileInfo.size);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read from file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesRead != sizeof(dataRead)) {
+        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesRead);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (memcmp(dataRead, dataExpected, sizeof(dataExpected)) != 0) {
+        printf("%s: ERROR: Data read from file does not match expected data.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* At this point the file should contain 8 bytes of data. Now we'll re-open it and test the different seek origins. */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* SEEK_SET */
+    result = fs_file_seek(pFile, 2, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_tell(pFile, &cursor);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to tell file position.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (cursor != 2) {
+        printf("%s: ERROR: Expecting cursor position 2, but got %d.\n", pTest->name, (int)cursor);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+
+    /* SEEK_CUR */
+    result = fs_file_seek(pFile, 2, FS_SEEK_CUR);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_tell(pFile, &cursor);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to tell file position.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (cursor != 4) {
+        printf("%s: ERROR: Expecting cursor position 4, but got %d.\n", pTest->name, (int)cursor);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+
+    /* SEEK_END */
+    result = fs_file_seek(pFile, -8, FS_SEEK_END);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_tell(pFile, &cursor);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to tell file position.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (cursor != 0) {
+        printf("%s: ERROR: Expecting cursor position 0, but got %d.\n", pTest->name, (int)cursor);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+
+    /* We must be able to seek beyond the end of the file without an error. */
+    result = fs_file_seek(pFile, 16, FS_SEEK_END);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* It is an error to seek to before the start file. */
+    result = fs_file_seek(pFile, -1, FS_SEEK_SET);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: ERROR: Seeking before start of file did not return an error.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END system_write_seek */
+
+
+/* BEG system_uninit */
+int fs_test_system_uninit(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+
+    if (pTestState->pFS != NULL) {
+        fs_uninit(pTestState->pFS);
+        pTestState->pFS = NULL;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_uninit */
+
+
+int main(int argc, char** argv)
+{
+    int result;
+
+    /* Tests. */
+    fs_test test_root;
+    fs_test test_system;
+    fs_test test_system_sysdir;             /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
+    fs_test test_system_init;
+    fs_test test_system_mktmp;              /* The output from this test will be used for subsequent tests. Tests will output into the temp directory created here. */
+    fs_test test_system_mkdir;
+    fs_test test_system_write;
+    fs_test test_system_write_new;          /* Tests creation of a new file. */
+    fs_test test_system_write_append;       /* Tests FS_WRITE | FS_APPEND. */
+    fs_test test_system_write_exclusive;    /* Tests FS_WRITE | FS_EXCLUSIVE. */
+    fs_test test_system_write_truncate;     /* Tests FS_WRITE | FS_TRUNCATE. */
+    fs_test test_system_write_truncate2;    /* Tests fs_file_truncate(). */
+    fs_test test_system_write_seek;         /* Tests seeking while writing. */
+    fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
+
+    /* Test states. */
+    fs_test_system_state test_system_state = fs_test_system_state_init();
+
+    (void)argc;
+    (void)argv;
+
+    /*
+    Note that the order of tests is important here because we will use the output from previous tests
+    as the input to subsequent tests.
+    */
+
+    /* Root. Only used for execution. */
+    fs_test_init(&test_root, NULL, NULL, NULL, NULL);
+
+    /*
+    Default System IO.
+
+    This only tests basic file operations. It does not test mounts or archives.
+    */
+    fs_test_init(&test_system,                 "System IO",          NULL,                           &test_system_state, &test_root);
+    fs_test_init(&test_system_sysdir,          "System Directories", fs_test_system_sysdir,          &test_system_state, &test_system);
+    fs_test_init(&test_system_init,            "Initialization",     fs_test_system_init,            &test_system_state, &test_system);
+    fs_test_init(&test_system_mktmp,           "Temporaries",        fs_test_system_mktmp,           &test_system_state, &test_system);
+    fs_test_init(&test_system_mkdir,           "Make Directory",     fs_test_system_mkdir,           &test_system_state, &test_system);
+    fs_test_init(&test_system_write,           "Write",              NULL,                           &test_system_state, &test_system);
+    fs_test_init(&test_system_write_new,       "Write New",          fs_test_system_write_new,       &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_append,    "Write Append",       fs_test_system_write_append,    &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_exclusive, "Write Exclusive",    fs_test_system_write_exclusive, &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_truncate,  "Write Truncate",     fs_test_system_write_truncate,  &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
+    fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
+
+    result = fs_test_run(&test_root);
+
+    /* Print the test summary. */
+    printf("\n");
+    fs_test_print_summary(&test_root);
+
+    if (result == FS_SUCCESS) {
+        return 0;
+    } else {
+        return 1;
+    }
+}

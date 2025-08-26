@@ -95,6 +95,17 @@ target_compile_options(fswin32 PRIVATE ${COMPILE_OPTIONS})
 # Tests
 if(FS_BUILD_TESTS)
     enable_testing()
+    
+    add_executable(fs_test tests/fs_test.c)
+    target_link_libraries(fs_test PRIVATE
+        fs
+        fszip
+        fspak
+        fssub
+    )
+    target_compile_options(fs_test PRIVATE ${COMPILE_OPTIONS})
+    add_test(NAME fs_test COMMAND fs_test)
+
 
     add_executable(fstest tests/fstest.c)
     target_link_libraries(fstest PRIVATE
@@ -104,7 +115,6 @@ if(FS_BUILD_TESTS)
         fssub
     )
     target_compile_options(fstest PRIVATE ${COMPILE_OPTIONS})
-
     #add_test(NAME fstest COMMAND fstest)
 endif()
 
