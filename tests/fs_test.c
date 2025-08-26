@@ -31,7 +31,7 @@ void fs_test_init(fs_test* pTest, const char* name, fs_test_proc proc, void* pUs
     pTest->name = name;
     pTest->proc = proc;
     pTest->pUserData = pUserData;
-    pTest->result = FS_SUCCESS;  /* Default to success */
+    pTest->result = FS_SUCCESS;
     pTest->pFirstChild = NULL;
     pTest->pNextSibling = NULL;
 
