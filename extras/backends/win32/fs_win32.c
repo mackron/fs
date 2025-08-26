@@ -544,6 +544,10 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
         pFileWin32->hFile = hFile;
     }
 
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
     /* We need to keep track of the open mode for duplication purposes. */
     pFileWin32->openMode = openMode;
 
