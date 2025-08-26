@@ -3124,12 +3124,11 @@ static fs_result fs_file_alloc(fs* pFS, fs_file** ppFile)
     return FS_SUCCESS;
 }
 
-static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile, fs_file_info* pInfo)
+static fs_result fs_file_alloc_and_open_or_info(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile, fs_file_info* pInfo)
 {
     fs_result result;
     const fs_backend* pBackend;
     fs_bool32 isStandardIOFile;
-    fs_bool32 wasFileAllocatedHere = FS_FALSE;
 
     pBackend = fs_get_backend_or_default(pFS);
     if (pBackend == NULL) {
@@ -3137,17 +3136,10 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     }
 
     if (ppFile != NULL) {
-        if (*ppFile == NULL) {
-            result = fs_file_alloc(pFS, ppFile);
-            if (result == FS_SUCCESS) {
-                wasFileAllocatedHere = FS_TRUE;
-            }
-        } else {
-            result = FS_SUCCESS;
-        }
+        FS_ASSERT(*ppFile == NULL);
 
+        result = fs_file_alloc(pFS, ppFile);
         if (result != FS_SUCCESS) {
-            *ppFile = NULL;
             return result;
         }
     }
@@ -3156,13 +3148,11 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
     Take a copy of the file system's stream if necessary. We only need to do this if we're opening the file, and if
     the owner `fs` object `pFS` itself has a stream.
     */
-    if (pFS != NULL && ppFile != NULL) {
-        fs_stream* pFSStream = pFS->pStream;
-        if (pFSStream != NULL) {
-            result = fs_stream_duplicate(pFSStream, fs_get_allocation_callbacks(pFS), &(*ppFile)->pStreamForBackend);
-            if (result != FS_SUCCESS) {
-                goto error;
-            }
+    if (pFS != NULL && ppFile != NULL && pFS->pStream != NULL) {
+        result = fs_stream_duplicate(pFS->pStream, fs_get_allocation_callbacks(pFS), &(*ppFile)->pStreamForBackend);
+        if (result != FS_SUCCESS) {
+            fs_file_free(ppFile);
+            return result;
         }
     }
 
@@ -3191,17 +3181,16 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
                 pDirPathHeap = (char*)fs_malloc(dirPathLen + 1, fs_get_allocation_callbacks(pFS));
                 if (pDirPathHeap == NULL) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                    result = FS_OUT_OF_MEMORY;
-                    goto error;
+                    fs_file_free(ppFile);
+                    return FS_OUT_OF_MEMORY;
                 }
 
                 dirPathLen = fs_path_directory(pDirPathHeap, dirPathLen + 1, pFilePath, FS_NULL_TERMINATED);
                 if (dirPathLen < 0) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                    fs_file_free(ppFile);
                     fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
-
-                    result = FS_ERROR;
-                    goto error;    /* Should never hit this. */
+                    return FS_ERROR;
                 }
 
                 pDirPath = pDirPathHeap;
@@ -3212,7 +3201,8 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
             result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
             if (result != FS_SUCCESS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                goto error;
+                fs_file_free(ppFile);
+                return result;
             }
         }
 
@@ -3220,9 +3210,8 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
 
         if (result != FS_SUCCESS) {
             fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-            if (wasFileAllocatedHere) {
-                fs_file_free(ppFile);
-            }
+            fs_file_free(ppFile);
+            goto try_opening_from_archive;
         }
 
         /* Grab the info from the opened file if we're also grabbing that. */
@@ -3237,6 +3226,7 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         }
     }
 
+try_opening_from_archive:
     if (!FS_IS_OPAQUE(openMode) && (openMode & FS_WRITE) == 0 && !isStandardIOFile) {
         /*
         If we failed to open the file because it doesn't exist we need to try loading it from an
@@ -3244,19 +3234,9 @@ static fs_result fs_file_alloc_if_necessary_and_open_or_info(fs* pFS, const char
         object.
         */
         if (pFS != NULL && (result == FS_DOES_NOT_EXIST || result == FS_NOT_DIRECTORY)) {
-            if (wasFileAllocatedHere) {
-                fs_file_free(ppFile);
-            }
-
+            fs_file_free(ppFile);
             result = fs_open_or_info_from_archive(pFS, pFilePath, openMode, ppFile, pInfo);
         }
-    }
-
-    return result;
-
-error:
-    if (wasFileAllocatedHere) {
-        fs_file_free(ppFile);
     }
 
     return result;
@@ -3302,7 +3282,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
     /* Special case for standard IO files. */
     if (pFilePath == FS_STDIN || pFilePath == FS_STDOUT || pFilePath == FS_STDERR) {
-        return fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
+        return fs_file_alloc_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
     }
 
     result = fs_validate_path(pFilePath, FS_NULL_TERMINATED, openMode);
@@ -3376,7 +3356,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
 
                 /* We now have enough information to open the file. */
-                result = fs_file_alloc_if_necessary_and_open_or_info(pFS, pActualPathClean, openMode, ppFile, pInfo);
+                result = fs_file_alloc_and_open_or_info(pFS, pActualPathClean, openMode, ppFile, pInfo);
 
                 fs_free(pActualPathCleanHeap, fs_get_allocation_callbacks(pFS));
                 pActualPathCleanHeap = NULL;
@@ -3395,7 +3375,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
             opening a file using `fopen()`.
             */
             if ((openMode & FS_ONLY_MOUNTS) == 0) {
-                return fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
+                return fs_file_alloc_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
             } else {
                 /*
                 Getting here means only the mount points can be used to open the file (cannot open straight from
@@ -3485,7 +3465,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                         pActualPath = pActualPathStack;
                     }
 
-                    result = fs_file_alloc_if_necessary_and_open_or_info(pFS, pActualPath, openMode, ppFile, pInfo);
+                    result = fs_file_alloc_and_open_or_info(pFS, pActualPath, openMode, ppFile, pInfo);
 
                     if (pActualPathHeap != NULL) {
                         fs_free(pActualPathHeap, fs_get_allocation_callbacks(pFS));
@@ -3503,7 +3483,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
         /* If we get here it means we couldn't find the file from our search paths. Try opening directly. */
         if ((openMode & FS_ONLY_MOUNTS) == 0) {
-            result = fs_file_alloc_if_necessary_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
+            result = fs_file_alloc_and_open_or_info(pFS, pFilePath, openMode, ppFile, pInfo);
             if (result == FS_SUCCESS) {
                 return FS_SUCCESS;
             }
