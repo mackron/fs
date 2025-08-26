@@ -3514,26 +3514,7 @@ FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_f
 
     *ppFile = NULL;
 
-    if ((openMode & FS_TEMP) == FS_TEMP) {
-        /*
-        We're creating a temporary file. We can use fs_mktmp() to generate a file path for us. The
-        input path will act as the prefix.
-
-        We'll use a stack allocation for the temporary file path. We can make this more robust later
-        by checking for FS_PATH_TOO_LONG and allocating on the heap if necessary.
-        */
-        char pTmpPath[4096];
-        fs_result result;
-
-        result = fs_mktmp(pFilePath, pTmpPath, sizeof(pTmpPath), FS_MKTMP_FILE);
-        if (result != FS_SUCCESS) {
-            return result;
-        }
-
-        return fs_file_open_or_info(pFS, pTmpPath, openMode | FS_IGNORE_MOUNTS, ppFile, NULL);
-    } else {
-        return fs_file_open_or_info(pFS, pFilePath, openMode, ppFile, NULL);
-    }
+    return fs_file_open_or_info(pFS, pFilePath, openMode, ppFile, NULL);
 }
 
 static void fs_file_uninit(fs_file* pFile)

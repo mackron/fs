@@ -565,21 +565,6 @@ if (result != FS_SUCCESS) {
 }
 ```
 
-If you just want to create a temporary file and don't care about the name, you can use
-`fs_file_open()` with the `FS_TEMP` flag. In this case, the library will treat the file path
-as the prefix:
-
-```c
-fs_file* pFile;
-result = fs_file_open(pFS, "prefix", FS_TEMP, &pFile);
-if (result != FS_SUCCESS) {
-    // Failed to open temporary file.
-}
-```
-
-The use of temporary files is only valid with `fs` objects that make use of the standard file
-system, such as the stdio backend.
-
 The prefix can include subdirectories, such as "myapp/subdir". In this case the library will create
 the directory hierarchy for you, unless you pass in `FS_NO_CREATE_DIRS`.  Note that not all
 platforms treat the name portion of the prefix the same. In particular, Windows will only use up to
@@ -1097,8 +1082,6 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 #define FS_WRITE                    0x0002  /* Will truncate by default. */
 #define FS_APPEND                   0x0004  /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
 #define FS_EXCLUSIVE                0x0008  /* Only valid with write mode. Will fail if the file already exists. */
-
-#define FS_TEMP                     0x0010  /* When passed into fs_file_open(), will create a temp file. Should not be combined with any other flag except FS_READ and/or FS_WRITE. */
 
 #define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
 #define FS_OPAQUE                   0x0020  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
