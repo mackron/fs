@@ -177,7 +177,7 @@ static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFi
             flags |= O_EXCL;
         } else if ((openMode & FS_APPEND) != 0) {
             flags |= O_APPEND;
-        } else {
+        } else if ((openMode & FS_TRUNCATE) != 0) {
             flags |= O_TRUNC;
         }
     }

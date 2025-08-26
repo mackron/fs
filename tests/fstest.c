@@ -310,7 +310,7 @@ static int fstest_archive_io_file(fs* pFS, const char* pFilePath, const char* pO
     }
 
     fs_snprintf(pOutputFilePath, sizeof(pOutputFilePath), "%s/%s", pOutputDirectory, fs_path_file_name(pFilePath, (size_t)-1));
-    result = fs_file_open(pFS, pOutputFilePath, FS_WRITE, &pFileOut);
+    result = fs_file_open(pFS, pOutputFilePath, FS_WRITE | FS_TRUNCATE, &pFileOut);
     fstest_print_result_f("  Open      %s", (result != FS_SUCCESS), pOutputFilePath);
     if (result != 0) {
         fs_file_close(pFileIn);
@@ -476,7 +476,7 @@ static int fstest_write_io(void)
         fs_file* pFile;
         const char* pContent = "Hello, World!";
 
-        result = fs_file_open(pFS, "config/editor/editor.cfg", FS_WRITE, &pFile) != FS_SUCCESS;
+        result = fs_file_open(pFS, "config/editor/editor.cfg", FS_WRITE | FS_TRUNCATE, &pFile) != FS_SUCCESS;
         if (result != 0) {
             printf("Failed to open file for writing.\n");
             return 1;

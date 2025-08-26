@@ -509,16 +509,19 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     }
 
     if ((openMode & FS_WRITE) != 0) {
-        dwDesiredAccess      |= GENERIC_WRITE;
-        dwShareMode          |= FILE_SHARE_WRITE;
-        dwCreationDisposition = CREATE_ALWAYS;  /* In write mode, our default is to always truncate. */
+        dwShareMode |= FILE_SHARE_WRITE;
 
-        /* If we're trying to open in exclusive mode, the file must not already exist. */
         if ((openMode & FS_EXCLUSIVE) != 0) {
+            dwDesiredAccess      |= GENERIC_WRITE;
             dwCreationDisposition = CREATE_NEW;
         } else if ((openMode & FS_APPEND) != 0) {
-            dwDesiredAccess &= ~GENERIC_WRITE;
-            dwDesiredAccess |= FILE_APPEND_DATA;
+            dwDesiredAccess      |= FILE_APPEND_DATA;
+            dwCreationDisposition = OPEN_ALWAYS;
+        } else if ((openMode & FS_TRUNCATE) != 0) {
+            dwDesiredAccess      |= GENERIC_WRITE;
+            dwCreationDisposition = CREATE_ALWAYS;
+        } else {
+            dwDesiredAccess      |= GENERIC_WRITE;
             dwCreationDisposition = OPEN_ALWAYS;
         }
     }
