@@ -386,7 +386,7 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 #if defined(_WIN32)
 #include <windows.h>    /* <-- Just can't get away from this darn thing... Needed for mutexes and file iteration. */
 
-static fs_result fs_result_from_GetLastError()
+FS_API fs_result fs_result_from_GetLastError()
 {
     DWORD error = GetLastError();
     switch (error)
@@ -4980,7 +4980,7 @@ static fs_file_info fs_file_info_from_stat(struct stat* pStat)
 }
 
 #if defined(_WIN32)
-static fs_uint64 fs_FILETIME_to_unix(const FILETIME* pFT)
+FS_API fs_uint64 fs_FILETIME_to_unix(const FILETIME* pFT)
 {
     ULARGE_INTEGER li;
 
