@@ -3296,7 +3296,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
     if ((openMode & FS_WRITE) != 0) {
         /* Opening in write mode. */
-        if (pFS != NULL) {
+        if (pFS != NULL && (openMode & FS_IGNORE_MOUNTS) == 0) {
             fs_mount_point* pBestMountPoint = NULL;
             const char* pBestMountPointPath = NULL;
             const char* pBestMountPointFileSubPath = NULL;
