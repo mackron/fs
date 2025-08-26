@@ -517,6 +517,8 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
         if ((openMode & FS_EXCLUSIVE) != 0) {
             dwCreationDisposition = CREATE_NEW;
         } else if ((openMode & FS_APPEND) != 0) {
+            dwDesiredAccess &= ~GENERIC_WRITE;
+            dwDesiredAccess |= FILE_APPEND_DATA;
             dwCreationDisposition = OPEN_ALWAYS;
         }
     }
