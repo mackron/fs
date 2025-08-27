@@ -188,10 +188,10 @@ fs_test_system_state fs_test_system_state_init(void)
 
     /*  */ if (FS_BACKEND_POSIX != NULL) {
         state.pBackend = FS_BACKEND_POSIX;
-        printf("Using Backend %s\n", "POSIX");
+        printf("Backend: %s\n", "POSIX");
     } else if (FS_BACKEND_WIN32 != NULL) {
         state.pBackend = FS_BACKEND_WIN32;
-        printf("Using Backend %s\n", "WIN32");
+        printf("Backend: %s\n", "WIN32");
     } else {
         state.pBackend = NULL;
     }
