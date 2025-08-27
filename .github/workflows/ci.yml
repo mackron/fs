@@ -52,33 +52,61 @@ jobs:
 
   # Windows job
   windows:
-    name: Windows (${{ matrix.compiler }}, ${{ matrix.config.name }})
+    name: Windows (${{ matrix.compiler }}, ${{ matrix.arch }}, ${{ matrix.config.name }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        compiler: [msvc, mingw]
-        config:
-          - name: "Default"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
-          - name: "Force C++"
-            cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
-          - name: "Force C89"
-            cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
-          - name: "UNICODE"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
-            c_flags: "-DUNICODE"
-            cxx_flags: "-DUNICODE"
-          - name: "Non-UNICODE"
-            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"
-            c_flags: "-UMBCS"
-            cxx_flags: "-UMBCS"
+        include:
+          # MSVC builds - both 32-bit and 64-bit
+          - compiler: msvc
+            arch: x64
+            config: {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: msvc
+            arch: x64
+            config: {name: "Force C++", cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: msvc
+            arch: x64
+            config: {name: "UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-DUNICODE", cxx_flags: "-DUNICODE"}
+          - compiler: msvc
+            arch: x64
+            config: {name: "Non-UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-UMBCS", cxx_flags: "-UMBCS"}
+          - compiler: msvc
+            arch: x86
+            config: {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: msvc
+            arch: x86
+            config: {name: "Force C++", cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: msvc
+            arch: x86
+            config: {name: "UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-DUNICODE", cxx_flags: "-DUNICODE"}
+          - compiler: msvc
+            arch: x86
+            config: {name: "Non-UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-UMBCS", cxx_flags: "-UMBCS"}
+          # MinGW builds - 64-bit only
+          - compiler: mingw
+            arch: x64
+            config: {name: "Default", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: mingw
+            arch: x64
+            config: {name: "Force C++", cmake_args: "-DFS_FORCE_CXX=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: mingw
+            arch: x64
+            config: {name: "Force C89", cmake_args: "-DFS_FORCE_C89=ON -DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON"}
+          - compiler: mingw
+            arch: x64
+            config: {name: "UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-DUNICODE", cxx_flags: "-DUNICODE"}
+          - compiler: mingw
+            arch: x64
+            config: {name: "Non-UNICODE", cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON", c_flags: "-UMBCS", cxx_flags: "-UMBCS"}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup MSVC
         if: matrix.compiler == 'msvc'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Setup MinGW
         if: matrix.compiler == 'mingw'
@@ -93,7 +121,7 @@ jobs:
 
       - name: Configure CMake (MSVC)
         if: matrix.compiler == 'msvc'
-        run: cmake -B build ${{ matrix.config.cmake_args }} -DCMAKE_C_FLAGS="/WX ${{ matrix.config.c_flags || '' }}" -DCMAKE_CXX_FLAGS="/WX ${{ matrix.config.cxx_flags || '' }}"
+        run: cmake -B build ${{ matrix.config.cmake_args }} -A ${{ matrix.arch == 'x86' && 'Win32' || 'x64' }} -DCMAKE_C_FLAGS="/WX ${{ matrix.config.c_flags || '' }}" -DCMAKE_CXX_FLAGS="/WX ${{ matrix.config.cxx_flags || '' }}"
 
       - name: Configure CMake (MinGW)
         if: matrix.compiler == 'mingw'
@@ -102,7 +130,7 @@ jobs:
 
       - name: Build (MSVC)
         if: matrix.compiler == 'msvc'
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel --config Debug
 
       - name: Build (MinGW)
         if: matrix.compiler == 'mingw'
