@@ -4465,7 +4465,7 @@ static fs_result fs_unmount_write(fs* pFS, const char* pActualPath, int options)
 
     FS_UNUSED(options);
 
-    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS; /*iteratorResult = fs_mount_list_next(&iterator)*/) {
+    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pActualPath, iterator.pPath) == 0) {
             fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
 
