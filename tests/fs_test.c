@@ -987,6 +987,64 @@ int fs_test_system_write_flush(fs_test* pTest)
 }
 /* END system_write_flush */
 
+/* BEG system_rename */
+int fs_test_system_rename(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    char pFilePathA[1024];
+    char pFilePathB[1024];
+    char pFilePathC[1024];
+    fs_file_info fileInfo;
+
+    /* We're going to rename "a" to "b", and then verify with fs_info(). */
+    fs_path_append(pFilePathA, sizeof(pFilePathA), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+    fs_path_append(pFilePathB, sizeof(pFilePathB), pTestState->pTempDir, (size_t)-1, "b", (size_t)-1);
+
+    result = fs_rename(pTestState->pFS, pFilePathA, pFilePathB);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to rename file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* "a" should no longer exist, and "b" should exist. */
+    result = fs_info(pTestState->pFS, pFilePathA, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: ERROR: File 'a' still exists after rename.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, pFilePathB, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: ERROR: File 'b' does not exist after rename.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Now we need to check if moving a file also works. We'll move it into a sub-directory. */
+    fs_path_append(pFilePathC, sizeof(pFilePathC), pTestState->pTempDir, (size_t)-1, "dir1/a", (size_t)-1);
+
+    result = fs_rename(pTestState->pFS, pFilePathB, pFilePathC);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to move file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, pFilePathC, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: ERROR: File 'dir1/a' does not exist after move.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, pFilePathB, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=".*/
+        printf("%s: ERROR: File 'b' still exists after move.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_rename */
+
 /* BEG system_remove */
 static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDirPath)
 {
@@ -1086,6 +1144,7 @@ int main(int argc, char** argv)
     fs_test test_system_write_truncate2;    /* Tests fs_file_truncate(). */
     fs_test test_system_write_seek;         /* Tests seeking while writing. */
     fs_test test_system_write_flush;        /* Tests fs_file_flush(). */
+    fs_test test_system_rename;             /* Tests fs_rename(). Make sure this is done before the remove test. */
     fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
 
@@ -1122,6 +1181,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_flush,     "Write Flush",        fs_test_system_write_flush,     &test_system_state, &test_system_write);
+    fs_test_init(&test_system_rename,          "Rename",             fs_test_system_rename,          &test_system_state, &test_system);
     fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
     fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
 
