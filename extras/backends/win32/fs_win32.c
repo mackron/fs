@@ -266,6 +266,8 @@ static fs_result fs_remove_win32(fs* pFS, const char* pFilePath)
                 if (resultWin32 == FS_FALSE) {
                     result = fs_result_from_GetLastError();
                     goto done;
+                } else {
+                    return FS_SUCCESS;
                 }
             } else {
                 result = fs_result_from_GetLastError();
