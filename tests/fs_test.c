@@ -1322,6 +1322,54 @@ int fs_test_system_read_noexist(fs_test* pTest)
 }
 /* END system_read_noexist */
 
+/* BEG system_duplicate */
+int fs_test_system_duplicate(fs_test* pTest)
+{
+    /*
+    When duplicating a file, it must be a fully independent copy. That is, each instance must have it's
+    own read/write pointers.
+    */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile1 = NULL;
+    fs_file* pFile2 = NULL;
+    char pFilePath[1024];
+    char data1[2];
+    char data2[2];
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ | FS_IGNORE_MOUNTS, &pFile1);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file 'a' for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_duplicate(pFile1, &pFile2);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate file 'a'.\n", pTest->name);
+        fs_file_close(pFile1);
+        return FS_ERROR;
+    }
+
+    /* Now we have two file handles, pFile1 and pFile2. They should be independent. */
+    fs_file_read(pFile1, data1, sizeof(data1), NULL);   /* Should advance the pointer of the first file, but not the second file... */
+    fs_file_read(pFile2, data2, sizeof(data2), NULL);   /* Should still be reading from the start of the file since the first read should not have moved its pointer. */
+
+    if (memcmp(data1, data2, sizeof(data1)) != 0) {
+        printf("%s: ERROR: Duplicated file contents do not match.\n", pTest->name);
+        fs_file_close(pFile1);
+        fs_file_close(pFile2);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile1);
+    fs_file_close(pFile2);
+
+    return FS_SUCCESS;
+}
+/* END system_duplicate */
+
 /* BEG system_rename */
 int fs_test_system_rename(fs_test* pTest)
 {
@@ -1485,6 +1533,7 @@ int main(int argc, char** argv)
     fs_test test_system_read;               /* Tests FS_READ. Also acts as the parent test for other reading related tests. */
     fs_test test_system_read_readonly;      /* Tests that writing to a read-only file fails. */
     fs_test test_system_read_noexist;       /* Tests that reading a non-existent file fails cleanly. */
+    fs_test test_system_duplicate;          /* Tests fs_file_duplicate(). */
     fs_test test_system_rename;             /* Tests fs_rename(). Make sure this is done before the remove test. */
     fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
@@ -1530,6 +1579,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_read,            "Read",               fs_test_system_read,            &test_system_state, &test_system);
     fs_test_init(&test_system_read_readonly,   "Read Read-Only",     fs_test_system_read_readonly,   &test_system_state, &test_system_read);
     fs_test_init(&test_system_read_noexist,    "Read Non-Existent",  fs_test_system_read_noexist,    &test_system_state, &test_system_read);
+    fs_test_init(&test_system_duplicate,       "Duplicate",          fs_test_system_duplicate,       &test_system_state, &test_system);
     fs_test_init(&test_system_rename,          "Rename",             fs_test_system_rename,          &test_system_state, &test_system);
     fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
     fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
