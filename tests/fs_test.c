@@ -987,6 +987,124 @@ int fs_test_system_write_flush(fs_test* pTest)
 }
 /* END system_write_flush */
 
+/* BEG system_read */
+int fs_test_system_read(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile = NULL;
+    char pFilePath[1024];
+    char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    size_t dataRead[16];
+    size_t bytesRead;
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /*
+    Read the file contents and verify. The file should be 8 bytes. We're going to try reading more than that
+    and confirm that the bytes written is clamped appropriately and that it does not return FS_AT_END, since
+    that return code should only be returned when zero bytes have been read.
+    */
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesRead != sizeof(dataExpected)) {
+        printf("%s: ERROR: Unexpected number of bytes read. Expected %d, got %d.\n", pTest->name, (int)sizeof(dataExpected), (int)bytesRead);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (memcmp(dataRead, dataExpected, sizeof(dataExpected)) != 0) {
+        printf("%s: ERROR: Data read from file does not match expected data.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Attempting to read again should now return FS_AT_END with a bytes read count of 0. */
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
+    if (result != FS_AT_END || bytesRead != 0) {
+        printf("%s: ERROR: Expected FS_AT_END with 0 bytes read, got %d with %d bytes read.\n", pTest->name, result, (int)bytesRead);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END system_read */
+
+/* BEG system_read_readonly */
+int fs_test_system_read_readonly(fs_test* pTest)
+{
+    /* This test opens the file in read-only, and then attempts to write to the file. We should get an error. */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile = NULL;
+    char pFilePath[1024];
+    char data[8] = {1, 2, 3, 4};
+    size_t bytesWritten;
+    
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, data, sizeof(data), &bytesWritten);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: ERROR: Unexpected success when writing to read-only file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Getting here means writing failed as expected, but double check that the bytes written is still zero. */
+    if (bytesWritten != 0) {
+        printf("%s: ERROR: Expecting 0 bytes written, but got %d.\n", pTest->name, (int)bytesWritten);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END system_read_readonly */
+
+/* BEG system_read_noexist */
+int fs_test_system_read_noexist(fs_test* pTest)
+{
+    /*
+    In write mode there was once a bug that resulting in the library not failing gracefully. Since opening
+    in write mode runs through a different code path as read mode, we'll test this as well.
+    */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile = NULL;
+
+    result = fs_file_open(pTestState->pFS, "does_not_exist", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: ERROR: Unexpected success opening non-existent file for reading.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_read_noexist */
+
 /* BEG system_rename */
 int fs_test_system_rename(fs_test* pTest)
 {
@@ -1144,6 +1262,9 @@ int main(int argc, char** argv)
     fs_test test_system_write_truncate2;    /* Tests fs_file_truncate(). */
     fs_test test_system_write_seek;         /* Tests seeking while writing. */
     fs_test test_system_write_flush;        /* Tests fs_file_flush(). */
+    fs_test test_system_read;               /* Tests FS_READ. Also acts as the parent test for other reading related tests. */
+    fs_test test_system_read_readonly;      /* Tests that writing to a read-only file fails. */
+    fs_test test_system_read_noexist;       /* Tests that reading a non-existent file fails cleanly. */
     fs_test test_system_rename;             /* Tests fs_rename(). Make sure this is done before the remove test. */
     fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
@@ -1181,6 +1302,9 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_flush,     "Write Flush",        fs_test_system_write_flush,     &test_system_state, &test_system_write);
+    fs_test_init(&test_system_read,            "Read",               fs_test_system_read,            &test_system_state, &test_system);
+    fs_test_init(&test_system_read_readonly,   "Read Read-Only",     fs_test_system_read_readonly,   &test_system_state, &test_system_read);
+    fs_test_init(&test_system_read_noexist,    "Read Non-Existent",  fs_test_system_read_noexist,    &test_system_state, &test_system_read);
     fs_test_init(&test_system_rename,          "Rename",             fs_test_system_rename,          &test_system_state, &test_system);
     fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
     fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
