@@ -562,6 +562,10 @@ static fs_result fs_file_read_win32(fs_file* pFile, void* pDst, size_t bytesToRe
             return fs_result_from_GetLastError();
         }
 
+        if (bytesReadNow == 0) {
+            break;
+        }
+
         bytesRemaining -= bytesReadNow;
         pRunningDst    += bytesReadNow;
     }
@@ -593,6 +597,10 @@ static fs_result fs_file_write_win32(fs_file* pFile, const void* pSrc, size_t by
         resultWin32 = WriteFile(pFileWin32->hFile, pRunningSrc, bytesToWriteNow, &bytesWrittenNow, NULL);
         if (resultWin32 == FS_FALSE) {
             return fs_result_from_GetLastError();
+        }
+
+        if (bytesWrittenNow == 0) {
+            break;
         }
 
         bytesRemaining -= bytesWrittenNow;
