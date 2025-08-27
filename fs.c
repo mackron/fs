@@ -6619,12 +6619,14 @@ FS_API fs_result fs_result_from_errno(int error)
 {
     switch (error)
     {
-        case 0:       return FS_SUCCESS;
-        case ENOENT:  return FS_DOES_NOT_EXIST;
-        case EEXIST:  return FS_ALREADY_EXISTS;
-        case ENOTDIR: return FS_NOT_DIRECTORY;
-        case ENOMEM:  return FS_OUT_OF_MEMORY;
-        case EINVAL:  return FS_INVALID_ARGS;
+        case 0:         return FS_SUCCESS;
+        case ENOENT:    return FS_DOES_NOT_EXIST;
+        case ENOMEM:    return FS_OUT_OF_MEMORY;
+        case EACCES:    return FS_ACCESS_DENIED;
+        case EEXIST:    return FS_ALREADY_EXISTS;
+        case EINVAL:    return FS_INVALID_ARGS;
+        case ENOTDIR:   return FS_NOT_DIRECTORY;
+        case ENOTEMPTY: return FS_DIRECTORY_NOT_EMPTY;
         default: break;
     }
 
