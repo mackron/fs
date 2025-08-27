@@ -172,6 +172,223 @@ void fs_test_print_summary(fs_test* pTest)
 /* END fs_test.c */
 
 
+/* BEG path_iteration */
+static int fs_test_breakup_path_forward(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
+{
+    fs_result result;
+    fs_path_iterator i;
+
+    *pCount = 0;
+
+    for (result = fs_path_first(pPath, pathLen, &i); result == FS_SUCCESS; result = fs_path_next(&i)) {
+        pIterator[*pCount] = i;
+        *pCount += 1;
+    }
+
+    if (result == FS_SUCCESS || result == FS_AT_END) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+static int fs_test_breakup_path_reverse(const char* pPath, size_t pathLen, fs_path_iterator pIterator[32], size_t* pCount)
+{
+    fs_result result;
+    fs_path_iterator i;
+
+    *pCount = 0;
+    
+    for (result = fs_path_last(pPath, pathLen, &i); result == FS_SUCCESS; result = fs_path_prev(&i)) {
+        pIterator[*pCount] = i;
+        *pCount += 1;
+    }
+
+    if (result == FS_SUCCESS || result == FS_AT_END) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+static int fs_test_reconstruct_path_forward(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+{
+    size_t i;
+    size_t len = 0;
+
+    pPath[0] = '\0';
+
+    for (i = 0; i < iteratorCount; i++) {
+        fs_strncpy(pPath + len, pIterator[i].pFullPath + pIterator[i].segmentOffset, pIterator[i].segmentLength);
+        len += pIterator[i].segmentLength;
+
+        if (i+1 < iteratorCount) {
+            pPath[len] = '/';
+            len += 1;
+        }
+    }
+
+    pPath[len] = '\0';
+    return 0;
+}
+
+static int fs_test_reconstruct_path_reverse(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+{
+    size_t i;
+    size_t len = 0;
+
+    pPath[0] = '\0';
+
+    for (i = iteratorCount; i > 0; i--) {
+        fs_strncpy(pPath + len, pIterator[i-1].pFullPath + pIterator[i-1].segmentOffset, pIterator[i-1].segmentLength);
+        len += pIterator[i-1].segmentLength;
+
+        if (i-1 > 0) {
+            pPath[len] = '/';
+            len += 1;
+        }
+    }
+
+    pPath[len] = '\0';
+    return 0;
+}
+
+static int fs_test_path_iteration_internal(fs_test* pTest, const char* pPath)
+{
+    fs_path_iterator segmentsForward[32];
+    fs_path_iterator segmentsReverse[32];
+    size_t segmentsForwardCount;
+    size_t segmentsReverseCount;
+    char pPathReconstructedForward[1024];
+    char pPathReconstructedReverse[1024];
+    int forwardResult = 0;
+    int reverseResult = 0;
+
+    (void)pTest;
+
+    fs_test_breakup_path_forward(pPath, (size_t)-1, segmentsForward, &segmentsForwardCount);
+    fs_test_breakup_path_reverse(pPath, (size_t)-1, segmentsReverse, &segmentsReverseCount);
+
+    fs_test_reconstruct_path_forward(segmentsForward, segmentsForwardCount, pPathReconstructedForward);
+    fs_test_reconstruct_path_reverse(segmentsReverse, segmentsReverseCount, pPathReconstructedReverse);
+
+    if (strcmp(pPath, pPathReconstructedForward) != 0) {
+        printf("%s: Forward reconstruction failed. Expecting \"%s\", got \"%s\"\n", pTest->name, pPath, pPathReconstructedForward);
+        forwardResult = 1;
+    }
+    if (strcmp(pPath, pPathReconstructedReverse) != 0) {
+        printf("%s: Reverse reconstruction failed. Expecting \"%s\", got \"%s\"\n", pTest->name, pPath, pPathReconstructedReverse);
+        reverseResult = 1;
+    }
+
+    if (forwardResult == 0 && reverseResult == 0) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+int fs_test_path_iteration(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_path_iteration_internal(pTest, "/");
+    errorCount += fs_test_path_iteration_internal(pTest, "");
+    errorCount += fs_test_path_iteration_internal(pTest, "/abc");
+    errorCount += fs_test_path_iteration_internal(pTest, "/abc/");
+    errorCount += fs_test_path_iteration_internal(pTest, "abc/");
+    errorCount += fs_test_path_iteration_internal(pTest, "/abc/def/ghi");
+    errorCount += fs_test_path_iteration_internal(pTest, "/abc/def/ghi/");
+    errorCount += fs_test_path_iteration_internal(pTest, "abc/def/ghi/");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:/");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:/abc");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:/abc/");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:/abc/def/ghi");
+    errorCount += fs_test_path_iteration_internal(pTest, "C:/abc/def/ghi/");
+    errorCount += fs_test_path_iteration_internal(pTest, "//localhost");
+    errorCount += fs_test_path_iteration_internal(pTest, "//localhost/abc");
+    errorCount += fs_test_path_iteration_internal(pTest, "//localhost//abc");
+    errorCount += fs_test_path_iteration_internal(pTest, "~");
+    errorCount += fs_test_path_iteration_internal(pTest, "~/Documents");
+
+    if (errorCount == 0) {
+        return FS_SUCCESS;
+    } else {
+        return FS_ERROR;
+    }
+}
+/* END path_iteration */
+
+/* BEG path_normalize */
+static int fs_test_path_normalize_internal(fs_test* pTest, const char* pPath, const char* pExpected)
+{
+    char pNormalizedPath[1024];
+    int result;
+    int length;
+
+    /* Get the length first so we can check that it's working correctly. */
+    length = fs_path_normalize(NULL, 0, pPath, FS_NULL_TERMINATED, 0);
+
+    result = fs_path_normalize(pNormalizedPath, sizeof(pNormalizedPath), pPath, FS_NULL_TERMINATED, 0);
+    if (result < 0) {
+        if (pExpected != NULL) {
+            printf("%s: Failed to normalize \"%s\"\n", pTest->name, pPath);
+            return 1;
+        } else {
+            /* pExpected is NULL. We use this to indicate that we're expecting this to fail. So a failure is a successful test. */
+            return 0;
+        }
+    }
+
+    if (pExpected == NULL) {
+        /* We expected this to fail, but it succeeded. */
+        printf("%s: Expected normalization of \"%s\" to fail, but it succeeded as \"%s\"\n", pTest->name, pPath, pNormalizedPath);
+        return 1;
+    }
+
+    /* Compare the length. */
+    if (length != result) {
+        printf("%s: Length mismatch for \"%s\": expected %d, got %d\n", pTest->name, pPath, length, result);
+        return 1;
+    }
+
+    /* Compare the result with expected. */
+    if (strcmp(pNormalizedPath, pExpected) != 0) {
+        printf("%s: Normalized \"%s\" does not match expected \"%s\"\n", pTest->name, pNormalizedPath, pExpected);
+        return 1;
+    }
+
+    return 0;
+}
+
+int fs_test_path_normalize(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_path_normalize_internal(pTest, "", "");
+    errorCount += fs_test_path_normalize_internal(pTest, "/", "/");
+    errorCount += fs_test_path_normalize_internal(pTest, "/abc/def/ghi", "/abc/def/ghi");
+    errorCount += fs_test_path_normalize_internal(pTest, "/..", NULL);   /* Expecting error. */
+    errorCount += fs_test_path_normalize_internal(pTest, "..", "..");
+    errorCount += fs_test_path_normalize_internal(pTest, "abc/../def", "def");
+    errorCount += fs_test_path_normalize_internal(pTest, "abc/./def", "abc/def");
+    errorCount += fs_test_path_normalize_internal(pTest, "../abc/def", "../abc/def");
+    errorCount += fs_test_path_normalize_internal(pTest, "abc/def/..", "abc");
+    errorCount += fs_test_path_normalize_internal(pTest, "abc/../../def", "../def");
+    errorCount += fs_test_path_normalize_internal(pTest, "/abc/../../def", NULL);   /* Expecting error. */
+    errorCount += fs_test_path_normalize_internal(pTest, "abc/def/", "abc/def");
+    errorCount += fs_test_path_normalize_internal(pTest, "/abc/def/", "/abc/def");
+
+    if (errorCount == 0) {
+        return FS_SUCCESS;
+    } else {
+        return FS_ERROR;
+    }
+}
+/* END path_normalize */
+
+
 /* BEG system */
 typedef struct
 {
@@ -1248,6 +1465,9 @@ int main(int argc, char** argv)
 
     /* Tests. */
     fs_test test_root;
+    fs_test test_path;
+    fs_test test_path_iteration;            /* Tests path breakup logic. This is critical for some internal logic in the library. */
+    fs_test test_path_normalize;            /* Tests path normalization, like resolving ".." and "." segments. Again, this is used extensively for path validation and therefore needs proper testing. */
     fs_test test_system;
     fs_test test_system_sysdir;             /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
     fs_test test_system_init;
@@ -1282,6 +1502,11 @@ int main(int argc, char** argv)
 
     /* Root. Only used for execution. */
     fs_test_init(&test_root, NULL, NULL, NULL, NULL);
+
+    /* Paths. */
+    fs_test_init(&test_path,           "Path",           NULL,                   NULL, &test_root);
+    fs_test_init(&test_path_iteration, "Path Iteration", fs_test_path_iteration, NULL, &test_path);
+    fs_test_init(&test_path_normalize, "Path Normalize", fs_test_path_normalize, NULL, &test_path);
 
     /*
     Default System IO.
