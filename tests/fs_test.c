@@ -426,6 +426,108 @@ int fs_test_system_write_new(fs_test* pTest)
 }
 /* END system_write_new */
 
+/* BEG system_write_overwrite */
+static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[4])
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+    char dataRead[4];
+    size_t bytesRead;
+    size_t newDataSize = 4;
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for overwriting.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, newData, newDataSize, NULL);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Now we need to open the file and verify. */
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* The file should be exactly sizeof(data) bytes. */
+    result = fs_file_get_info(pFile, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != newDataSize) {
+        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)newDataSize, (unsigned int)fileInfo.size);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read from file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    if (bytesRead != sizeof(dataRead)) {
+        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesRead);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    if (memcmp(dataRead, newData, sizeof(dataRead)) != 0) {
+        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+int fs_test_system_write_overwrite(fs_test* pTest)
+{
+    /*
+    At the time this test is called, the "a" file should be 4 bytes in size with the data {1, 2, 3, 4}. We'll overwrite this
+    with the data {5, 6, 7, 8}, close the file, and then reopen it to verify the contents. Then we'll revert the content back
+    to {1, 2, 3, 4} for the benefit of future tests which will need to read the original data.
+    */
+    int result;
+    char data1234[4] = {1, 2, 3, 4};
+    char data5678[4] = {5, 6, 7, 8};
+
+    /* Actual test. */
+    result = fs_test_system_write_overwrite_internal(pTest, data5678);
+    if (result != FS_SUCCESS) {
+        printf("%s: Overwrite test failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Revert back to the original data for future tests. */
+    result = fs_test_system_write_overwrite_internal(pTest, data1234);
+    if (result != FS_SUCCESS) {
+        printf("%s: Revert test failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_write_overwrite */
+
 /* BEG system_write_append */
 int fs_test_system_write_append(fs_test* pTest)
 {
@@ -624,7 +726,7 @@ int fs_test_system_write_truncate2(fs_test* pTest)
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile); /* <-- Detail: Make sure this is opened in overwrite mode (FS_WRITE by itself). */
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create new file.\n", pTest->name);
         return FS_ERROR;
@@ -855,6 +957,99 @@ int fs_test_system_write_seek(fs_test* pTest)
 }
 /* END system_write_seek */
 
+/* BEG system_write_flush */
+int fs_test_system_write_flush(fs_test* pTest)
+{
+    /* This test doesn't actually do anything practical. It just verifies that the flush operation can be called without error. */
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_file* pFile = NULL;
+    fs_result result;
+    char pFilePath[1024];
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for writing.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_flush(pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to flush file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END system_write_flush */
+
+/* BEG system_remove */
+static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDirPath)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+    fs_iterator* pIterator;
+    
+    for (pIterator = fs_first(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS); pIterator != NULL; pIterator = fs_next(pIterator)) {
+        char pSubPath[1024];
+        fs_path_append(pSubPath, sizeof(pSubPath), pDirPath, (size_t)-1, pIterator->pName, pIterator->nameLen);
+
+        if (pIterator->info.directory) {
+            /* It's a directory. We need to remove it recursively. */
+            result = fs_test_system_remove_directory(pTest, pSubPath);
+            if (result != FS_SUCCESS) {
+                printf("%s: Failed to remove directory '%s'.\n", pTest->name, pSubPath);
+                fs_free_iterator(pIterator);
+                return result;
+            }
+        } else {
+            /* It's a file. Just delete it. */
+            if (fs_remove(pTestState->pFS, pSubPath) != FS_SUCCESS) {
+                printf("%s: Failed to remove file '%s'.\n", pTest->name, pSubPath);
+                fs_free_iterator(pIterator);
+                return FS_ERROR;
+            }
+        }
+    }
+
+    /* At this point the directory should be empty. */
+    result = fs_remove(pTestState->pFS, pDirPath);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove directory '%s'.\n", pTest->name, pDirPath);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+int fs_test_system_remove(fs_test* pTest)
+{
+    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_result result;
+
+    /*
+    The first thing to test is that we cannot delete a non-empty folder. Our temp folder itself
+    should have content so we can just try deleting that now.
+    */
+    result = fs_remove(pTestState->pFS, pTestState->pTempDir);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpectedly succeeded in removing non-empty directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (result != FS_DIRECTORY_NOT_EMPTY) {
+        printf("%s: Unexpected error when removing non-empty directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Now we'll recursive delete everything in the temp folder. */
+    return fs_test_system_remove_directory(pTest, pTestState->pTempDir);
+}
+/* END system_remove */
 
 /* BEG system_uninit */
 int fs_test_system_uninit(fs_test* pTest)
@@ -884,11 +1079,14 @@ int main(int argc, char** argv)
     fs_test test_system_mkdir;
     fs_test test_system_write;
     fs_test test_system_write_new;          /* Tests creation of a new file. */
+    fs_test test_system_write_overwrite;    /* Tests FS_WRITE (overwrite mode). */
     fs_test test_system_write_append;       /* Tests FS_WRITE | FS_APPEND. */
     fs_test test_system_write_exclusive;    /* Tests FS_WRITE | FS_EXCLUSIVE. */
     fs_test test_system_write_truncate;     /* Tests FS_WRITE | FS_TRUNCATE. */
     fs_test test_system_write_truncate2;    /* Tests fs_file_truncate(). */
     fs_test test_system_write_seek;         /* Tests seeking while writing. */
+    fs_test test_system_write_flush;        /* Tests fs_file_flush(). */
+    fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
 
     /* Test states. */
@@ -917,11 +1115,14 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_mkdir,           "Make Directory",     fs_test_system_mkdir,           &test_system_state, &test_system);
     fs_test_init(&test_system_write,           "Write",              NULL,                           &test_system_state, &test_system);
     fs_test_init(&test_system_write_new,       "Write New",          fs_test_system_write_new,       &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_overwrite, "Write Overwrite",    fs_test_system_write_overwrite, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_append,    "Write Append",       fs_test_system_write_append,    &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_exclusive, "Write Exclusive",    fs_test_system_write_exclusive, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_truncate,  "Write Truncate",     fs_test_system_write_truncate,  &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_flush,     "Write Flush",        fs_test_system_write_flush,     &test_system_state, &test_system_write);
+    fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
     fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
 
     result = fs_test_run(&test_root);
