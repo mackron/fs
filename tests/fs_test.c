@@ -2,6 +2,34 @@
 #include "../extras/backends/posix/fs_posix.c"
 #include "../extras/backends/win32/fs_win32.c"
 
+
+const fs_backend* fs_test_get_backend(void)
+{
+    /*  */ if (FS_BACKEND_POSIX != NULL) {
+        return FS_BACKEND_POSIX;
+    } else if (FS_BACKEND_WIN32 != NULL) {
+        return FS_BACKEND_WIN32;
+    } else if (FS_STDIO != NULL) {
+        return FS_STDIO;
+    } else {
+        return NULL;
+    }
+}
+
+const char* fs_test_get_backend_name(const fs_backend* pBackend)
+{
+    /*  */ if (pBackend == FS_BACKEND_POSIX) {
+        return "POSIX";
+    } else if (pBackend == FS_BACKEND_WIN32) {
+        return "Win32";
+    } else if (pBackend == FS_STDIO) {
+        return "stdio";
+    } else {
+        return "Unknown";
+    }
+}
+
+
 /* BEG fs_test.c */
 #include <stdio.h>
 #include <assert.h>
@@ -389,33 +417,29 @@ int fs_test_path_normalize(fs_test* pTest)
 /* END path_normalize */
 
 
-/* BEG system */
+
+
+
+/* BEG test_state */
 typedef struct
 {
     const fs_backend* pBackend;
     fs* pFS;
     char pTempDir[1024];
-} fs_test_system_state;
+} fs_test_state;
 
-fs_test_system_state fs_test_system_state_init(void)
+fs_test_state fs_test_state_init(void)
 {
-    fs_test_system_state state;
+    fs_test_state state;
 
     memset(&state, 0, sizeof(state));
 
-    /*  */ if (FS_BACKEND_POSIX != NULL) {
-        state.pBackend = FS_BACKEND_POSIX;
-        printf("Backend: %s\n", "POSIX");
-    } else if (FS_BACKEND_WIN32 != NULL) {
-        state.pBackend = FS_BACKEND_WIN32;
-        printf("Backend: %s\n", "WIN32");
-    } else {
-        state.pBackend = NULL;
-    }
+    state.pBackend = fs_test_get_backend();
+    printf("Backend: %s\n", fs_test_get_backend_name(state.pBackend));
 
     return state;
 }
-/* END system */
+/* END test_state */
 
 /* BEG system_sysdir */
 int fs_test_system_sysdir_internal(fs_test* pTest, fs_sysdir_type type, const char* pTypeName)
@@ -455,7 +479,7 @@ int fs_test_system_sysdir(fs_test* pTest)
 /* BEG system_init */
 int fs_test_system_init(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_config fsConfig;
     fs* pFS;
@@ -477,7 +501,7 @@ int fs_test_system_init(fs_test* pTest)
 /* BEG system_mktmp */
 int fs_test_system_mktmp(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     char pTempFile[1024];
 
@@ -519,7 +543,7 @@ int fs_test_system_mktmp(fs_test* pTest)
 /* BEG system_mkdir */
 int fs_test_system_mkdir(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file_info info;
     char pDirPath[1024];
@@ -561,7 +585,7 @@ int fs_test_system_mkdir(fs_test* pTest)
 /* BEG system_write_new */
 int fs_test_system_write_new(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
@@ -646,7 +670,7 @@ int fs_test_system_write_new(fs_test* pTest)
 /* BEG system_write_overwrite */
 static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[4])
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
@@ -748,7 +772,7 @@ int fs_test_system_write_overwrite(fs_test* pTest)
 /* BEG system_write_append */
 int fs_test_system_write_append(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
@@ -875,7 +899,7 @@ int fs_test_system_write_append(fs_test* pTest)
 /* BEG system_write_exclusive */
 int fs_test_system_write_exclusive(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     char pFilePathA[1024];
@@ -935,7 +959,7 @@ int fs_test_system_write_truncate2(fs_test* pTest)
     A detail with this test. When running with POSIX, we can expect a FS_NOT_IMPLEMENTED when running in
     struct C89 mode (`-std=c89`) which is due to `ftruncate()` being unavailable.
     */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
@@ -993,7 +1017,7 @@ int fs_test_system_write_seek(fs_test* pTest)
     Then we'll test that the three seeking origins all work as expected. These will be verified with
     fs_file_tell() which will also act as the test for pointer retrieval.
     */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
@@ -1178,7 +1202,7 @@ int fs_test_system_write_seek(fs_test* pTest)
 int fs_test_system_write_flush(fs_test* pTest)
 {
     /* This test doesn't actually do anything practical. It just verifies that the flush operation can be called without error. */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_file* pFile = NULL;
     fs_result result;
     char pFilePath[1024];
@@ -1207,7 +1231,7 @@ int fs_test_system_write_flush(fs_test* pTest)
 /* BEG system_read */
 int fs_test_system_read(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile = NULL;
     char pFilePath[1024];
@@ -1265,7 +1289,7 @@ int fs_test_system_read(fs_test* pTest)
 int fs_test_system_read_readonly(fs_test* pTest)
 {
     /* This test opens the file in read-only, and then attempts to write to the file. We should get an error. */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile = NULL;
     char pFilePath[1024];
@@ -1307,7 +1331,7 @@ int fs_test_system_read_noexist(fs_test* pTest)
     In write mode there was once a bug that resulting in the library not failing gracefully. Since opening
     in write mode runs through a different code path as read mode, we'll test this as well.
     */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile = NULL;
 
@@ -1329,7 +1353,7 @@ int fs_test_system_duplicate(fs_test* pTest)
     When duplicating a file, it must be a fully independent copy. That is, each instance must have it's
     own read/write pointers.
     */
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile1 = NULL;
     fs_file* pFile2 = NULL;
@@ -1373,7 +1397,7 @@ int fs_test_system_duplicate(fs_test* pTest)
 /* BEG system_rename */
 int fs_test_system_rename(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     char pFilePathA[1024];
     char pFilePathC[1024];
@@ -1431,7 +1455,7 @@ int fs_test_system_rename(fs_test* pTest)
 /* BEG system_remove */
 static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDirPath)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_iterator* pIterator;
     
@@ -1469,7 +1493,7 @@ static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDi
 
 int fs_test_system_remove(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
 
     /*
@@ -1495,7 +1519,7 @@ int fs_test_system_remove(fs_test* pTest)
 /* BEG system_uninit */
 int fs_test_system_uninit(fs_test* pTest)
 {
-    fs_test_system_state* pTestState = (fs_test_system_state*)pTest->pUserData;
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
 
     if (pTestState->pFS != NULL) {
         fs_uninit(pTestState->pFS);
@@ -1505,6 +1529,111 @@ int fs_test_system_uninit(fs_test* pTest)
     return FS_SUCCESS;
 }
 /* END system_uninit */
+
+
+/* BEG mounts */
+int fs_test_mounts(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_config fsConfig;
+    char pPath[1024];
+
+    fsConfig = fs_config_init(fs_test_get_backend(), NULL, NULL);
+
+    result = fs_init(&fsConfig, &pTestState->pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* We will do all of our mounting tests in a temp folder, so create that now. */
+    result = fs_mktmp(".fs_mounts_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create temp directory for mounting tests.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /*
+    We're going to mount our temp directory as the default path. This will allow us to open
+    a file like "a" without a prefix. This will be mounted for both read and write.
+    */
+    result = fs_mount(pTestState->pFS, pTestState->pTempDir, NULL, FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount temp directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /*
+    Now we want to test mounting the same directory. Previously we mounted to NULL, which is
+    the equivalent to mounting an empty string. This is allowed, and should return success.
+    Internally the mount just becomes a no-op.
+    */
+    result = fs_mount(pTestState->pFS, pTestState->pTempDir, "", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount temp directory (empty string).\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* We'll create some sub-directories for later use. */
+    fs_path_append(pPath, sizeof(pPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
+
+    /*
+    We'll want to test mounts with a leading "/" which is used to prevent above-root navigation.
+    We're going to use the sub-directory "dir1" for this test. We'll mount this twice - once
+    with a leading "/" and once without.
+    */
+    result = fs_mount(pTestState->pFS, pPath, "/inner", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount dir1 as /inner.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mount(pTestState->pFS, pPath, "inner", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount dir1 as inner.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts */
+
+
+/* BEG unmount */
+int fs_test_unmount(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    char pPath[1024];
+
+    fs_path_append(pPath, sizeof(pPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
+    result = fs_unmount(pTestState->pFS, pPath, FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount %s.\n", pTest->name, pPath);
+        return FS_ERROR;
+    }
+
+    result = fs_unmount(pTestState->pFS, pTestState->pTempDir, FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount %s.\n", pTest->name, pTestState->pTempDir);
+        return FS_ERROR;
+    }
+
+    /* Finally we need to delete the temp folder recursively to clean everything up. */
+    result = fs_test_system_remove_directory(pTest, pTestState->pTempDir);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove temp directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* We're done with the file system. */
+    fs_uninit(pTestState->pFS);
+    pTestState->pFS = NULL;
+
+    return FS_SUCCESS;
+}
+/* END unmount */
 
 
 int main(int argc, char** argv)
@@ -1537,9 +1666,12 @@ int main(int argc, char** argv)
     fs_test test_system_rename;             /* Tests fs_rename(). Make sure this is done before the remove test. */
     fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
+    fs_test test_mounts;                    /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
+    fs_test test_unmount;                   /* This needs to be the last mount test.*/
 
     /* Test states. */
-    fs_test_system_state test_system_state = fs_test_system_state_init();
+    fs_test_state test_system_state = fs_test_state_init();
+    fs_test_state test_mounts_state = fs_test_state_init();
 
     (void)argc;
     (void)argv;
@@ -1583,6 +1715,14 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_rename,          "Rename",             fs_test_system_rename,          &test_system_state, &test_system);
     fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
     fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
+
+    /*
+    Mounts.
+
+    This only tests mounts with normal files. It does not test archives. There will be a separate test for archives.
+    */
+    fs_test_init(&test_mounts,  "Mounts",  fs_test_mounts,  &test_mounts_state, &test_root);
+    fs_test_init(&test_unmount, "Unmount", fs_test_unmount, &test_mounts_state, &test_mounts);
 
     result = fs_test_run(&test_root);
 
