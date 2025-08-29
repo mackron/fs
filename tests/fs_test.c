@@ -1537,7 +1537,10 @@ int fs_test_mounts(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_config fsConfig;
-    char pPath[1024];
+    char pRootPath[128];
+    char pDir1Path[128];
+    char pDir2Path[128];
+    char pDir3Path[128];
 
     fsConfig = fs_config_init(fs_test_get_backend(), NULL, NULL);
 
@@ -1558,7 +1561,9 @@ int fs_test_mounts(fs_test* pTest)
     We're going to mount our temp directory as the default path. This will allow us to open
     a file like "a" without a prefix. This will be mounted for both read and write.
     */
-    result = fs_mount(pTestState->pFS, pTestState->pTempDir, NULL, FS_READ | FS_WRITE);
+    fs_path_append(pRootPath, sizeof(pRootPath), pTestState->pTempDir, (size_t)-1, "dir", (size_t)-1);
+
+    result = fs_mount(pTestState->pFS, pRootPath, NULL, FS_READ | FS_WRITE);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to mount temp directory.\n", pTest->name);
         return FS_ERROR;
@@ -1569,29 +1574,69 @@ int fs_test_mounts(fs_test* pTest)
     the equivalent to mounting an empty string. This is allowed, and should return success.
     Internally the mount just becomes a no-op.
     */
-    result = fs_mount(pTestState->pFS, pTestState->pTempDir, "", FS_READ | FS_WRITE);
+    result = fs_mount(pTestState->pFS, pRootPath, "", FS_READ | FS_WRITE);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to mount temp directory (empty string).\n", pTest->name);
         return FS_ERROR;
     }
 
     /* We'll create some sub-directories for later use. */
-    fs_path_append(pPath, sizeof(pPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
+    fs_path_append(pDir1Path, sizeof(pDir1Path), pRootPath, (size_t)-1, "dir1", (size_t)-1);
+    fs_path_append(pDir2Path, sizeof(pDir2Path), pRootPath, (size_t)-1, "dir2", (size_t)-1);
+    fs_path_append(pDir3Path, sizeof(pDir3Path), pRootPath, (size_t)-1, "dir3", (size_t)-1);
+
+    /*
+    When we make these directory, do *not* use FS_IGNORE_MOUNTS. This way we can test that
+    fs_mkdir() is indeed taking mounts into account. Do not use pDir1Path, etc. here.
+    */
+    result = fs_mkdir(pTestState->pFS, "dir1",  0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create dir1.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pTestState->pFS, "dir2", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create dir2.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pTestState->pFS, "dir3",  0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create dir3.\n", pTest->name);
+        return FS_ERROR;
+    }
 
     /*
     We'll want to test mounts with a leading "/" which is used to prevent above-root navigation.
     We're going to use the sub-directory "dir1" for this test. We'll mount this twice - once
     with a leading "/" and once without.
+
+    We're going to mount all three sub directories so we can test the priority system when 
+    opening files. We'll use a variety of priority options to get decent coverage. The final
+    priority for read mode will be the following:
+
+        dir1 - highest
+        dir2
+        dir3 - lowest
+
+    For write mode, only dir1 will be mounted.
     */
-    result = fs_mount(pTestState->pFS, pPath, "/inner", FS_READ | FS_WRITE);
+    result = fs_mount(pTestState->pFS, pDir2Path, "/inner", FS_READ); /* This will eventually end up being the middle priority. */
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to mount dir1 as /inner.\n", pTest->name);
+        printf("%s: Failed to mount dir2 as /inner.\n", pTest->name);
         return FS_ERROR;
     }
 
-    result = fs_mount(pTestState->pFS, pPath, "inner", FS_READ | FS_WRITE);
+    result = fs_mount(pTestState->pFS, pDir3Path, "/inner", FS_READ | FS_LOWEST_PRIORITY); /* This will eventually be the lowest priority. */
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to mount dir1 as inner.\n", pTest->name);
+        printf("%s: Failed to mount dir3 as /inner.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mount(pTestState->pFS, pDir1Path, "/inner", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount dir1 as /inner.\n", pTest->name);
         return FS_ERROR;
     }
 
@@ -1600,17 +1645,271 @@ int fs_test_mounts(fs_test* pTest)
 /* END mounts */
 
 
+/* BEG mounts_write */
+static fs_result fs_test_mounts_write_file(fs_test* pTest, const char* pFilePath, const void* pData, size_t dataSize)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_NO_CREATE_DIRS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open %s for writing.\n", pTest->name, pFilePath);
+        return FS_ERROR;
+    }
+
+    /*
+    We want to write out some data so we can correctly identify the data later when testing reads. The
+    actual writing of data should have been tested earlier so no need to verify that.
+    */
+    result = fs_file_write(pFile, pData, dataSize, NULL);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to %s.\n", pTest->name, pFilePath);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+
+int fs_test_mounts_write(fs_test* pTest)
+{
+    /*
+    This test will write out some files using mounts. We'll then verify they were actually created
+    using the low-level API directly without mounts.
+
+    The files output from this test will be used as inputs for the reading test.
+    */
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath1[128];
+    char pFilePath2[128];
+    char pFilePath3[128];
+    char data1[1] = {1};
+    char data2[2] = {2};
+    char data3[3] = {3};
+
+    /* This one tests that writing to the correct "/inner" mount works as expected. It should end up in "{tmp}/dir1/a". */
+    result = fs_test_mounts_write_file(pTest, "/inner/a", data1, sizeof(data1));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* This one tests that we can write from the root write mount. */
+    result = fs_test_mounts_write_file(pTest, "dir2/a", data2, sizeof(data2));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* This one is for testing later in read mode. */
+    result = fs_test_mounts_write_file(pTest, "dir3/a", data3, sizeof(data3));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Now we need to verify the files were created correctly, which we do using the low-level API without considering mounts. */
+    fs_path_append(pFilePath1, sizeof(pFilePath1), pTestState->pTempDir, (size_t)-1, "dir/dir1/a", (size_t)-1);
+    fs_path_append(pFilePath2, sizeof(pFilePath2), pTestState->pTempDir, (size_t)-1, "dir/dir2/a", (size_t)-1);
+    fs_path_append(pFilePath3, sizeof(pFilePath3), pTestState->pTempDir, (size_t)-1, "dir/dir3/a", (size_t)-1);
+
+    result = fs_info(pTestState->pFS, pFilePath1, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get info for %s.\n", pTest->name, pFilePath1);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, pFilePath2, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get info for %s.\n", pTest->name, pFilePath2);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, pFilePath3, FS_READ | FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get info for %s.\n", pTest->name, pFilePath3);
+        return FS_ERROR;
+    }
+
+
+    /* We'll now write out a few more files for testing later by the read tests. */
+    result = fs_test_mounts_write_file(pTest, "dir2/b", data2, sizeof(data2));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    result = fs_test_mounts_write_file(pTest, "dir3/b", data3, sizeof(data3));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    result = fs_test_mounts_write_file(pTest, "dir3/c", data3, sizeof(data3));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test that above-root navigation fails as expected. */
+    result = fs_file_open(pTestState->pFS, "/inner/../dir2/a", FS_WRITE, &pFile);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Above-root navigation succeeded unexpectedly.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_open(pTestState->pFS, "../a", FS_WRITE | FS_NO_ABOVE_ROOT_NAVIGATION, &pFile);
+    if (result == FS_SUCCESS) {
+        printf("%s: Above-root navigation succeeded unexpectedly.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Test that writing above the root works when allowed. */
+    result = fs_test_mounts_write_file(pTest, "../a", data1, sizeof(data1));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts_write */
+
+/* BEG mounts_read */
+static fs_result fs_test_mounts_read_file(fs_test* pTest, const char* pFilePath, const void* pExpectedData, size_t expectedDataSize)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    char pActualData[16];
+    size_t bytesRead;
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open %s for reading.\n", pTest->name, pFilePath);
+        return FS_ERROR;
+    }
+
+    /*
+    We want to write out some data so we can correctly identify the data later when testing reads. The
+    actual writing of data should have been tested earlier so no need to verify that.
+    */
+    result = fs_file_read(pFile, pActualData, expectedDataSize, &bytesRead);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read from %s.\n", pTest->name, pFilePath);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Compare the data to ensure we read the correct file. */
+    if (bytesRead != expectedDataSize || memcmp(pActualData, pExpectedData, expectedDataSize) != 0) {
+        printf("%s: Data mismatch for %s.\n", pTest->name, pFilePath);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+
+int fs_test_mounts_read(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    char pData1[1] = {1};
+    char pData2[2] = {2};
+    char pData3[3] = {3};
+
+    /* First thing we're going to test is reading from specific sub-directories. This is our basic test. */
+    result = fs_test_mounts_read_file(pTest, "dir1/a", pData1, sizeof(pData1));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    result = fs_test_mounts_read_file(pTest, "dir2/a", pData2, sizeof(pData2));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    result = fs_test_mounts_read_file(pTest, "dir3/a", pData3, sizeof(pData3));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Now we want to read from the "/inner" mount. This tests our priority system. It should always be the same file as dir1/a since that is the highest priority. */
+    result = fs_test_mounts_read_file(pTest, "/inner/a", pData1, sizeof(pData1));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* The "b" file only exist in "dir2" and "dir3". "dir2" is higher priority that "dir3", so that is the one we should get. */
+    result = fs_test_mounts_read_file(pTest, "/inner/b", pData2, sizeof(pData2));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* The "c" file only exists in "dir3". */
+    result = fs_test_mounts_read_file(pTest, "/inner/c", pData3, sizeof(pData3));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Here we are testing that trying to open navigate above the root fails. */
+    result = fs_file_open(pTestState->pFS, "/inner/../dir2/a", FS_READ, &pFile);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpectedly succeeded in reading /inner/../dir2/a.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_open(pTestState->pFS, "../a", FS_READ | FS_NO_ABOVE_ROOT_NAVIGATION, &pFile);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpectedly succeeded in reading ../a.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* This tests that above root navigation, when allowed, works correctly. Loading from "../a" should work. */
+    result = fs_test_mounts_read_file(pTest, "../a", pData1, sizeof(pData1));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts_read */
+
 /* BEG unmount */
 int fs_test_unmount(fs_test* pTest)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    char pPath[1024];
+    char pDir1Path[1024];
+    char pDir2Path[1024];
+    char pDir3Path[1024];
 
-    fs_path_append(pPath, sizeof(pPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
-    result = fs_unmount(pTestState->pFS, pPath, FS_READ | FS_WRITE);
+    fs_path_append(pDir1Path, sizeof(pDir1Path), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
+    fs_path_append(pDir2Path, sizeof(pDir2Path), pTestState->pTempDir, (size_t)-1, "dir2", (size_t)-1);
+    fs_path_append(pDir3Path, sizeof(pDir3Path), pTestState->pTempDir, (size_t)-1, "dir3", (size_t)-1);
+
+    result = fs_unmount(pTestState->pFS, pDir1Path, FS_READ | FS_WRITE);
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to unmount %s.\n", pTest->name, pPath);
+        printf("%s: Failed to unmount %s.\n", pTest->name, pDir1Path);
+        return FS_ERROR;
+    }
+
+    result = fs_unmount(pTestState->pFS, pDir2Path, FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount %s.\n", pTest->name, pDir2Path);
+        return FS_ERROR;
+    }
+
+    result = fs_unmount(pTestState->pFS, pDir3Path, FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount %s.\n", pTest->name, pDir3Path);
         return FS_ERROR;
     }
 
@@ -1667,6 +1966,8 @@ int main(int argc, char** argv)
     fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
     fs_test test_mounts;                    /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
+    fs_test test_mounts_write;              /* Tests writing to mounts. */
+    fs_test test_mounts_read;               /* Tests reading from mounts. */
     fs_test test_unmount;                   /* This needs to be the last mount test.*/
 
     /* Test states. */
@@ -1721,8 +2022,10 @@ int main(int argc, char** argv)
 
     This only tests mounts with normal files. It does not test archives. There will be a separate test for archives.
     */
-    fs_test_init(&test_mounts,  "Mounts",  fs_test_mounts,  &test_mounts_state, &test_root);
-    fs_test_init(&test_unmount, "Unmount", fs_test_unmount, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts,       "Mounts",       fs_test_mounts,       &test_mounts_state, &test_root);
+    fs_test_init(&test_mounts_write, "Mounts Write", fs_test_mounts_write, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_read,  "Mounts Read",  fs_test_mounts_read,  &test_mounts_state, &test_mounts);
+    fs_test_init(&test_unmount,      "Unmount",      fs_test_unmount,      &test_mounts_state, &test_mounts);
 
     result = fs_test_run(&test_root);
 
