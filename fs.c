@@ -1959,6 +1959,88 @@ static size_t fs_archive_type_sizeof(const fs_archive_type* pArchiveType)
 }
 
 
+typedef struct
+{
+    size_t      len;
+    char        stack[1024];
+    char*       heap;
+    const char* ref;
+} fs_string;
+
+static fs_string fs_string_new(void)
+{
+    fs_string str;
+
+    str.len      = 0;
+    str.stack[0] = '\0';
+    str.heap     = NULL;
+    str.ref      = NULL;
+
+    return str;
+}
+
+static fs_string fs_string_new_ref(const char* ref, size_t len)
+{
+    fs_string str = fs_string_new();
+    str.ref = ref;
+    str.len = len;
+
+    if (str.len == FS_NULL_TERMINATED) {
+        str.len = strlen(ref);
+    }
+
+    return str;
+}
+
+static fs_result fs_string_alloc(size_t len, const fs_allocation_callbacks* pAllocationCallbacks, fs_string* pString)
+{
+    *pString = fs_string_new();
+
+    if (len < sizeof(pString->stack)) {
+        pString->stack[0] = '\0';
+    } else {
+        pString->heap = (char*)fs_malloc(len + 1, pAllocationCallbacks);
+        if (pString->heap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+    
+        pString->heap[0] = '\0';
+    }
+
+    return FS_SUCCESS;
+}
+
+static void fs_string_free(fs_string* pString, const fs_allocation_callbacks* pAllocationCallbacks)
+{
+    if (pString == NULL) {
+        return;
+    }
+
+    if (pString->heap != NULL) {
+        fs_free(pString->heap, pAllocationCallbacks);
+        pString->heap = NULL;
+    }
+}
+
+static const char* fs_string_cstr(const fs_string* pString)
+{
+    if (pString->ref != NULL) {
+        return pString->ref;
+    }
+
+    if (pString->heap != NULL) {
+        return pString->heap;
+    }
+
+    return pString->stack;
+}
+
+static size_t fs_string_len(const fs_string* pString)
+{
+    return pString->len;
+}
+
+
 static const char* fs_path_trim_mount_point_base(const char* pPath, size_t pathLen, const char* pMountPoint, size_t mountPointLen)
 {
     FS_ASSERT(pPath != NULL && pMountPoint != NULL);
@@ -3315,14 +3397,9 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
             
             pBestMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, &pBestMountPointPath, &pBestMountPointFileSubPath);
             if (pBestMountPoint != NULL) {
-                char pActualPathStack[1024];
-                char* pActualPathHeap = NULL;
-                char* pActualPath;
-                int actualPathLen;
-                char  pFileSubPathCleanStack[1024];
-                char* pFileSubPathCleanHeap = NULL;
-                char* pFileSubPathClean;
-                int fileSubPathCleanLen;
+                int stringResult;
+                fs_string actualPath = fs_string_new();
+                fs_string fileSubPathClean = fs_string_new();
                 unsigned int cleanOptions = (openMode & FS_NO_ABOVE_ROOT_NAVIGATION);            
 
                 /* If the mount point starts with a root segment, i.e. "/", we cannot allow navigation above that. */
@@ -3332,45 +3409,52 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
 
                 /* We need to clean the file sub-path, but can skip it if FS_NO_SPECIAL_DIRS is specified since it's implied. */
                 if ((openMode & FS_NO_SPECIAL_DIRS) == 0) {
-                    fileSubPathCleanLen = fs_path_normalize(pFileSubPathCleanStack, sizeof(pFileSubPathCleanStack), pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);
-                    if (fileSubPathCleanLen < 0) {
+                    stringResult = fs_path_normalize(fileSubPathClean.stack, sizeof(fileSubPathClean.stack), pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);
+                    if (stringResult < 0) {
                         return FS_DOES_NOT_EXIST;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
                     }
 
-                    if (fileSubPathCleanLen >= (int)sizeof(pFileSubPathCleanStack)) {
-                        pFileSubPathCleanHeap = (char*)fs_malloc(fileSubPathCleanLen + 1, fs_get_allocation_callbacks(pFS));
-                        if (pFileSubPathCleanHeap == NULL) {
-                            return FS_OUT_OF_MEMORY;
+                    fileSubPathClean.len = (size_t)stringResult;
+
+                    if ((size_t)stringResult >= sizeof(fileSubPathClean.stack)) {
+                        result = fs_string_alloc((size_t)stringResult, fs_get_allocation_callbacks(pFS), &fileSubPathClean);
+                        if (result != FS_SUCCESS) {
+                            return result;
                         }
 
-                        fs_path_normalize(pFileSubPathCleanHeap, fileSubPathCleanLen + 1, pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);    /* <-- This should never fail. */
-                        pFileSubPathClean = pFileSubPathCleanHeap;
-                    } else {
-                        pFileSubPathClean = pFileSubPathCleanStack;
+                        fs_path_normalize(fileSubPathClean.heap, fileSubPathClean.len + 1, pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);    /* <-- This should never fail. */
                     }
                 } else {
-                    pFileSubPathClean = (char*)pBestMountPointFileSubPath;  /* Safe cast. Will not be modified past this point. */
-                    fileSubPathCleanLen = (int)strlen(pFileSubPathClean);
+                    fileSubPathClean = fs_string_new_ref(pBestMountPointFileSubPath, FS_NULL_TERMINATED);
                 }
 
 
                 /* Here is where we append the cleaned sub-path to the mount points actual path. */
-                actualPathLen = fs_path_append(pActualPathStack, sizeof(pActualPathStack), pBestMountPointPath, pBestMountPoint->pathLen, pFileSubPathClean, FS_NULL_TERMINATED);
-                if (actualPathLen > 0 && (size_t)actualPathLen >= sizeof(pActualPathStack)) {
-                    /* Not enough room on the stack. Allocate on the heap. */
-                    pActualPathHeap = (char*)fs_malloc(actualPathLen + 1, fs_get_allocation_callbacks(pFS));
-                    if (pActualPathHeap == NULL) {
-                        return FS_OUT_OF_MEMORY;
-                    }
-
-                    fs_path_append(pActualPathHeap, actualPathLen + 1, pBestMountPointPath, pBestMountPoint->pathLen, pFileSubPathClean, FS_NULL_TERMINATED);  /* <-- This should never fail. */
-                    pActualPath = pActualPathHeap;
-                } else {
-                    pActualPath = pActualPathStack;
+                stringResult = fs_path_append(actualPath.stack, sizeof(actualPath.stack), pBestMountPointPath, pBestMountPoint->pathLen, fs_string_cstr(&fileSubPathClean), fs_string_len(&fileSubPathClean));
+                if (stringResult < 0) {
+                    fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
+                    return FS_PATH_TOO_LONG;    /* The only error we would get here is if the path is too long. */
                 }
 
+                actualPath.len = (size_t)stringResult;
+
+                if ((size_t)stringResult >= sizeof(actualPath.stack)) {
+                    result = fs_string_alloc((size_t)stringResult, fs_get_allocation_callbacks(pFS), &actualPath);
+                    if (result != FS_SUCCESS) {
+                        fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
+                        return result;
+                    }
+
+                    fs_path_append(actualPath.heap, actualPath.len + 1, pBestMountPointPath, pBestMountPoint->pathLen, fs_string_cstr(&fileSubPathClean), FS_NULL_TERMINATED);  /* <-- This should never fail. */
+                }
+
+                /* Now that actual path has been constructed we can discard of our sub-path. */
+                fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
+
                 /* We now have enough information to open the file. */
-                result = fs_file_alloc_and_open_or_info(pFS, pActualPath, openMode, ppFile, pInfo);
+                result = fs_file_alloc_and_open_or_info(pFS, fs_string_cstr(&actualPath), openMode, ppFile, pInfo);
+
+                fs_string_free(&actualPath, fs_get_allocation_callbacks(pFS));
 
                 if (result == FS_SUCCESS) {
                     return FS_SUCCESS;
