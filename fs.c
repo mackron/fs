@@ -3519,64 +3519,16 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
             
             pBestMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, &pBestMountPointPath, &pBestMountPointFileSubPath);
             if (pBestMountPoint != NULL) {
-                int stringResult;
-                fs_string actualPath = fs_string_new();
-                fs_string fileSubPathClean = fs_string_new();
-                unsigned int cleanOptions = (openMode & FS_NO_ABOVE_ROOT_NAVIGATION);            
+                fs_string fileRealPath;
 
-                /* If the mount point starts with a root segment, i.e. "/", we cannot allow navigation above that. */
-                if (pFilePath[0] == '/' || pFilePath[0] == '\\') {
-                    cleanOptions |= FS_NO_ABOVE_ROOT_NAVIGATION;
+                result = fs_resolve_real_path_from_mount_point(pFS, pBestMountPoint, pFilePath, openMode, &fileRealPath);
+                if (result != FS_SUCCESS) {
+                    return result;
                 }
-
-                /* We need to clean the file sub-path, but can skip it if FS_NO_SPECIAL_DIRS is specified since it's implied. */
-                if ((openMode & FS_NO_SPECIAL_DIRS) == 0) {
-                    stringResult = fs_path_normalize(fileSubPathClean.stack, sizeof(fileSubPathClean.stack), pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);
-                    if (stringResult < 0) {
-                        return FS_DOES_NOT_EXIST;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
-                    }
-
-                    fileSubPathClean.len = (size_t)stringResult;
-
-                    if ((size_t)stringResult >= sizeof(fileSubPathClean.stack)) {
-                        result = fs_string_alloc((size_t)stringResult, fs_get_allocation_callbacks(pFS), &fileSubPathClean);
-                        if (result != FS_SUCCESS) {
-                            return result;
-                        }
-
-                        fs_path_normalize(fileSubPathClean.heap, fileSubPathClean.len + 1, pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);    /* <-- This should never fail. */
-                    }
-                } else {
-                    fileSubPathClean = fs_string_new_ref(pBestMountPointFileSubPath, FS_NULL_TERMINATED);
-                }
-
-
-                /* Here is where we append the cleaned sub-path to the mount points actual path. */
-                stringResult = fs_path_append(actualPath.stack, sizeof(actualPath.stack), pBestMountPointPath, pBestMountPoint->pathLen, fs_string_cstr(&fileSubPathClean), fs_string_len(&fileSubPathClean));
-                if (stringResult < 0) {
-                    fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
-                    return FS_PATH_TOO_LONG;    /* The only error we would get here is if the path is too long. */
-                }
-
-                actualPath.len = (size_t)stringResult;
-
-                if ((size_t)stringResult >= sizeof(actualPath.stack)) {
-                    result = fs_string_alloc((size_t)stringResult, fs_get_allocation_callbacks(pFS), &actualPath);
-                    if (result != FS_SUCCESS) {
-                        fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
-                        return result;
-                    }
-
-                    fs_path_append(actualPath.heap, actualPath.len + 1, pBestMountPointPath, pBestMountPoint->pathLen, fs_string_cstr(&fileSubPathClean), FS_NULL_TERMINATED);  /* <-- This should never fail. */
-                }
-
-                /* Now that actual path has been constructed we can discard of our sub-path. */
-                fs_string_free(&fileSubPathClean, fs_get_allocation_callbacks(pFS));
 
                 /* We now have enough information to open the file. */
-                result = fs_file_alloc_and_open_or_info(pFS, fs_string_cstr(&actualPath), openMode, ppFile, pInfo);
-
-                fs_string_free(&actualPath, fs_get_allocation_callbacks(pFS));
+                result = fs_file_alloc_and_open_or_info(pFS, fs_string_cstr(&fileRealPath), openMode, ppFile, pInfo);
+                fs_string_free(&fileRealPath, fs_get_allocation_callbacks(pFS));
 
                 if (result == FS_SUCCESS) {
                     return FS_SUCCESS;
