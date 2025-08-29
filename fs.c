@@ -3319,10 +3319,6 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                 char* pActualPathHeap = NULL;
                 char* pActualPath;
                 int actualPathLen;
-                char pActualPathCleanStack[1024];
-                char* pActualPathCleanHeap = NULL;
-                char* pActualPathClean;
-                int actualPathCleanLen;
                 char  pFileSubPathCleanStack[1024];
                 char* pFileSubPathCleanHeap = NULL;
                 char* pFileSubPathClean;
@@ -3330,13 +3326,36 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                 unsigned int cleanOptions = (openMode & FS_NO_ABOVE_ROOT_NAVIGATION);            
 
                 /* If the mount point starts with a root segment, i.e. "/", we cannot allow navigation above that. */
-                if (pBestMountPointPath[0] == '/' || pBestMountPointPath[0] == '\\') {
+                if (pFilePath[0] == '/' || pFilePath[0] == '\\') {
                     cleanOptions |= FS_NO_ABOVE_ROOT_NAVIGATION;
+                }
+
+                /* We need to clean the file sub-path, but can skip it if FS_NO_SPECIAL_DIRS is specified since it's implied. */
+                if ((openMode & FS_NO_SPECIAL_DIRS) == 0) {
+                    fileSubPathCleanLen = fs_path_normalize(pFileSubPathCleanStack, sizeof(pFileSubPathCleanStack), pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);
+                    if (fileSubPathCleanLen < 0) {
+                        return FS_DOES_NOT_EXIST;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
+                    }
+
+                    if (fileSubPathCleanLen >= (int)sizeof(pFileSubPathCleanStack)) {
+                        pFileSubPathCleanHeap = (char*)fs_malloc(fileSubPathCleanLen + 1, fs_get_allocation_callbacks(pFS));
+                        if (pFileSubPathCleanHeap == NULL) {
+                            return FS_OUT_OF_MEMORY;
+                        }
+
+                        fs_path_normalize(pFileSubPathCleanHeap, fileSubPathCleanLen + 1, pBestMountPointFileSubPath, FS_NULL_TERMINATED, cleanOptions);    /* <-- This should never fail. */
+                        pFileSubPathClean = pFileSubPathCleanHeap;
+                    } else {
+                        pFileSubPathClean = pFileSubPathCleanStack;
+                    }
+                } else {
+                    pFileSubPathClean = (char*)pBestMountPointFileSubPath;  /* Safe cast. Will not be modified past this point. */
+                    fileSubPathCleanLen = (int)strlen(pFileSubPathClean);
                 }
 
 
                 /* Here is where we append the cleaned sub-path to the mount points actual path. */
-                actualPathLen = fs_path_append(pActualPathStack, sizeof(pActualPathStack), pBestMountPointPath, pBestMountPoint->pathLen, pBestMountPointFileSubPath, FS_NULL_TERMINATED);
+                actualPathLen = fs_path_append(pActualPathStack, sizeof(pActualPathStack), pBestMountPointPath, pBestMountPoint->pathLen, pFileSubPathClean, FS_NULL_TERMINATED);
                 if (actualPathLen > 0 && (size_t)actualPathLen >= sizeof(pActualPathStack)) {
                     /* Not enough room on the stack. Allocate on the heap. */
                     pActualPathHeap = (char*)fs_malloc(actualPathLen + 1, fs_get_allocation_callbacks(pFS));
@@ -3344,42 +3363,14 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                         return FS_OUT_OF_MEMORY;
                     }
 
-                    fs_path_append(pActualPathHeap, actualPathLen + 1, pBestMountPointPath, pBestMountPoint->pathLen, pBestMountPointFileSubPath, FS_NULL_TERMINATED);  /* <-- This should never fail. */
+                    fs_path_append(pActualPathHeap, actualPathLen + 1, pBestMountPointPath, pBestMountPoint->pathLen, pFileSubPathClean, FS_NULL_TERMINATED);  /* <-- This should never fail. */
                     pActualPath = pActualPathHeap;
                 } else {
                     pActualPath = pActualPathStack;
                 }
 
-
-                /* Now we need to clean the path. */
-                actualPathCleanLen = fs_path_normalize(pActualPathCleanStack, sizeof(pActualPathCleanStack), pActualPath, FS_NULL_TERMINATED, cleanOptions);
-                if (actualPathCleanLen < 0) {
-                    fs_free(pActualPathHeap, fs_get_allocation_callbacks(pFS));
-                    return FS_INVALID_OPERATION;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
-                }
-
-                if (actualPathCleanLen >= (int)sizeof(pActualPathCleanStack)) {
-                    pActualPathCleanHeap = (char*)fs_malloc(actualPathCleanLen + 1, fs_get_allocation_callbacks(pFS));
-                    if (pActualPathCleanHeap == NULL) {
-                        fs_free(pActualPathHeap, fs_get_allocation_callbacks(pFS));
-                        return FS_OUT_OF_MEMORY;
-                    }
-
-                    fs_path_normalize(pActualPathCleanHeap, actualPathCleanLen + 1, pActualPath, FS_NULL_TERMINATED, cleanOptions);    /* <-- This should never fail. */
-                    pActualPathClean = pActualPathCleanHeap;
-                } else {
-                    pActualPathClean = pActualPathCleanStack;
-                }
-
-                fs_free(pActualPathHeap, fs_get_allocation_callbacks(pFS));
-                pActualPathHeap = NULL;
-
-
                 /* We now have enough information to open the file. */
-                result = fs_file_alloc_and_open_or_info(pFS, pActualPathClean, openMode, ppFile, pInfo);
-
-                fs_free(pActualPathCleanHeap, fs_get_allocation_callbacks(pFS));
-                pActualPathCleanHeap = NULL;
+                result = fs_file_alloc_and_open_or_info(pFS, pActualPath, openMode, ppFile, pInfo);
 
                 if (result == FS_SUCCESS) {
                     return FS_SUCCESS;
