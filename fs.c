@@ -1959,6 +1959,22 @@ static size_t fs_archive_type_sizeof(const fs_archive_type* pArchiveType)
 }
 
 
+static const char* fs_path_trim_mount_point_base(const char* pPath, size_t pathLen, const char* pMountPoint, size_t mountPointLen)
+{
+    FS_ASSERT(pPath != NULL && pMountPoint != NULL);
+
+    /*
+    Special case here, and why we need to use this function instead of fs_path_trim_base() directly. For mount
+    points, the "" mount is *not* considered to match with a path that starts with "/".
+    */
+    if (pathLen > 0 && pPath[0] == '/' && pMountPoint[0] == '\0') {
+        return NULL;    /* Path starts with "/", but the mount point is "". This is not a match. */
+    }
+
+    return fs_path_trim_base(pPath, pathLen, pMountPoint, mountPointLen);
+}
+
+
 static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath, const char** ppMountPointPath, const char** ppSubPath)
 {
     /*
@@ -1982,7 +1998,7 @@ static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath
     const char* pBestMountPointFileSubPath = NULL;
     
     for (result = fs_mount_list_first(pFS->pWriteMountPoints, &iMountPoint); result == FS_SUCCESS; result = fs_mount_list_next(&iMountPoint)) {
-        const char* pFileSubPath = fs_path_trim_base(pPath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
+        const char* pFileSubPath = fs_path_trim_mount_point_base(pPath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
         if (pFileSubPath == NULL) {
             continue;   /* The file path doesn't start with this mount point so skip. */
         }
@@ -3307,6 +3323,10 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                 char* pActualPathCleanHeap = NULL;
                 char* pActualPathClean;
                 int actualPathCleanLen;
+                char  pFileSubPathCleanStack[1024];
+                char* pFileSubPathCleanHeap = NULL;
+                char* pFileSubPathClean;
+                int fileSubPathCleanLen;
                 unsigned int cleanOptions = (openMode & FS_NO_ABOVE_ROOT_NAVIGATION);            
 
                 /* If the mount point starts with a root segment, i.e. "/", we cannot allow navigation above that. */
@@ -3400,7 +3420,7 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
                 int fileSubPathCleanLen;
                 unsigned int cleanOptions = (openMode & FS_NO_ABOVE_ROOT_NAVIGATION);
 
-                const char* pFileSubPath = fs_path_trim_base(pFilePath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
+                const char* pFileSubPath = fs_path_trim_mount_point_base(pFilePath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
                 if (pFileSubPath == NULL) {
                     continue;
                 }
@@ -4171,7 +4191,7 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
                 unsigned int cleanOptions = (mode & FS_NO_ABOVE_ROOT_NAVIGATION);
 
                 size_t dirSubPathLen;
-                const char* pDirSubPath = fs_path_trim_base(pDirectoryPath, directoryPathLen, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
+                const char* pDirSubPath = fs_path_trim_mount_point_base(pDirectoryPath, directoryPathLen, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
                 if (pDirSubPath == NULL) {
                     continue;
                 }
