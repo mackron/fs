@@ -5291,10 +5291,6 @@ static fs_result fs_mkdir_stdio(fs* pFS, const char* pPath)
     result = fs_mkdir_stdio_posix(pPath);
 #endif
 
-    if (result == FS_DOES_NOT_EXIST) {
-        result =  FS_SUCCESS;
-    }
-
     return result;
 }
 
