@@ -195,8 +195,8 @@ static fs_file_info fs_file_info_from_WIN32_FIND_DATA(const WIN32_FIND_DATA* pFD
     info.size             = ((fs_uint64)pFD->nFileSizeHigh << 32) | (fs_uint64)pFD->nFileSizeLow;
     info.lastModifiedTime = fs_FILETIME_to_unix(&pFD->ftLastWriteTime);
     info.lastAccessTime   = fs_FILETIME_to_unix(&pFD->ftLastAccessTime);
-    info.directory        = (pFD->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)     != 0;
-    info.symlink          = (pFD->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    info.directory        = (pFD->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    info.symlink          = ((pFD->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) && (pFD->dwReserved0 == 0xA000000C); /* <-- The use of dwReserved0 is documented for WIN32_FIND_DATA. */
 
     return info;
 }
