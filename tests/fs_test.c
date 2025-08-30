@@ -1422,7 +1422,7 @@ int fs_test_system_rename(fs_test* pTest)
     fs_path_append(pFilePathA, sizeof(pFilePathA), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
     fs_path_append(pFilePathC, sizeof(pFilePathC), pTestState->pTempDir, (size_t)-1, "c", (size_t)-1);
 
-    result = fs_rename(pTestState->pFS, pFilePathA, pFilePathC);
+    result = fs_rename(pTestState->pFS, pFilePathA, pFilePathC, FS_IGNORE_MOUNTS);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to rename file.\n", pTest->name);
         return FS_ERROR;
@@ -1444,7 +1444,7 @@ int fs_test_system_rename(fs_test* pTest)
     /* Now we need to check if moving a file also works. We'll move it into a sub-directory. */
     fs_path_append(pFilePathD, sizeof(pFilePathD), pTestState->pTempDir, (size_t)-1, "dir1/a", (size_t)-1);
 
-    result = fs_rename(pTestState->pFS, pFilePathC, pFilePathD);
+    result = fs_rename(pTestState->pFS, pFilePathC, pFilePathD, FS_IGNORE_MOUNTS);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to move file.\n", pTest->name);
         return FS_ERROR;
@@ -2090,8 +2090,6 @@ int main(int argc, char** argv)
 
     /*
     Mounts.
-
-    This only tests mounts with normal files. It does not test archives. There will be a separate test for archives.
     */
     fs_test_init(&test_mounts,       "Mounts",                fs_test_mounts,       &test_mounts_state, &test_root);
     fs_test_init(&test_mounts_write, "Mounts Write",          fs_test_mounts_write, &test_mounts_state, &test_mounts);

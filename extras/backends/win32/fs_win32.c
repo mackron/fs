@@ -291,19 +291,19 @@ done:
     return result;
 }
 
-static fs_result fs_rename_win32(fs* pFS, const char* pOldName, const char* pNewName)
+static fs_result fs_rename_win32(fs* pFS, const char* pOldPath, const char* pNewPath)
 {
     BOOL resultWin32;
     fs_result result;
     fs_win32_path pathOld;
     fs_win32_path pathNew;
 
-    result = fs_win32_path_init(&pathOld, pOldName, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&pathOld, pOldPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         return result;
     }
 
-    result = fs_win32_path_init(&pathNew, pNewName, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    result = fs_win32_path_init(&pathNew, pNewPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
     if (result != FS_SUCCESS) {
         fs_win32_path_uninit(&pathOld, fs_get_allocation_callbacks(pFS));
         return result;

@@ -2411,13 +2411,40 @@ FS_API fs_result fs_remove(fs* pFS, const char* pFilePath)
     return fs_backend_remove(pFS->pBackend, pFS, pFilePath);
 }
 
-FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName)
+FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options)
 {
-    if (pFS == NULL || pOldName == NULL || pNewName == NULL) {
+    fs_result result;
+
+    if (pFS == NULL || pOldPath == NULL || pNewPath == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    return fs_backend_rename(pFS->pBackend, pFS, pOldName, pNewName);
+    /* If we're ignoring mounts we can just call straight into the backend. */
+    if ((options & FS_IGNORE_MOUNTS) != 0) {
+        result = fs_backend_rename(pFS->pBackend, pFS, pOldPath, pNewPath);
+    } else {    
+        fs_string realOldPath;
+        fs_string realNewPath;
+        fs_mount_point* pMountPointOld;
+        fs_mount_point* pMountPointNew;
+
+        pMountPointOld = fs_find_best_write_mount_point(pFS, pOldPath, options, &realOldPath);
+        if (pMountPointOld == NULL) {
+            return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
+        }
+
+        pMountPointNew = fs_find_best_write_mount_point(pFS, pNewPath, options, &realNewPath);
+        if (pMountPointNew == NULL) {
+            fs_string_free(&realNewPath, fs_get_allocation_callbacks(pFS));
+            return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
+        }
+
+        result = fs_backend_rename(pFS->pBackend, pFS, fs_string_cstr(&realOldPath), fs_string_cstr(&realNewPath));
+        fs_string_free(&realOldPath, fs_get_allocation_callbacks(pFS));
+        fs_string_free(&realNewPath, fs_get_allocation_callbacks(pFS));
+    }
+
+    return result;
 }
 
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)

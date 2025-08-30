@@ -71,9 +71,9 @@ static fs_result fs_remove_posix(fs* pFS, const char* pFilePath)
     return FS_SUCCESS;
 }
 
-static fs_result fs_rename_posix(fs* pFS, const char* pOldName, const char* pNewName)
+static fs_result fs_rename_posix(fs* pFS, const char* pOldPath, const char* pNewPath)
 {
-    int result = rename(pOldName, pNewName);
+    int result = rename(pOldPath, pNewPath);
     if (result < 0) {
         return fs_result_from_errno(errno);
     }

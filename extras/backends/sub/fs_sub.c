@@ -207,7 +207,7 @@ static fs_result fs_remove_sub(fs* pFS, const char* pFilePath)
     return result;
 }
 
-static fs_result fs_rename_sub(fs* pFS, const char* pOldName, const char* pNewName)
+static fs_result fs_rename_sub(fs* pFS, const char* pOldPath, const char* pNewPath)
 {
     fs_result result;
     fs_sub* pSubFS;
@@ -217,18 +217,18 @@ static fs_result fs_rename_sub(fs* pFS, const char* pOldName, const char* pNewNa
     pSubFS = (fs_sub*)fs_get_backend_data(pFS);
     FS_SUB_ASSERT(pSubFS != NULL);
 
-    result = fs_sub_path_init(pFS, pOldName, FS_NULL_TERMINATED, &subPathOld);
+    result = fs_sub_path_init(pFS, pOldPath, FS_NULL_TERMINATED, &subPathOld);
     if (result != FS_SUCCESS) {
         return result;
     }
 
-    result = fs_sub_path_init(pFS, pNewName, FS_NULL_TERMINATED, &subPathNew);
+    result = fs_sub_path_init(pFS, pNewPath, FS_NULL_TERMINATED, &subPathNew);
     if (result != FS_SUCCESS) {
         fs_sub_path_uninit(&subPathOld);
         return result;
     }
 
-    result = fs_rename(pSubFS->pOwnerFS, subPathOld.pFullPath, subPathNew.pFullPath);
+    result = fs_rename(pSubFS->pOwnerFS, subPathOld.pFullPath, subPathNew.pFullPath, FS_IGNORE_MOUNTS);
 
     fs_sub_path_uninit(&subPathOld);
     fs_sub_path_uninit(&subPathNew);
