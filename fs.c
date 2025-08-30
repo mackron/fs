@@ -2422,6 +2422,7 @@ FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName)
 
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
 {
+    fs_result result;
     char pRunningPathStack[1024];
     char* pRunningPathHeap = NULL;
     char* pRunningPath = pRunningPathStack;
@@ -2457,20 +2458,49 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
         }
     }
 
+    /*
+    Before trying to create the directory structure, just try creating it directly on the backend. If this
+    fails with FS_DOES_NOT_EXIST, it means one of the parent directories does not exist. In this case we
+    need to create the parent directories first, but only if FS_NO_CREATE_DIRS is not set.
+    */
+    result = fs_backend_mkdir(pBackend, pFS, fs_string_cstr(&realPath));
+    if (result != FS_DOES_NOT_EXIST) {
+        fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
+        return result; /* Either success or some other error. */
+    }
+
+    /*
+    Getting here means there is a missing parent directory somewhere. We'll need to try creating it by
+    iterating over each segment and creating each directory. We only do this if FS_NO_CREATE_DIRS is not
+    set in which case we just return FS_DOES_NOT_EXIST.
+    */
+    if ((options & FS_NO_CREATE_DIRS) != 0) {
+        fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
+
+        FS_ASSERT(result == FS_DOES_NOT_EXIST);
+        return result;
+    }
+
     /* We need to iterate over each segment and create the directory. If any of these fail we'll need to abort. */
     if (fs_path_first(fs_string_cstr(&realPath), FS_NULL_TERMINATED, &iSegment) != FS_SUCCESS) {
-        return FS_SUCCESS;  /* It's an empty path. */
+        /*
+        If we get here it means the path is empty. We should actually never get here because the backend
+        should have already handled this in our initial attempt at fs_backend_mkdir(). If this assert is
+        getting triggered it means there's a bug in the backend.
+        */
+        FS_ASSERT(FS_FALSE);
+        fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
+        return FS_ALREADY_EXISTS;  /* It's an empty path. */
     }
 
     pRunningPath[0] = '\0';
 
     for (;;) {
-        fs_result result;
-
         if (runningPathLen + iSegment.segmentLength + 1 + 1 >= sizeof(pRunningPathStack)) {
             if (pRunningPath == pRunningPathStack) {
                 pRunningPathHeap = (char*)fs_malloc(runningPathLen + iSegment.segmentLength + 1 + 1, fs_get_allocation_callbacks(pFS));
                 if (pRunningPathHeap == NULL) {
+                    fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
                     return FS_OUT_OF_MEMORY;
                 }
 
@@ -2482,6 +2512,7 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
                 pNewRunningPathHeap = (char*)fs_realloc(pRunningPathHeap, runningPathLen + iSegment.segmentLength + 1 + 1, fs_get_allocation_callbacks(pFS));
                 if (pNewRunningPathHeap == NULL) {
                     fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
+                    fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
                     return FS_OUT_OF_MEMORY;
                 }
 
@@ -2510,10 +2541,8 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
         }
 
         if (result != FS_SUCCESS) {
-            if (pRunningPathHeap != NULL) {
-                fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
-            }
-
+            fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
+            fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
             return result;
         }
 
@@ -2526,9 +2555,8 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
         }
     }
 
-    if (pRunningPathHeap != NULL) {
-        fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
-    }
+    fs_free(pRunningPathHeap, fs_get_allocation_callbacks(pFS));
+    fs_string_free(&realPath, fs_get_allocation_callbacks(pFS));
 
     return FS_SUCCESS;
 }
@@ -3396,7 +3424,7 @@ static fs_result fs_file_alloc_and_open_or_info(fs* pFS, const char* pFilePath, 
             }
 
             result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
-            if (result != FS_SUCCESS) {
+            if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
                 fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
                 fs_file_free(ppFile);
                 return result;

@@ -1191,7 +1191,7 @@ struct fs_backend
     fs_result    (* ioctl           )(fs* pFS, int op, void* pArg);                                          /* Optional. */
     fs_result    (* remove          )(fs* pFS, const char* pFilePath);
     fs_result    (* rename          )(fs* pFS, const char* pOldName, const char* pNewName);
-    fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_ALREADY_EXISTS if directory already exists. */
+    fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_ALREADY_EXISTS if directory already exists. Return FS_DOES_NOT_EXIST if a parent directory does not exist. */
     fs_result    (* info            )(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);        /* openMode flags can be ignored by most backends. It's primarily used by passthrough style backends. */
     size_t       (* file_alloc_size )(fs* pFS);
     fs_result    (* file_open       )(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile); /* Return 0 on success or an errno result code on error. Return FS_DOES_NOT_EXIST if the file does not exist. pStream will be null if the backend does not need a stream (the `pFS` object was not initialized with one). */
@@ -1214,7 +1214,7 @@ FS_API void fs_uninit(fs* pFS);
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldName, const char* pNewName);    /* Does not consider mounts. */
-FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_IGNORE_MOUNTS is specified. Returns FS_SUCCESS if directory already exists. */
+FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Recursive. Will consider mounts unless FS_IGNORE_MOUNTS is specified. Use FS_NO_CREATE_DIRS to fail with FS_DOES_NOT_EXIST if a parent directory does not exist and to not create the full path hierarchy. Returns FS_ALREADY_EXISTS if directory already exists. */
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_EXCLUSIVE are ignored. */
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
