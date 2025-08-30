@@ -2405,13 +2405,24 @@ FS_API fs_result fs_ioctl(fs* pFS, int request, void* pArg)
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options)
 {
     fs_result result;
+    const fs_backend* pBackend;
 
-    if (pFS == NULL || pFilePath == NULL) {
+    if (pFilePath == NULL) {
         return FS_INVALID_ARGS;
     }
 
+    pBackend = fs_get_backend_or_default(pFS);
+    if (pBackend == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* If we're using the default file system, ignore mount points since there's no real notion of them. */
+    if (pFS == NULL) {
+        options |= FS_IGNORE_MOUNTS;
+    }
+
     if ((options & FS_IGNORE_MOUNTS) != 0) {
-        result = fs_backend_remove(pFS->pBackend, pFS, pFilePath);
+        result = fs_backend_remove(pBackend, pFS, pFilePath);
     } else {
         fs_string realFilePath;
         fs_mount_point* pMountPoint;
@@ -2421,7 +2432,7 @@ FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options)
             return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
         }
 
-        result = fs_backend_remove(pFS->pBackend, pFS, fs_string_cstr(&realFilePath));
+        result = fs_backend_remove(pBackend, pFS, fs_string_cstr(&realFilePath));
         fs_string_free(&realFilePath, fs_get_allocation_callbacks(pFS));
     }
 
@@ -2431,14 +2442,25 @@ FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options)
 FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options)
 {
     fs_result result;
+    const fs_backend* pBackend;
 
-    if (pFS == NULL || pOldPath == NULL || pNewPath == NULL) {
+    if (pOldPath == NULL || pNewPath == NULL) {
         return FS_INVALID_ARGS;
+    }
+
+    pBackend = fs_get_backend_or_default(pFS);
+    if (pBackend == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /* If we're using the default file system, ignore mount points since there's no real notion of them. */
+    if (pFS == NULL) {
+        options |= FS_IGNORE_MOUNTS;
     }
 
     /* If we're ignoring mounts we can just call straight into the backend. */
     if ((options & FS_IGNORE_MOUNTS) != 0) {
-        result = fs_backend_rename(pFS->pBackend, pFS, pOldPath, pNewPath);
+        result = fs_backend_rename(pBackend, pFS, pOldPath, pNewPath);
     } else {    
         fs_string realOldPath;
         fs_string realNewPath;
@@ -2456,7 +2478,7 @@ FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, 
             return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
         }
 
-        result = fs_backend_rename(pFS->pBackend, pFS, fs_string_cstr(&realOldPath), fs_string_cstr(&realNewPath));
+        result = fs_backend_rename(pBackend, pFS, fs_string_cstr(&realOldPath), fs_string_cstr(&realNewPath));
         fs_string_free(&realOldPath, fs_get_allocation_callbacks(pFS));
         fs_string_free(&realNewPath, fs_get_allocation_callbacks(pFS));
     }
