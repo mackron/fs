@@ -3,14 +3,31 @@
 #include "../extras/backends/win32/fs_win32.c"
 
 
-const fs_backend* fs_test_get_backend(void)
+const fs_backend* fs_test_get_backend(int argc, char** argv)
 {
+    int iarg;
+
+    /* Check if a specific backend is requested via the command line. */
+    for (iarg = 1; iarg < argc; iarg += 1) {
+        /*  */ if (strcmp(argv[iarg], "posix") == 0) {
+            return FS_BACKEND_POSIX;
+        } else if (strcmp(argv[iarg], "win32") == 0) {
+            return FS_BACKEND_WIN32;
+        } else if (strcmp(argv[iarg], "stdio") == 0) {
+            return FS_BACKEND_STDIO;
+        } else {
+            printf("Unknown backend: %s\n", argv[iarg]);
+            break;
+        }
+    }
+
+    /* Getting here means no backend was passed onto the command line. Fall back to defaults. */
     /*  */ if (FS_BACKEND_POSIX != NULL) {
         return FS_BACKEND_POSIX;
     } else if (FS_BACKEND_WIN32 != NULL) {
         return FS_BACKEND_WIN32;
-    } else if (FS_STDIO != NULL) {
-        return FS_STDIO;
+    } else if (FS_BACKEND_STDIO != NULL) {
+        return FS_BACKEND_STDIO;
     } else {
         return NULL;
     }
@@ -22,7 +39,7 @@ const char* fs_test_get_backend_name(const fs_backend* pBackend)
         return "POSIX";
     } else if (pBackend == FS_BACKEND_WIN32) {
         return "Win32";
-    } else if (pBackend == FS_STDIO) {
+    } else if (pBackend == FS_BACKEND_STDIO) {
         return "stdio";
     } else {
         return "Unknown";
@@ -428,14 +445,12 @@ typedef struct
     char pTempDir[1024];
 } fs_test_state;
 
-fs_test_state fs_test_state_init(void)
+fs_test_state fs_test_state_init(const fs_backend* pBackend)
 {
     fs_test_state state;
 
     memset(&state, 0, sizeof(state));
-
-    state.pBackend = fs_test_get_backend();
-    printf("Backend: %s\n", fs_test_get_backend_name(state.pBackend));
+    state.pBackend = pBackend;
 
     return state;
 }
@@ -1556,7 +1571,7 @@ int fs_test_mounts(fs_test* pTest)
     char pDir2Path[128];
     char pDir3Path[128];
 
-    fsConfig = fs_config_init(fs_test_get_backend(), NULL, NULL);
+    fsConfig = fs_config_init(pTestState->pBackend, NULL, NULL);
 
     result = fs_init(&fsConfig, &pTestState->pFS);
     if (result != FS_SUCCESS) {
@@ -2008,6 +2023,7 @@ int fs_test_unmount(fs_test* pTest)
 int main(int argc, char** argv)
 {
     int result;
+    const fs_backend* pBackend;
 
     /* Tests. */
     fs_test test_root;
@@ -2042,11 +2058,19 @@ int main(int argc, char** argv)
     fs_test test_unmount;                   /* This needs to be the last mount test.*/
 
     /* Test states. */
-    fs_test_state test_system_state = fs_test_state_init();
-    fs_test_state test_mounts_state = fs_test_state_init();
+    fs_test_state test_system_state;
+    fs_test_state test_mounts_state;
 
-    (void)argc;
-    (void)argv;
+    /* Grab the backend so we can pass it into the test state. */
+    pBackend = fs_test_get_backend(argc, argv);
+
+    /* Print the backend name so we can easily see which backend is being used. */
+    printf("Backend: %s\n", fs_test_get_backend_name(pBackend));
+
+    /* Make sure the test states are initialized before running anything. */
+    test_system_state = fs_test_state_init(pBackend);
+    test_mounts_state = fs_test_state_init(pBackend);
+
 
     /*
     Note that the order of tests is important here because we will use the output from previous tests

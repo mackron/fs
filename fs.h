@@ -183,7 +183,7 @@ fs_archive_type pArchiveTypes[] =
     {FS_PAK, "pak"}
 };
 
-fs_config fsConfig = fs_config_init(FS_STDIO, NULL, NULL);
+fs_config fsConfig = fs_config_init_default();
 fsConfig.pArchiveTypes    = pArchiveTypes;
 fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
 
@@ -1281,7 +1281,7 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
 
 
 /* Default Backend. */
-extern const fs_backend* FS_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
+extern const fs_backend* FS_BACKEND_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
 /* END fs.h */
 
 

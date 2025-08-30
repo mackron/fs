@@ -35,7 +35,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    fsConfig = fs_config_init(FS_STDIO, NULL, NULL);
+    fsConfig = fs_config_init_default();
     fsConfig.pArchiveTypes    = pArchiveTypes;
     fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
 
