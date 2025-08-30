@@ -4667,23 +4667,23 @@ FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtual
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount(fs* pFS, const char* pPathToMount_NotMountPoint, int options)
+FS_API fs_result fs_unmount(fs* pFS, const char* pActualPath, int options)
 {
     fs_result result;
 
-    if (pFS == NULL || pPathToMount_NotMountPoint == NULL) {
+    if (pFS == NULL || pActualPath == NULL) {
         return FS_INVALID_ARGS;
     }
 
     if ((options & FS_READ) == FS_READ) {
-        result = fs_unmount_read(pFS, pPathToMount_NotMountPoint, options);
+        result = fs_unmount_read(pFS, pActualPath, options);
         if (result != FS_SUCCESS) {
             return result;
         }
     }
 
     if ((options & FS_WRITE) == FS_WRITE) {
-        result = fs_unmount_write(pFS, pPathToMount_NotMountPoint, options);
+        result = fs_unmount_write(pFS, pActualPath, options);
         if (result != FS_SUCCESS) {
             return result;
         }
