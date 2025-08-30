@@ -530,7 +530,7 @@ int fs_test_system_mktmp(fs_test* pTest)
     printf("%s: [FILE] %s\n", pTest->name, pTempFile);
 
     /* We're going to delete the temp file just to keep the temp folder cleaner and easier to find actual test files. */
-    result = fs_remove(pTestState->pFS, pTempFile);
+    result = fs_remove(pTestState->pFS, pTempFile, FS_IGNORE_MOUNTS);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to delete temporary file.\n", pTest->name);
         return FS_ERROR;
@@ -1487,7 +1487,7 @@ static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDi
             }
         } else {
             /* It's a file. Just delete it. */
-            if (fs_remove(pTestState->pFS, pSubPath) != FS_SUCCESS) {
+            if (fs_remove(pTestState->pFS, pSubPath, FS_IGNORE_MOUNTS) != FS_SUCCESS) {
                 printf("%s: Failed to remove file '%s'.\n", pTest->name, pSubPath);
                 fs_free_iterator(pIterator);
                 return FS_ERROR;
@@ -1496,7 +1496,7 @@ static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDi
     }
 
     /* At this point the directory should be empty. */
-    result = fs_remove(pTestState->pFS, pDirPath);
+    result = fs_remove(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to remove directory '%s'.\n", pTest->name, pDirPath);
         return FS_ERROR;
@@ -1514,7 +1514,7 @@ int fs_test_system_remove(fs_test* pTest)
     The first thing to test is that we cannot delete a non-empty folder. Our temp folder itself
     should have content so we can just try deleting that now.
     */
-    result = fs_remove(pTestState->pFS, pTestState->pTempDir);
+    result = fs_remove(pTestState->pFS, pTestState->pTempDir, FS_IGNORE_MOUNTS);
     if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
         printf("%s: Unexpectedly succeeded in removing non-empty directory.\n", pTest->name);
         return FS_ERROR;

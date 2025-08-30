@@ -2402,13 +2402,30 @@ FS_API fs_result fs_ioctl(fs* pFS, int request, void* pArg)
     return fs_backend_ioctl(pFS->pBackend, pFS, request, pArg);
 }
 
-FS_API fs_result fs_remove(fs* pFS, const char* pFilePath)
+FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options)
 {
+    fs_result result;
+
     if (pFS == NULL || pFilePath == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    return fs_backend_remove(pFS->pBackend, pFS, pFilePath);
+    if ((options & FS_IGNORE_MOUNTS) != 0) {
+        result = fs_backend_remove(pFS->pBackend, pFS, pFilePath);
+    } else {
+        fs_string realFilePath;
+        fs_mount_point* pMountPoint;
+
+        pMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, options, &realFilePath);
+        if (pMountPoint == NULL) {
+            return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
+        }
+
+        result = fs_backend_remove(pFS->pBackend, pFS, fs_string_cstr(&realFilePath));
+        fs_string_free(&realFilePath, fs_get_allocation_callbacks(pFS));
+    }
+
+    return result;
 }
 
 FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options)

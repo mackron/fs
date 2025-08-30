@@ -201,7 +201,7 @@ static fs_result fs_remove_sub(fs* pFS, const char* pFilePath)
         return result;
     }
 
-    result = fs_remove(pSubFS->pOwnerFS, subPath.pFullPath);
+    result = fs_remove(pSubFS->pOwnerFS, subPath.pFullPath, FS_IGNORE_MOUNTS);
     fs_sub_path_uninit(&subPath);
 
     return result;

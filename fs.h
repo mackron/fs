@@ -1213,7 +1213,7 @@ struct fs_backend
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
 FS_API void fs_uninit(fs* pFS);
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
-FS_API fs_result fs_remove(fs* pFS, const char* pFilePath); /* Does not consider mounts. */
+FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options);                         /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options);    /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
 FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. Use FS_NO_CREATE_DIRS to fail with FS_DOES_NOT_EXIST if a parent directory does not exist and to not create the full path hierarchy. Returns FS_ALREADY_EXISTS if directory already exists. */
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_EXCLUSIVE are ignored. */
