@@ -309,9 +309,10 @@ archive should be compressed.
 -------------
 There is no ability to change the working directory in this library. Instead you can mount a
 physical directory to a virtual path, similar in concept to Unix operating systems. The difference,
-however, is that you can mount multiple directories to the same mount point in which case a
-prioritization system will be used. There are separate mount points for reading and writing. Below
-is an example of mounting for reading:
+however, is that you can mount multiple directories to the same virtual path in which case a
+prioritization system will be used (only for reading - in write mode only a single mount is used).
+There are separate mount points for reading and writing. Below is an example of mounting for
+reading:
 
 ```c
 fs_mount(pFS, "/some/actual/path", NULL, FS_READ);
