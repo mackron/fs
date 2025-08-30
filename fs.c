@@ -2179,7 +2179,7 @@ static fs_result fs_resolve_real_path_from_mount_point(fs* pFS, fs_mount_point* 
     return FS_SUCCESS;
 }
 
-static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath, const char** ppMountPointPath, const char** ppSubPath)
+static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath, int openMode, fs_string* pResolvedRealPath)
 {
     /*
     This is a bit different from read mounts because we want to use the mount point that most closely
@@ -2198,9 +2198,8 @@ static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath
     fs_result result;
     fs_mount_list_iterator iMountPoint;
     fs_mount_point* pBestMountPoint = NULL;
-    const char* pBestMountPointPath = NULL;
     const char* pBestMountPointFileSubPath = NULL;
-    
+
     for (result = fs_mount_list_first(pFS->pWriteMountPoints, &iMountPoint); result == FS_SUCCESS; result = fs_mount_list_next(&iMountPoint)) {
         const char* pFileSubPath = fs_path_trim_mount_point_base(pPath, FS_NULL_TERMINATED, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
         if (pFileSubPath == NULL) {
@@ -2209,16 +2208,18 @@ static fs_mount_point* fs_find_best_write_mount_point(fs* pFS, const char* pPath
 
         if (pBestMountPointFileSubPath == NULL || strlen(pFileSubPath) < strlen(pBestMountPointFileSubPath)) {
             pBestMountPoint = iMountPoint.internal.pMountPoint;
-            pBestMountPointPath = iMountPoint.pPath;
             pBestMountPointFileSubPath = pFileSubPath;
         }
     }
 
-    if (ppMountPointPath != NULL) {
-        *ppMountPointPath = pBestMountPointPath;
+    if (pBestMountPoint == NULL) {
+        return NULL;
     }
-    if (ppSubPath != NULL) {
-        *ppSubPath = pBestMountPointFileSubPath;
+
+    /* At this point we have identified the best mount point. We now need to resolve the absolute path. */
+    result = fs_resolve_real_path_from_mount_point(pFS, pBestMountPoint, pPath, openMode, pResolvedRealPath);
+    if (result != FS_SUCCESS) {
+        return NULL;    /* This probably failed because the path was trying to navigate above the mount point when not allowed to do so. */
     }
 
     return pBestMountPoint;
@@ -2428,8 +2429,7 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
     fs_path_iterator iSegment;
     const fs_backend* pBackend;
     fs_mount_point* pMountPoint = NULL;
-    const char* pMountPointPath = NULL;
-    const char* pMountPointSubPath = NULL;
+    fs_string realPath;
 
     pBackend = fs_get_backend_or_default(pFS);
 
@@ -2449,43 +2449,20 @@ FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options)
     /* If we're using mount points we'll want to find the best one from our input path. */
     if ((options & FS_IGNORE_MOUNTS) != 0) {
         pMountPoint = NULL;
-        pMountPointPath = "";
-        pMountPointSubPath = pPath;
+        realPath = fs_string_new_ref(pPath, FS_NULL_TERMINATED);
     } else {
-        pMountPoint = fs_find_best_write_mount_point(pFS, pPath, &pMountPointPath, &pMountPointSubPath);
+        pMountPoint = fs_find_best_write_mount_point(pFS, pPath, options, &realPath);
         if (pMountPoint == NULL) {
-            return FS_INVALID_FILE; /* Couldn't find a mount point. */
+            return FS_DOES_NOT_EXIST;   /* Couldn't find a mount point. */
         }
     }
 
-
     /* We need to iterate over each segment and create the directory. If any of these fail we'll need to abort. */
-    if (fs_path_first(pMountPointSubPath, FS_NULL_TERMINATED, &iSegment) != FS_SUCCESS) {
+    if (fs_path_first(fs_string_cstr(&realPath), FS_NULL_TERMINATED, &iSegment) != FS_SUCCESS) {
         return FS_SUCCESS;  /* It's an empty path. */
     }
 
-
-    /* We need to pre-fill our running path with the mount point. */
-    runningPathLen = strlen(pMountPointPath);
-    if (runningPathLen + 1 >= sizeof(pRunningPathStack)) {
-        pRunningPathHeap = (char*)fs_malloc(runningPathLen + 1 + 1, fs_get_allocation_callbacks(pFS));
-        if (pRunningPathHeap == NULL) {
-            return FS_OUT_OF_MEMORY;
-        }
-
-        pRunningPath = pRunningPathHeap;
-    }
-
-    FS_COPY_MEMORY(pRunningPath, pMountPointPath, runningPathLen);
-    pRunningPath[runningPathLen] = '\0';
-
-    /* We need to make sure we have a trailing slash. */
-    if (runningPathLen > 0 && pRunningPath[runningPathLen - 1] != '/') {
-        pRunningPath[runningPathLen] = '/';
-        runningPathLen += 1;
-        pRunningPath[runningPathLen] = '\0';
-    }
-
+    pRunningPath[0] = '\0';
 
     for (;;) {
         fs_result result;
@@ -3514,27 +3491,19 @@ FS_API fs_result fs_file_open_or_info(fs* pFS, const char* pFilePath, int openMo
         /* Opening in write mode. */
         if (pFS != NULL && (openMode & FS_IGNORE_MOUNTS) == 0) {
             fs_mount_point* pBestMountPoint = NULL;
-            const char* pBestMountPointPath = NULL;
-            const char* pBestMountPointFileSubPath = NULL;
-            
-            pBestMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, &pBestMountPointPath, &pBestMountPointFileSubPath);
+            fs_string fileRealPath;
+
+            pBestMountPoint = fs_find_best_write_mount_point(pFS, pFilePath, openMode, &fileRealPath);
             if (pBestMountPoint != NULL) {
-                fs_string fileRealPath;
-
-                result = fs_resolve_real_path_from_mount_point(pFS, pBestMountPoint, pFilePath, openMode, &fileRealPath);
-                if (result != FS_SUCCESS) {
-                    return result;
-                }
-
                 /* We now have enough information to open the file. */
                 result = fs_file_alloc_and_open_or_info(pFS, fs_string_cstr(&fileRealPath), openMode, ppFile, pInfo);
                 fs_string_free(&fileRealPath, fs_get_allocation_callbacks(pFS));
 
-                if (result == FS_SUCCESS) {
-                    return FS_SUCCESS;
-                } else {
-                    return FS_DOES_NOT_EXIST;   /* Couldn't find the file from the best mount point. */
+                if (result != FS_SUCCESS) {
+                    return result;
                 }
+
+                return FS_SUCCESS;
             } else {
                 return FS_DOES_NOT_EXIST;   /* Couldn't find an appropriate mount point. */
             }
