@@ -578,6 +578,20 @@ int fs_test_system_mkdir(fs_test* pTest)
         return FS_ERROR;
     }
 
+    /* Test that FS_ALREADY_EXISTS is returned for a directory that already exists. */
+    result = fs_mkdir(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS);
+    if (result != FS_ALREADY_EXISTS) {
+        printf("%s: ERROR: Expected FS_ALREADY_EXISTS, but got %d\n", pTest->name, result);
+        return FS_ERROR;
+    }
+
+    /* Test that FS_DOES_NOT_EXIST is returned when a parent directory does not exist. */
+    result = fs_mkdir(pTestState->pFS, "does/not/exist", FS_IGNORE_MOUNTS | FS_NO_CREATE_DIRS);
+    if (result != FS_DOES_NOT_EXIST) {
+        printf("%s: ERROR: Expected FS_DOES_NOT_EXIST, but got %d\n", pTest->name, result);
+        return FS_ERROR;
+    }
+
     return FS_SUCCESS;
 }
 /* END system_mkdir */
@@ -1644,7 +1658,6 @@ int fs_test_mounts(fs_test* pTest)
 }
 /* END mounts */
 
-
 /* BEG mounts_write */
 static fs_result fs_test_mounts_write_file(fs_test* pTest, const char* pFilePath, const void* pData, size_t dataSize)
 {
@@ -1882,6 +1895,63 @@ int fs_test_mounts_read(fs_test* pTest)
 }
 /* END mounts_read */
 
+/* BEG mounts_mkdir */
+int fs_test_mounts_mkdir(fs_test* pTest)
+{
+    /*
+    The "mounts" test set up some directories with fs_mkdir() for future tests, but we need to test some
+    more complex scenarios as well, such as restricting navigation above mount points.
+
+    The directories created here will be deleted by a later test.
+    */
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    
+    /* First check that basic directory creation works. */
+    result = fs_mkdir(pTestState->pFS, "testdir", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create testdir.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Check that FS_ALREADY_EXISTS is returned for a directory that already exists. */
+    result = fs_mkdir(pTestState->pFS, "testdir", 0);
+    if (result != FS_ALREADY_EXISTS) {
+        printf("%s: ERROR: Expected FS_ALREADY_EXISTS, but got %d\n", pTest->name, result);
+        return FS_ERROR;
+    }
+
+    /* Check that recursively creating a directory fails when FS_NO_CREATE_DIRS is specified. */
+    result = fs_mkdir(pTestState->pFS, "testdir/a/b/c", FS_NO_CREATE_DIRS);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when creating testdir/a/b/c with FS_NO_CREATE_DIRS.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Now check that recursively creating a directory works when FS_NO_CREATE_DIRS is not specified. */
+    result = fs_mkdir(pTestState->pFS, "testdir/a/b/c", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: ERROR: Expected FS_SUCCESS, but got %d\n", pTest->name, result);
+        return FS_ERROR;
+    }
+
+    /* Check that above-root navigation results in an error if disallowed. */
+    result = fs_mkdir(pTestState->pFS, "/inner/../dir2/subdir", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when creating /inner/../dir2/subdir.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pTestState->pFS, "../subdir", FS_NO_ABOVE_ROOT_NAVIGATION);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when creating ../subdir.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts_mkdir */
+
 /* BEG unmount */
 int fs_test_unmount(fs_test* pTest)
 {
@@ -1968,6 +2038,7 @@ int main(int argc, char** argv)
     fs_test test_mounts;                    /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
     fs_test test_mounts_write;              /* Tests writing to mounts. */
     fs_test test_mounts_read;               /* Tests reading from mounts. */
+    fs_test test_mounts_mkdir;              /* Tests creating directories with mounts. */
     fs_test test_unmount;                   /* This needs to be the last mount test.*/
 
     /* Test states. */
@@ -2022,10 +2093,11 @@ int main(int argc, char** argv)
 
     This only tests mounts with normal files. It does not test archives. There will be a separate test for archives.
     */
-    fs_test_init(&test_mounts,       "Mounts",       fs_test_mounts,       &test_mounts_state, &test_root);
-    fs_test_init(&test_mounts_write, "Mounts Write", fs_test_mounts_write, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_read,  "Mounts Read",  fs_test_mounts_read,  &test_mounts_state, &test_mounts);
-    fs_test_init(&test_unmount,      "Unmount",      fs_test_unmount,      &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts,       "Mounts",                fs_test_mounts,       &test_mounts_state, &test_root);
+    fs_test_init(&test_mounts_write, "Mounts Write",          fs_test_mounts_write, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_read,  "Mounts Read",           fs_test_mounts_read,  &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_mkdir, "Mounts Make Directory", fs_test_mounts_mkdir, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_unmount,      "Unmount",               fs_test_unmount,      &test_mounts_state, &test_mounts);
 
     result = fs_test_run(&test_root);
 
