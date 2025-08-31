@@ -202,6 +202,36 @@ jobs:
       - name: Build
         run: cmake --build build --parallel $(nproc)
 
+  # Emscripten job
+  emscripten:
+    name: Emscripten (${{ matrix.config.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Default"
+            cmake_args: "-DFS_BUILD_EXAMPLES=ON -DFS_BUILD_TESTS=ON -DFS_BUILD_TOOLS=ON -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+          actions-cache-folder: 'emsdk-cache'
+      - name: Configure CMake
+        run: |
+          emcmake cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-s NODERAWFS=1 -s EXIT_RUNTIME=1" \
+            ${{ matrix.config.cmake_args }}
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+      - name: Run tests
+        run: |
+          cd build
+          node fs_test.js
+
   # FreeBSD job
   freebsd:
     name: FreeBSD (${{ matrix.config.name }})
