@@ -92,8 +92,33 @@ void fs_test_init(fs_test* pTest, const char* name, fs_test_proc proc, void* pUs
     }
 }
 
+void fs_test_count(fs_test* pTest, int* pCount, int* pPassed)
+{
+    fs_test* pChild;
+
+    if (pTest == NULL) {
+        return;
+    }
+
+    *pCount += 1;
+
+    if (pTest->result == FS_SUCCESS) {
+        *pPassed += 1;
+    }
+
+    pChild = pTest->pFirstChild;
+    while (pChild != NULL) {
+        fs_test_count(pChild, pCount, pPassed);
+        pChild = pChild->pNextSibling;
+    }
+}
+
 int fs_test_run(fs_test* pTest)
 {
+    /* Start our counts at -1 to exclude the root test. */
+    int testCount = -1;
+    int passedCount = -1;
+
     if (pTest == NULL) {
         return FS_ERROR;
     }
@@ -122,7 +147,10 @@ int fs_test_run(fs_test* pTest)
         }
     }
 
-    return FS_SUCCESS;
+    /* Now count the number of failed tests and report success or failure depending on the result. */
+    fs_test_count(pTest, &testCount, &passedCount);
+
+    return (testCount == passedCount) ? FS_SUCCESS : FS_ERROR;
 }
 
 void fs_test_print_local_result(fs_test* pTest, int level)
@@ -167,27 +195,6 @@ void fs_test_print_result(fs_test* pTest, int level)
     pChild = pTest->pFirstChild;
     while (pChild != NULL) {
         fs_test_print_result(pChild, level);
-        pChild = pChild->pNextSibling;
-    }
-}
-
-void fs_test_count(fs_test* pTest, int* pCount, int* pPassed)
-{
-    fs_test* pChild;
-
-    if (pTest == NULL) {
-        return;
-    }
-
-    *pCount += 1;
-
-    if (pTest->result == FS_SUCCESS) {
-        *pPassed += 1;
-    }
-
-    pChild = pTest->pFirstChild;
-    while (pChild != NULL) {
-        fs_test_count(pChild, pCount, pPassed);
         pChild = pChild->pNextSibling;
     }
 }
