@@ -1177,6 +1177,7 @@ int fs_test_system_write_truncate2(fs_test* pTest)
     fs_file* pFile;
     fs_file_info fileInfo;
     char pFilePath[1024];
+    char data[6] = {3, 4, 5, 6, 7, 8};
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
@@ -1195,9 +1196,23 @@ int fs_test_system_write_truncate2(fs_test* pTest)
 
     result = fs_file_truncate(pFile);
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to truncate file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
+        
+
+        /*
+        If we get a FS_NOT_IMPLEMENTED, and the backend is POSIX, it means ftruncate() is not available
+        internally. This is expected in certain build configurations, particularly when `-std=c89` is used
+        without an explicitly defined feature macro, such as `_XOPEN_SOURCE >= 500`.
+        */
+        if (result == FS_NOT_IMPLEMENTED && pTestState->pBackend == FS_BACKEND_POSIX) {
+            printf("%s: WARNING: ftruncate() is not available on this system. Skipping test.\n", pTest->name);
+            fs_file_write(pFile, data, sizeof(data), NULL); /* <-- We need to write out the tail in order to set up the data for future tests. */
+            fs_file_close(pFile);
+            return FS_SUCCESS;
+        } else {
+            printf("%s: Failed to truncate file.\n", pTest->name);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
     }
 
     fs_file_close(pFile);
@@ -1215,11 +1230,8 @@ int fs_test_system_write_truncate2(fs_test* pTest)
         return FS_ERROR;
     }
 
-
     /* We're now going to append another 6 bytes in preparation for the read tests. */
     {
-        char data[6] = {3, 4, 5, 6, 7, 8};
-
         result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
         if (result != FS_SUCCESS) {
             printf("%s: Failed to open file for writing.\n", pTest->name);
