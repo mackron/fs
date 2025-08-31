@@ -5315,29 +5315,20 @@ static fs_result fs_file_flush_posix(fs_file* pFile)
 
 static fs_result fs_file_truncate_posix(fs_file* pFile)
 {
-    #if defined (_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
-    {
-        fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
-        off_t currentPos;
-        
-        /* Our truncation is based on the current write position. */
-        currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
-        if (currentPos < 0) {
-            return fs_result_from_errno(errno);
-        }
-
-        if (ftruncate(pFilePosix->fd, currentPos) < 0) {
-            return fs_result_from_errno(errno);
-        }
-
-        return FS_SUCCESS;
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    off_t currentPos;
+    
+    /* Our truncation is based on the current write position. */
+    currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
+    if (currentPos < 0) {
+        return fs_result_from_errno(errno);
     }
-    #else
-    {
-        (void)pFile;
-        return FS_NOT_IMPLEMENTED;
+
+    if (ftruncate(pFilePosix->fd, currentPos) < 0) {
+        return fs_result_from_errno(errno);
     }
-    #endif
+
+    return FS_SUCCESS;
 }
 
 static fs_result fs_file_info_posix(fs_file* pFile, fs_file_info* pInfo)
