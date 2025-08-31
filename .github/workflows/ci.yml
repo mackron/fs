@@ -48,7 +48,7 @@ jobs:
         run: cmake --build build --parallel $(nproc)
 
       - name: Run tests
-        run: cd build && ctest --output-on-failure --parallel $(nproc)
+        run: cd build && ctest --output-on-failure --verbose --parallel $(nproc)
 
   # Windows job
   windows:
@@ -139,12 +139,12 @@ jobs:
 
       - name: Run tests (MSVC)
         if: matrix.compiler == 'msvc'
-        run: cd build && ctest --output-on-failure --parallel -C Debug
+        run: cd build && ctest --output-on-failure --verbose --parallel -C Debug
 
       - name: Run tests (MinGW)
         if: matrix.compiler == 'mingw'
         shell: msys2 {0}
-        run: cd build && ctest --output-on-failure --parallel
+        run: cd build && ctest --output-on-failure --verbose --parallel
 
   # macOS job
   macos:
@@ -172,7 +172,7 @@ jobs:
         run: cmake --build build --parallel $(sysctl -n hw.ncpu)
 
       - name: Run tests
-        run: cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
+        run: cd build && ctest --output-on-failure --verbose --parallel $(sysctl -n hw.ncpu)
 
   # Android job
   android:
@@ -224,7 +224,7 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build --parallel $(sysctl -n hw.ncpu)
-            cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
+            cd build && ctest --output-on-failure --verbose --parallel $(sysctl -n hw.ncpu)
 
   # OpenBSD job
   openbsd:
@@ -248,7 +248,7 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build --parallel $(sysctl -n hw.ncpu)
-            cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu)
+            cd build && ctest --output-on-failure --verbose --parallel $(sysctl -n hw.ncpu)
 
   # NetBSD job
   netbsd:
@@ -272,4 +272,4 @@ jobs:
           run: |
             cmake -B build ${{ matrix.config.cmake_args }}
             cmake --build build
-            cd build && ctest --output-on-failure
+            cd build && ctest --output-on-failure --verbose
