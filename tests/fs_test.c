@@ -1,5 +1,9 @@
 #include "../fs.c"
 
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+
 const fs_backend* fs_test_get_backend(int argc, char** argv)
 {
     int iarg;
@@ -33,10 +37,6 @@ const char* fs_test_get_backend_name(const fs_backend* pBackend)
 
 
 /* BEG fs_test.c */
-#include <stdio.h>
-#include <assert.h>
-#include <string.h>
-
 typedef struct fs_test fs_test;
 
 typedef int (* fs_test_proc)(fs_test* pUserData);
