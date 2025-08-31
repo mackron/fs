@@ -5311,22 +5311,43 @@ static fs_result fs_file_flush_posix(fs_file* pFile)
     return FS_SUCCESS;
 }
 
+
+/*
+The availability of ftruncate() is annoyingly tricky because it is not available with `-std=c89` unless the
+application opts into it by defining _POSIX_C_SOURCE or _XOPEN_SOURCE
+*/
+#if !defined(FS_HAS_FTRUNCATE) && (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 500)  /* Opted in by the application via a feature macro. */
+    #define FS_HAS_FTRUNCATE
+#endif
+#if !defined(FS_HAS_FTRUNCATE) && !defined(__STRICT_ANSI__) /* Not using strict ANSI. Assume available. Might need to massage this later. */
+    #define FS_HAS_FTRUNCATE
+#endif
+
 static fs_result fs_file_truncate_posix(fs_file* pFile)
 {
-    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
-    off_t currentPos;
-    
-    /* Our truncation is based on the current write position. */
-    currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
-    if (currentPos < 0) {
-        return fs_result_from_errno(errno);
-    }
+    #if defined(FS_HAS_FTRUNCATE)
+    {
+        fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+        off_t currentPos;
+        
+        /* Our truncation is based on the current write position. */
+        currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
+        if (currentPos < 0) {
+            return fs_result_from_errno(errno);
+        }
 
-    if (ftruncate(pFilePosix->fd, currentPos) < 0) {
-        return fs_result_from_errno(errno);
-    }
+        if (ftruncate(pFilePosix->fd, currentPos) < 0) {
+            return fs_result_from_errno(errno);
+        }
 
-    return FS_SUCCESS;
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        (void)pFile;
+        return FS_NOT_IMPLEMENTED;
+    }
+    #endif
 }
 
 static fs_result fs_file_info_posix(fs_file* pFile, fs_file_info* pInfo)
