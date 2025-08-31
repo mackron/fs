@@ -6813,6 +6813,13 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
     }
     #endif
 
+    /* Check if there's a trailing slash, and if so, delete it. */
+    if (pDst != NULL && fullLength < dstCap && fullLength > 0) {
+        if (pDst[fullLength - 1] == '/' || pDst[fullLength - 1] == '\\') {
+            pDst[fullLength - 1] = '\0';
+        }
+    }
+
     return fullLength;
 }
 /* END fs_sysdir.c */
