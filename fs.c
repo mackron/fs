@@ -11,20 +11,6 @@
 #endif
 /* END fs_platform_detection.c */
 
-
-/* TODO: Remove this. To replicate errors, Just comment out this _XOPEN_SOURCE section and compile with `-std=c89` on GCC. */
-/*
-This is for `-std=c89` compatibility. Without this there will be a few pthread related issues as well as some stdio
-functions being unavailable. They will need workarounds.
-
-Note that this causes errors on Apple platforms, so we exclude Apple from this.
-*/
-#ifndef __APPLE__
-    #ifndef _XOPEN_SOURCE
-    #define _XOPEN_SOURCE   700
-    #endif
-#endif
-
 #include <errno.h>
 
 /* BEG fs_common_macros.c */
