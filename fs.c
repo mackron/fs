@@ -1811,10 +1811,23 @@ static fs_result fs_mount_list_remove(fs_mount_list* pList, fs_mount_point* pMou
 
 
 
+static const fs_backend* fs_get_default_backend(void)
+{
+    /*  */ if (FS_BACKEND_POSIX != NULL) {
+        return FS_BACKEND_POSIX;
+    } else if (FS_BACKEND_WIN32 != NULL) {
+        return FS_BACKEND_WIN32;
+    } else if (FS_BACKEND_STDIO != NULL) {
+        return FS_BACKEND_STDIO;
+    } else {
+        return NULL;
+    }
+}
+
 static const fs_backend* fs_get_backend_or_default(const fs* pFS)
 {
     if (pFS == NULL) {
-        return FS_BACKEND_STDIO;
+        return fs_get_default_backend();
     } else {
         return pFS->pBackend;
     }
@@ -2250,7 +2263,7 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
 
     pBackend = pConfig->pBackend;
     if (pBackend == NULL) {
-        pBackend = FS_BACKEND_STDIO;
+        pBackend = fs_get_default_backend();
     }
 
     /* If the backend is still null at this point it means the default backend has been disabled. */
