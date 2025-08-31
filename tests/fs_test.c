@@ -977,64 +977,6 @@ int fs_test_system_write_truncate(fs_test* pTest)
 }
 /* END system_write_truncate */
 
-/* BEG system_write_truncate2 */
-int fs_test_system_write_truncate2(fs_test* pTest)
-{
-    /*
-    This tests the fs_file_truncate() function. We'll open the file "a", which should be 4 bytes in length
-    at the time of running this test, and then truncate the last two bytes, leaving it 2 bytes in length.
-    We'll then read the file back and verify the new size.
-
-    A detail with this test. When running with POSIX, we can expect a FS_NOT_IMPLEMENTED when running in
-    struct C89 mode (`-std=c89`) which is due to `ftruncate()` being unavailable.
-    */
-    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
-    fs_result result;
-    fs_file* pFile;
-    fs_file_info fileInfo;
-    char pFilePath[1024];
-
-    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
-
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile); /* <-- Detail: Make sure this is opened in overwrite mode (FS_WRITE by itself). */
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to create new file.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    result = fs_file_seek(pFile, 2, FS_SEEK_SET);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to seek in file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    result = fs_file_truncate(pFile);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to truncate file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-
-    /* Now get the info and check the size. We didn't modify any content so nothing should have changed. */
-    result = fs_info(pTestState->pFS, pFilePath, FS_READ, &fileInfo);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to get file info.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    if (fileInfo.size != 2) {
-        printf("%s: Unexpected file size after truncation. Expected 2, got %u.\n", pTest->name, (unsigned int)fileInfo.size);
-        return FS_ERROR;
-    }
-
-    return FS_SUCCESS;
-}
-/* END system_write_truncate2 */
-
 /* BEG system_write_seek */
 int fs_test_system_write_seek(fs_test* pTest)
 {
@@ -1053,7 +995,7 @@ int fs_test_system_write_seek(fs_test* pTest)
     char pFilePath[1024];
     size_t bytesWritten;
     size_t bytesRead;
-    char data[6] = {3, 4, 5, 6, 7, 8};
+    char data[4] = {5, 6, 7, 8};
     char dataRead[8];
     char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     fs_int64 cursor;
@@ -1227,6 +1169,85 @@ int fs_test_system_write_seek(fs_test* pTest)
 }
 /* END system_write_seek */
 
+/* BEG system_write_truncate2 */
+int fs_test_system_write_truncate2(fs_test* pTest)
+{
+    /*
+    This tests the fs_file_truncate() function. We'll open the file "a", which should be 4 bytes in length
+    at the time of running this test, and then truncate the last two bytes, leaving it 2 bytes in length.
+    We'll then read the file back and verify the new size.
+
+    A detail with this test. When running with POSIX, we can expect a FS_NOT_IMPLEMENTED when running in
+    struct C89 mode (`-std=c89`) which is due to `ftruncate()` being unavailable.
+    */
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+    char pFilePath[1024];
+
+    fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
+
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile); /* <-- Detail: Make sure this is opened in overwrite mode (FS_WRITE by itself). */
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create new file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, 2, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek in file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_truncate(pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to truncate file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* Now get the info and check the size. We didn't modify any content so nothing should have changed. */
+    result = fs_info(pTestState->pFS, pFilePath, FS_READ, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to get file info.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fileInfo.size != 2) {
+        printf("%s: Unexpected file size after truncation. Expected 2, got %u.\n", pTest->name, (unsigned int)fileInfo.size);
+        return FS_ERROR;
+    }
+
+
+    /* We're now going to append another 6 bytes in preparation for the read tests. */
+    {
+        char data[6] = {3, 4, 5, 6, 7, 8};
+
+        result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to open file for writing.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+        result = fs_file_write(pFile, data, sizeof(data), NULL);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to write to file.\n", pTest->name);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
+
+        fs_file_close(pFile);
+    }
+
+    return FS_SUCCESS;
+}
+/* END system_write_truncate2 */
+
 /* BEG system_write_flush */
 int fs_test_system_write_flush(fs_test* pTest)
 {
@@ -1238,7 +1259,7 @@ int fs_test_system_write_flush(fs_test* pTest)
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile); /* Using append here to be friendly with the stdio backend since it does not support overwrite mode and we don't want to be truncating this file. */
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file for writing.\n", pTest->name);
         return FS_ERROR;
@@ -1680,7 +1701,7 @@ static fs_result fs_test_mounts_write_file(fs_test* pTest, const char* pFilePath
     fs_result result;
     fs_file* pFile;
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_NO_CREATE_DIRS, &pFile);
+    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_NO_CREATE_DIRS, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open %s for writing.\n", pTest->name, pFilePath);
         return FS_ERROR;
@@ -2101,8 +2122,8 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_write_append,    "Write Append",       fs_test_system_write_append,    &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_exclusive, "Write Exclusive",    fs_test_system_write_exclusive, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_truncate,  "Write Truncate",     fs_test_system_write_truncate,  &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
+    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
     fs_test_init(&test_system_write_flush,     "Write Flush",        fs_test_system_write_flush,     &test_system_state, &test_system_write);
     fs_test_init(&test_system_read,            "Read",               fs_test_system_read,            &test_system_state, &test_system);
     fs_test_init(&test_system_read_readonly,   "Read Read-Only",     fs_test_system_read_readonly,   &test_system_state, &test_system_read);
