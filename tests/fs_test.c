@@ -10,8 +10,6 @@ const fs_backend* fs_test_get_backend(int argc, char** argv)
             return FS_BACKEND_POSIX;
         } else if (strcmp(argv[iarg], "win32") == 0) {
             return FS_BACKEND_WIN32;
-        } else if (strcmp(argv[iarg], "stdio") == 0) {
-            return FS_BACKEND_STDIO;
         } else {
             printf("Unknown backend: %s\n", argv[iarg]);
             break;
@@ -19,15 +17,7 @@ const fs_backend* fs_test_get_backend(int argc, char** argv)
     }
 
     /* Getting here means no backend was passed onto the command line. Fall back to defaults. */
-    /*  */ if (FS_BACKEND_POSIX != NULL) {
-        return FS_BACKEND_POSIX;
-    } else if (FS_BACKEND_WIN32 != NULL) {
-        return FS_BACKEND_WIN32;
-    } else if (FS_BACKEND_STDIO != NULL) {
-        return FS_BACKEND_STDIO;
-    } else {
-        return NULL;
-    }
+    return fs_get_default_backend();
 }
 
 const char* fs_test_get_backend_name(const fs_backend* pBackend)
@@ -36,8 +26,6 @@ const char* fs_test_get_backend_name(const fs_backend* pBackend)
         return "POSIX";
     } else if (pBackend == FS_BACKEND_WIN32) {
         return "Win32";
-    } else if (pBackend == FS_BACKEND_STDIO) {
-        return "stdio";
     } else {
         return "Unknown";
     }

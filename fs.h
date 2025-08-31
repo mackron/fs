@@ -1287,10 +1287,6 @@ extern const fs_backend* FS_BACKEND_POSIX;
 /* BEG fs_backend_win32.h */
 extern const fs_backend* FS_BACKEND_WIN32;
 /* END fs_backend_win32.h */
-
-/* BEG fs_backend_stdio.h */
-extern const fs_backend* FS_BACKEND_STDIO;
-/* END fs_backend_stdio.h */
 /* END fs.h */
 
 
