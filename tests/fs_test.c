@@ -1992,6 +1992,149 @@ int fs_test_mounts_mkdir(fs_test* pTest)
 }
 /* END mounts_mkdir */
 
+/* BEG mounts_rename */
+int fs_test_mounts_rename(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info fileInfo;
+
+    /* First create a couple of test files. */
+    result = fs_file_open(pTestState->pFS, "rename/oldname1", FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create oldname1.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    result = fs_file_open(pTestState->pFS, "rename/oldname2", FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create oldname2.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /*
+    Unfortunately the behavior of renaming a file to an existing one is not well defined between
+    backends. I'm going to skip this test.
+    */
+    #if 0
+    /* test that renaming the file to an existing one fails as expected. */
+    result = fs_rename(pTestState->pFS, "rename/oldname1", "rename/oldname2", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when renaming oldname1 to oldname2.\n", pTest->name);
+        return FS_ERROR;
+    }
+    #endif
+
+
+    /* Test a normal in-place rename (no moving) and confirm it actually exists. */
+    result = fs_rename(pTestState->pFS, "rename/oldname1", "rename/newname", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to rename oldname1 to newname.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, "rename/newname", FS_READ, &fileInfo);
+    if (result != FS_SUCCESS) {
+        printf("%s: newname does not exist.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+
+    /* Test that a move (rename across directories) works. */
+    fs_mkdir(pTestState->pFS, "rename/dir1", 0);
+
+    result = fs_rename(pTestState->pFS, "rename/newname", "rename/dir1/newname", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to move newname to dir1/newname.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+
+    /* Test that above-root navigation fails as expected. */
+    result = fs_rename(pTestState->pFS, "rename/dir1/newname", "/inner/../dir2/a", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-existent file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_rename(pTestState->pFS, "rename/dir1/newname", "../rename/oldname2", FS_NO_ABOVE_ROOT_NAVIGATION);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-existent file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts_rename */
+
+/* BEG mounts_remove */
+int fs_test_mounts_remove(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+
+    /* First create a test file. */
+    result = fs_file_open(pTestState->pFS, "remove/file", FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Test removing a non-existent file. */
+    result = fs_remove(pTestState->pFS, "remove/does_not_exist", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-existent file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test removing a non-empty directory. */
+    result = fs_remove(pTestState->pFS, "remove", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-empty directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test removing a file. */
+    result = fs_remove(pTestState->pFS, "remove/file", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test removing an empty directory. */
+    result = fs_remove(pTestState->pFS, "remove", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test that above-root navigation fails as expected. */
+    result = fs_remove(pTestState->pFS, "/inner/../dir2/a", 0);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-existent file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_remove(pTestState->pFS, "../rename/oldname2", FS_NO_ABOVE_ROOT_NAVIGATION);
+    if (result == FS_SUCCESS) { /* <-- Detail: This must be "==" and not "!=". */
+        printf("%s: Unexpected success when removing non-existent file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mounts_remove */
+
 /* BEG unmount */
 int fs_test_unmount(fs_test* pTest)
 {
@@ -2080,6 +2223,8 @@ int main(int argc, char** argv)
     fs_test test_mounts_write;              /* Tests writing to mounts. */
     fs_test test_mounts_read;               /* Tests reading from mounts. */
     fs_test test_mounts_mkdir;              /* Tests creating directories with mounts. */
+    fs_test test_mounts_rename;             /* Tests renaming files with mounts. */
+    fs_test test_mounts_remove;             /* Tests removing files with mounts. */
     fs_test test_unmount;                   /* This needs to be the last mount test.*/
 
     /* Test states. */
@@ -2140,11 +2285,13 @@ int main(int argc, char** argv)
     /*
     Mounts.
     */
-    fs_test_init(&test_mounts,       "Mounts",                fs_test_mounts,       &test_mounts_state, &test_root);
-    fs_test_init(&test_mounts_write, "Mounts Write",          fs_test_mounts_write, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_read,  "Mounts Read",           fs_test_mounts_read,  &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_mkdir, "Mounts Make Directory", fs_test_mounts_mkdir, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_unmount,      "Unmount",               fs_test_unmount,      &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts,        "Mounts",                fs_test_mounts,        &test_mounts_state, &test_root);
+    fs_test_init(&test_mounts_write,  "Mounts Write",          fs_test_mounts_write,  &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_read,   "Mounts Read",           fs_test_mounts_read,   &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_mkdir,  "Mounts Make Directory", fs_test_mounts_mkdir,  &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_rename, "Mounts Rename",         fs_test_mounts_rename, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_remove, "Mounts Remove",         fs_test_mounts_remove, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_unmount,       "Unmount",               fs_test_unmount,       &test_mounts_state, &test_mounts);
 
     result = fs_test_run(&test_root);
 
