@@ -4964,6 +4964,1538 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pD
 }
 
 
+/* BEG fs_backend_posix.c */
+#if !defined(_WIN32)    /* <-- Add any platforms that lack POSIX support here. */
+    #define FS_SUPPORTS_POSIX
+#endif
+
+#if !defined(FS_NO_POSIX) && defined(FS_SUPPORTS_POSIX)
+    #define FS_HAS_POSIX
+#endif
+
+#if defined(FS_HAS_POSIX)
+
+/* For 64-bit seeks. */
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
+#include <string.h> /* memset() */
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+
+
+static size_t fs_alloc_size_posix(const void* pBackendConfig)
+{
+    (void)pBackendConfig;
+    return 0;
+}
+
+static fs_result fs_init_posix(fs* pFS, const void* pBackendConfig, fs_stream* pStream)
+{
+    (void)pFS;
+    (void)pBackendConfig;
+    (void)pStream;
+
+    return FS_SUCCESS;
+}
+
+static void fs_uninit_posix(fs* pFS)
+{
+    (void)pFS;
+}
+
+static fs_result fs_ioctl_posix(fs* pFS, int op, void* pArg)
+{
+    (void)pFS;
+    (void)op;
+    (void)pArg;
+
+    return FS_NOT_IMPLEMENTED;
+}
+
+static fs_result fs_remove_posix(fs* pFS, const char* pFilePath)
+{
+    int result = remove(pFilePath);
+    if (result < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    (void)pFS;
+    return FS_SUCCESS;
+}
+
+static fs_result fs_rename_posix(fs* pFS, const char* pOldPath, const char* pNewPath)
+{
+    int result = rename(pOldPath, pNewPath);
+    if (result < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    (void)pFS;
+    return FS_SUCCESS;
+}
+
+static fs_result fs_mkdir_posix(fs* pFS, const char* pPath)
+{
+    int result = mkdir(pPath, S_IRWXU);
+    if (result < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    (void)pFS;
+    return FS_SUCCESS;
+}
+
+
+static fs_file_info fs_file_info_from_stat_posix(struct stat* pStat)
+{
+    fs_file_info info;
+
+    memset(&info, 0, sizeof(info));
+    info.size             = pStat->st_size;
+    info.lastAccessTime   = pStat->st_atime;
+    info.lastModifiedTime = pStat->st_mtime;
+    info.directory        = S_ISDIR(pStat->st_mode) != 0;
+    info.symlink          = S_ISLNK(pStat->st_mode) != 0;
+
+    return info;
+}
+
+static fs_result fs_info_posix(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
+{
+    struct stat info;
+    int result;
+
+    /*  */ if (pPath == FS_STDIN ) {
+        result = fstat(STDIN_FILENO,  &info);
+    } else if (pPath == FS_STDOUT) {
+        result = fstat(STDOUT_FILENO, &info);
+    } else if (pPath == FS_STDERR) {
+        result = fstat(STDERR_FILENO, &info);
+    } else {
+        result = stat(pPath, &info);
+    }
+
+    if (result != 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    *pInfo = fs_file_info_from_stat_posix(&info);
+
+    (void)pFS;
+    (void)openMode;
+    return FS_SUCCESS;
+}
+
+
+typedef struct fs_file_posix
+{
+    int fd;
+    fs_bool32 isStandardHandle;
+    int openMode;       /* The original open mode for duplication purposes. */
+    char* pFilePath;    /* A copy of the original file path for duplication purposes. */
+    char  pFilePathStack[128];
+    char* pFilePathHeap;
+} fs_file_posix;
+
+static size_t fs_file_alloc_size_posix(fs* pFS)
+{
+    (void)pFS;
+    return sizeof(fs_file_posix);
+}
+
+static fs_result fs_file_open_posix(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    int fd;
+    int flags = 0;
+    size_t filePathLen;
+
+    if ((openMode & FS_READ) != 0) {
+        if ((openMode & FS_WRITE) != 0) {
+            flags |= O_RDWR | O_CREAT;
+        } else {
+            flags |= O_RDONLY;
+        }
+    } else if ((openMode & FS_WRITE) != 0) {
+        flags |= O_WRONLY | O_CREAT;
+    }
+
+    if ((openMode & FS_WRITE) != 0) {
+        if ((openMode & FS_EXCLUSIVE) != 0) {
+            flags |= O_EXCL;
+        } else if ((openMode & FS_APPEND) != 0) {
+            flags |= O_APPEND;
+        } else if ((openMode & FS_TRUNCATE) != 0) {
+            flags |= O_TRUNC;
+        }
+    }
+
+
+    /* For ancient versions of Linux. */
+    #if defined(O_LARGEFILE)
+    flags |= O_LARGEFILE;
+    #endif
+
+    /*  */ if (pFilePath == FS_STDIN ) {
+        fd = STDIN_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
+    } else if (pFilePath == FS_STDOUT) {
+        fd = STDOUT_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
+    } else if (pFilePath == FS_STDERR) {
+        fd = STDERR_FILENO;
+        pFilePosix->isStandardHandle = FS_TRUE;
+    } else {
+        fd = open(pFilePath, flags, 0666);
+    }
+
+    if (fd < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    pFilePosix->fd = fd;
+
+    /*
+    In order to support duplication we need to keep track of the original file path and open modes. Using dup() is
+    not an option because that results in a shared read/write pointer, whereas we need them to be separate. We need
+    not do this for standard handles.
+    */
+    if (!pFilePosix->isStandardHandle) {  
+        pFilePosix->openMode = openMode;
+
+        filePathLen = strlen(pFilePath);
+
+        if (filePathLen < FS_COUNTOF(pFilePosix->pFilePathStack)) {
+            pFilePosix->pFilePath = pFilePosix->pFilePathStack;
+        } else {
+            pFilePosix->pFilePathHeap = (char*)fs_malloc(filePathLen + 1, fs_get_allocation_callbacks(pFS));
+            if (pFilePosix->pFilePathHeap == NULL) {
+                close(fd);
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pFilePosix->pFilePath = pFilePosix->pFilePathHeap;
+        }
+
+        fs_strcpy(pFilePosix->pFilePath, pFilePath);
+    }
+
+
+    (void)pFS;
+    (void)pStream;
+    return FS_SUCCESS;
+}
+
+static void fs_file_close_posix(fs_file* pFile)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+
+    /* No need to do anything if the file was opened from stdin, stdout, or stderr. */
+    if (pFilePosix->isStandardHandle) {
+        return;
+    }
+
+    close(pFilePosix->fd);
+    fs_free(pFilePosix->pFilePathHeap, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+}
+
+static fs_result fs_file_read_posix(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    ssize_t bytesRead;
+
+    bytesRead = read(pFilePosix->fd, pDst, bytesToRead);
+    if (bytesRead < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    *pBytesRead = (size_t)bytesRead;
+
+    if (*pBytesRead == 0) {
+        return FS_AT_END;
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_write_posix(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    ssize_t bytesWritten;
+
+    bytesWritten = write(pFilePosix->fd, pSrc, bytesToWrite);
+    if (bytesWritten < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    *pBytesWritten = (size_t)bytesWritten;
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_seek_posix(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    int whence;
+    off_t result;
+
+    if (origin == FS_SEEK_SET) {
+        whence = SEEK_SET;
+    } else if (origin == FS_SEEK_END) {
+        whence = SEEK_END;
+    } else {
+        whence = SEEK_CUR;
+    }
+
+    #if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64
+    {
+        result = lseek(pFilePosix->fd, (off_t)offset, whence);
+    }
+    #else
+    {
+        if (offset < -2147483648 || offset > 2147483647) {
+            return FS_BAD_SEEK;    /* Offset is too large. */
+        }
+
+        result = lseek(pFilePosix->fd, (off_t)(int)offset, whence);
+    }
+    #endif
+
+    if (result < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_tell_posix(fs_file* pFile, fs_int64* pCursor)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    fs_int64 cursor;
+
+    cursor = (fs_int64)lseek(pFilePosix->fd, 0, SEEK_CUR);
+    if (cursor < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    *pCursor = cursor;
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_flush_posix(fs_file* pFile)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    int result;
+
+    result = fsync(pFilePosix->fd);
+    if (result < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_truncate_posix(fs_file* pFile)
+{
+    #if defined (_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 199309L
+    {
+        fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+        off_t currentPos;
+        
+        /* Our truncation is based on the current write position. */
+        currentPos = lseek(pFilePosix->fd, 0, SEEK_CUR);
+        if (currentPos < 0) {
+            return fs_result_from_errno(errno);
+        }
+
+        if (ftruncate(pFilePosix->fd, currentPos) < 0) {
+            return fs_result_from_errno(errno);
+        }
+
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        (void)pFile;
+        return FS_NOT_IMPLEMENTED;
+    }
+    #endif
+}
+
+static fs_result fs_file_info_posix(fs_file* pFile, fs_file_info* pInfo)
+{
+    fs_file_posix* pFilePosix = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    struct stat info;
+
+    if (fstat(pFilePosix->fd, &info) < 0) {
+        return fs_result_from_errno(errno);
+    }
+
+    *pInfo = fs_file_info_from_stat_posix(&info);
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_duplicate_posix(fs_file* pFile, fs_file* pDuplicate)
+{
+    fs_file_posix* pFilePosix      = (fs_file_posix*)fs_file_get_backend_data(pFile);
+    fs_file_posix* pDuplicatePosix = (fs_file_posix*)fs_file_get_backend_data(pDuplicate);
+    fs_result result;
+    struct stat st1, st2;
+
+    /* Simple case for standard handles. */
+    if (pFilePosix->isStandardHandle) {
+        pDuplicatePosix->fd = pFilePosix->fd;
+        pDuplicatePosix->isStandardHandle = FS_TRUE;
+
+        return FS_SUCCESS;
+    }
+
+    /*
+    We cannot duplicate the handle with dup() because that will result in a shared read/write pointer. We
+    need to open the file again with the same path and flags. We're not going to allow duplication of files
+    that were opened in write mode.
+    */
+    if ((pFilePosix->openMode & FS_WRITE) != 0) {
+        return FS_INVALID_OPERATION;
+    }
+
+    result = fs_file_open_posix(fs_file_get_fs(pFile), NULL, pFilePosix->pFilePath, pFilePosix->openMode, pDuplicate);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Do a quick check that it's still pointing to the same file. */
+    if (fstat(pFilePosix->fd, &st1) < 0) {
+        fs_file_close_posix(pDuplicate);
+        return fs_result_from_errno(errno);
+    }
+
+    if (fstat(pDuplicatePosix->fd, &st2) < 0) {
+        fs_file_close_posix(pDuplicate);
+        return fs_result_from_errno(errno);
+    }
+
+    if (st1.st_ino != st2.st_ino || st1.st_dev != st2.st_dev) {
+        fs_file_close_posix(pDuplicate);
+        return FS_INVALID_OPERATION;    /* It looks like the files have changed. */
+    }
+
+    return FS_SUCCESS;
+}
+
+
+#define FS_POSIX_MIN_ITERATOR_ALLOCATION_SIZE 1024
+
+typedef struct fs_iterator_posix
+{
+    fs_iterator iterator;
+    DIR* pDir;
+    char* pFullFilePath;        /* Points to the end of the structure. */
+    size_t directoryPathLen;    /* The length of the directory section. */
+} fs_iterator_posix;
+
+static void fs_free_iterator_posix(fs_iterator* pIterator);
+
+static fs_iterator* fs_first_posix(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
+{
+    fs_iterator_posix* pIteratorPosix;
+    struct dirent* info;
+    struct stat statInfo;
+    size_t fileNameLen;
+
+    /*
+    Our input string isn't necessarily null terminated so we'll need to make a copy. This isn't
+    the end of the world because we need to keep a copy of it anyway for when we need to stat
+    the file for information like it's size.
+
+    To do this we're going to allocate memory for our iterator which will include space for the
+    directory path. Then we copy the directory path into the allocated memory and point the
+    pFullFilePath member of the iterator to it. Then we call opendir(). Once that's done we
+    can go to the first file and reallocate the iterator to make room for the file name portion,
+    including the separating slash. Then we copy the file name portion over to the buffer.
+    */
+
+    if (directoryPathLen == 0 || pDirectoryPath[0] == '\0') {
+        directoryPathLen = 1;
+        pDirectoryPath = ".";
+    }
+
+    /* The first step is to calculate the length of the path if we need to. */
+    if (directoryPathLen == (size_t)-1) {
+        directoryPathLen = strlen(pDirectoryPath);
+    }
+
+
+    /*
+    Now that we know the length of the directory we can allocate space for the iterator. The
+    directory path will be placed at the end of the structure.
+    */
+    pIteratorPosix = (fs_iterator_posix*)fs_malloc(FS_MAX(sizeof(*pIteratorPosix) + directoryPathLen + 1, FS_POSIX_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pFS));    /* +1 for null terminator. */
+    if (pIteratorPosix == NULL) {
+        return NULL;
+    }
+
+    /* Point pFullFilePath to the end of structure to where the path is located. */
+    pIteratorPosix->pFullFilePath = (char*)pIteratorPosix + sizeof(*pIteratorPosix);
+    pIteratorPosix->directoryPathLen = directoryPathLen;
+
+    /* We can now copy over the directory path. This will null terminate the path which will allow us to call opendir(). */
+    fs_strncpy_s(pIteratorPosix->pFullFilePath, directoryPathLen + 1, pDirectoryPath, directoryPathLen);
+
+    /* We can now open the directory. */
+    pIteratorPosix->pDir = opendir(pIteratorPosix->pFullFilePath);
+    if (pIteratorPosix->pDir == NULL) {
+        fs_free(pIteratorPosix, fs_get_allocation_callbacks(pFS));
+        return NULL;
+    }
+
+    /* We now need to get information about the first file. */
+    info = readdir(pIteratorPosix->pDir);
+    if (info == NULL) {
+        closedir(pIteratorPosix->pDir);
+        fs_free(pIteratorPosix, fs_get_allocation_callbacks(pFS));
+        return NULL;
+    }
+
+    fileNameLen = strlen(info->d_name);
+
+    /*
+    Now that we have the file name we need to append it to the full file path in the iterator. To do
+    this we need to reallocate the iterator to account for the length of the file name, including the
+    separating slash.
+    */
+    {
+        fs_iterator_posix* pNewIteratorPosix= (fs_iterator_posix*)fs_realloc(pIteratorPosix, FS_MAX(sizeof(*pIteratorPosix) + directoryPathLen + 1 + fileNameLen + 1, FS_POSIX_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pFS));    /* +1 for null terminator. */
+        if (pNewIteratorPosix == NULL) {
+            closedir(pIteratorPosix->pDir);
+            fs_free(pIteratorPosix, fs_get_allocation_callbacks(pFS));
+            return NULL;
+        }
+
+        pIteratorPosix = pNewIteratorPosix;
+    }
+
+    /* Memory has been allocated. Copy over the separating slash and file name. */
+    pIteratorPosix->pFullFilePath = (char*)pIteratorPosix + sizeof(*pIteratorPosix);
+    pIteratorPosix->pFullFilePath[directoryPathLen] = '/';
+    fs_strcpy(pIteratorPosix->pFullFilePath + directoryPathLen + 1, info->d_name);
+
+    /* The pFileName member of the base iterator needs to be set to the file name. */
+    pIteratorPosix->iterator.pName   = pIteratorPosix->pFullFilePath + directoryPathLen + 1;
+    pIteratorPosix->iterator.nameLen = fileNameLen;
+
+    /* We can now get the file information. */
+    if (stat(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
+        closedir(pIteratorPosix->pDir);
+        fs_free(pIteratorPosix, fs_get_allocation_callbacks(pFS));
+        return NULL;
+    }
+
+    pIteratorPosix->iterator.info = fs_file_info_from_stat_posix(&statInfo);
+
+    return (fs_iterator*)pIteratorPosix;
+}
+
+static fs_iterator* fs_next_posix(fs_iterator* pIterator)
+{
+    fs_iterator_posix* pIteratorPosix = (fs_iterator_posix*)pIterator;
+    struct dirent* info;
+    struct stat statInfo;
+    size_t fileNameLen;
+
+    /* We need to get information about the next file. */
+    info = readdir(pIteratorPosix->pDir);
+    if (info == NULL) {
+        fs_free_iterator_posix((fs_iterator*)pIteratorPosix);
+        return NULL;    /* The end of the directory. */
+    }
+
+    fileNameLen = strlen(info->d_name);
+
+    /* We need to reallocate the iterator to account for the new file name. */
+    {
+        fs_iterator_posix* pNewIteratorPosix = (fs_iterator_posix*)fs_realloc(pIteratorPosix, FS_MAX(sizeof(*pIteratorPosix) + pIteratorPosix->directoryPathLen + 1 + fileNameLen + 1, FS_POSIX_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pIterator->pFS));    /* +1 for null terminator. */
+        if (pNewIteratorPosix == NULL) {
+            fs_free_iterator_posix((fs_iterator*)pIteratorPosix);
+            return NULL;
+        }
+
+        pIteratorPosix = pNewIteratorPosix;
+    }
+
+    /* Memory has been allocated. Copy over the file name. */
+    pIteratorPosix->pFullFilePath = (char*)pIteratorPosix + sizeof(*pIteratorPosix);
+    fs_strcpy(pIteratorPosix->pFullFilePath + pIteratorPosix->directoryPathLen + 1, info->d_name);
+
+    /* The pFileName member of the base iterator needs to be set to the file name. */
+    pIteratorPosix->iterator.pName   = pIteratorPosix->pFullFilePath + pIteratorPosix->directoryPathLen + 1;
+    pIteratorPosix->iterator.nameLen = fileNameLen;
+
+    /* We can now get the file information. */
+    if (stat(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
+        fs_free_iterator_posix((fs_iterator*)pIteratorPosix);
+        return NULL;
+    }
+
+    pIteratorPosix->iterator.info = fs_file_info_from_stat_posix(&statInfo);
+
+    return (fs_iterator*)pIteratorPosix;
+}
+
+static void fs_free_iterator_posix(fs_iterator* pIterator)
+{
+    fs_iterator_posix* pIteratorPosix = (fs_iterator_posix*)pIterator;
+
+    closedir(pIteratorPosix->pDir);
+    fs_free(pIteratorPosix, fs_get_allocation_callbacks(pIterator->pFS));
+}
+
+static fs_backend fs_posix_backend =
+{
+    fs_alloc_size_posix,
+    fs_init_posix,
+    fs_uninit_posix,
+    fs_ioctl_posix,
+    fs_remove_posix,
+    fs_rename_posix,
+    fs_mkdir_posix,
+    fs_info_posix,
+    fs_file_alloc_size_posix,
+    fs_file_open_posix,
+    fs_file_close_posix,
+    fs_file_read_posix,
+    fs_file_write_posix,
+    fs_file_seek_posix,
+    fs_file_tell_posix,
+    fs_file_flush_posix,
+    fs_file_truncate_posix,
+    fs_file_info_posix,
+    fs_file_duplicate_posix,
+    fs_first_posix,
+    fs_next_posix,
+    fs_free_iterator_posix
+};
+
+const fs_backend* FS_BACKEND_POSIX = &fs_posix_backend;
+#else
+const fs_backend* FS_BACKEND_POSIX = NULL;
+#endif
+/* END fs_backend_posix.c */
+
+
+/* BEG fs_backend_win32.c */
+#if defined(_WIN32)
+    #define FS_SUPPORTS_WIN32
+#endif
+
+#if !defined(FS_NO_WIN32) && defined(FS_SUPPORTS_WIN32)
+    #define FS_HAS_WIN32
+#endif
+
+#if defined(_WIN32)
+#include <windows.h>
+
+#if defined(UNICODE) || defined(_UNICODE)
+#define fs_win32_char wchar_t
+#else
+#define fs_win32_char char
+#endif
+
+typedef struct
+{
+    size_t len;
+    fs_win32_char* path;
+    fs_win32_char  pathStack[256];
+    fs_win32_char* pathHeap;
+} fs_win32_path;
+
+static void fs_win32_path_init_internal(fs_win32_path* pPath)
+{
+    pPath->len = 0;
+    pPath->path = pPath->pathStack;
+    pPath->pathStack[0] = '\0';
+    pPath->pathHeap = NULL;
+}
+
+static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8, size_t pathUTF8Len, const fs_allocation_callbacks* pAllocationCallbacks)
+{
+    size_t i;
+
+    fs_win32_path_init_internal(pPath);
+
+    #if defined(UNICODE) || defined(_UNICODE)
+    {
+        int wideCharLen;
+        int cbMultiByte;
+
+        if (pathUTF8Len == (size_t)-1) {
+            cbMultiByte = (int)-1;
+        } else {
+            cbMultiByte = (int)pathUTF8Len + 1;
+        }
+
+        wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, NULL, 0);
+        if (wideCharLen == 0) {
+            return FS_ERROR;
+        }
+
+        /* Use the stack if possible. If not, allocate on the heap. */
+        if (wideCharLen <= (int)FS_COUNTOF(pPath->pathStack)) {
+            pPath->path = pPath->pathStack;
+        } else {
+            pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * wideCharLen, pAllocationCallbacks);
+            if (pPath->pathHeap == NULL) {
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pPath->path = pPath->pathHeap;
+        }
+
+        MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, pPath->path, wideCharLen);
+        pPath->len = wideCharLen - 1;  /* The count returned by MultiByteToWideChar() includes the null terminator, so subtract 1 to compensate. */
+
+        /* Convert forward slashes to back slashes for compatibility. */
+        for (i = 0; i < pPath->len; i += 1) {
+            if (pPath->path[i] == '/') {
+                pPath->path[i] = '\\';
+            }
+        }
+
+        return FS_SUCCESS;
+    }
+    #else
+    {
+        /*
+        Not doing any conversion here. Just assuming the path is an ANSI path. We need to copy over the string
+        and convert slashes to backslashes.
+        */
+        if (pathUTF8Len == (size_t)-1) {
+            pPath->len = strlen(pPathUTF8);
+        } else {
+            pPath->len = pathUTF8Len;
+        }
+
+        if (pPath->len >= sizeof(pPath->pathStack)) {
+            pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * (pPath->len + 1), pAllocationCallbacks);
+            if (pPath->pathHeap == NULL) {
+                return FS_OUT_OF_MEMORY;
+            }
+
+            pPath->path = pPath->pathHeap;
+        }
+
+        fs_strcpy(pPath->path, pPathUTF8);
+        for (i = 0; i < pPath->len; i += 1) {
+            if (pPath->path[i] == '/') {
+                pPath->path[i] = '\\';
+            }
+        }
+
+        return FS_SUCCESS;
+    }
+    #endif
+}
+
+
+
+static fs_result fs_win32_path_append(fs_win32_path* pPath, const char* pAppendUTF8, const fs_allocation_callbacks* pAllocationCallbacks)
+{
+    fs_result result;
+    fs_win32_path append;
+    size_t newLen;
+
+    result = fs_win32_path_init(&append, pAppendUTF8, (size_t)-1, pAllocationCallbacks);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    newLen = pPath->len + append.len;
+
+    if (pPath->path == pPath->pathHeap) {
+        /* It's on the heap. Just realloc. */
+        fs_win32_char* pNewHeap = (fs_win32_char*)fs_realloc(pPath->pathHeap, sizeof(fs_win32_char) * (newLen + 1), pAllocationCallbacks);
+        if (pNewHeap == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        pPath->pathHeap = pNewHeap;
+        pPath->path     = pNewHeap;
+    } else {
+        /* Getting here means it's on the stack. We may need to transfer to the heap. */
+        if (newLen >= FS_COUNTOF(pPath->pathStack)) {
+            /* There's not enough room on the stack. We need to move the string from the stack to the heap. */
+            pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * (newLen + 1), pAllocationCallbacks);
+            if (pPath->pathHeap == NULL) {
+                return FS_OUT_OF_MEMORY;
+            }
+
+            memcpy(pPath->pathHeap, pPath->pathStack, sizeof(fs_win32_char) * (pPath->len + 1));
+            pPath->path = pPath->pathHeap;
+        } else {
+            /* There's enough room on the stack. No modifications needed. */
+        }
+    }
+
+    /* Now we can append. */
+    memcpy(pPath->path + pPath->len, append.path, sizeof(fs_win32_char) * (append.len + 1));  /* Null terminator copied in-place. */
+    pPath->len = newLen;
+
+    return FS_SUCCESS;
+}
+
+
+
+static void fs_win32_path_uninit(fs_win32_path* pPath, const fs_allocation_callbacks* pAllocationCallbacks)
+{
+    if (pPath->pathHeap) {
+        fs_free(pPath->pathHeap, pAllocationCallbacks);
+        pPath->pathHeap = NULL;
+    }
+}
+
+
+FS_API fs_uint64 fs_FILETIME_to_unix(const FILETIME* pFT)
+{
+    ULARGE_INTEGER li;
+
+    li.HighPart = pFT->dwHighDateTime;
+    li.LowPart  = pFT->dwLowDateTime;
+
+    return (fs_uint64)(li.QuadPart / 10000000UL - ((fs_uint64)116444736UL * 100UL));   /* Convert from Windows epoch to Unix epoch. */
+}
+
+static fs_file_info fs_file_info_from_WIN32_FIND_DATA(const WIN32_FIND_DATA* pFD)
+{
+    fs_file_info info;
+
+    FS_ZERO_OBJECT(&info);
+    info.size             = ((fs_uint64)pFD->nFileSizeHigh << 32) | (fs_uint64)pFD->nFileSizeLow;
+    info.lastModifiedTime = fs_FILETIME_to_unix(&pFD->ftLastWriteTime);
+    info.lastAccessTime   = fs_FILETIME_to_unix(&pFD->ftLastAccessTime);
+    info.directory        = (pFD->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    info.symlink          = ((pFD->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) && (pFD->dwReserved0 == 0xA000000C); /* <-- The use of dwReserved0 is documented for WIN32_FIND_DATA. */
+
+    return info;
+}
+
+static fs_file_info fs_file_info_from_HANDLE_FILE_INFORMATION(const BY_HANDLE_FILE_INFORMATION* pFileInfo)
+{
+    fs_file_info info;
+
+    FS_ZERO_OBJECT(&info);
+    info.size             = ((fs_uint64)pFileInfo->nFileSizeHigh << 32) | (fs_uint64)pFileInfo->nFileSizeLow;
+    info.lastModifiedTime = fs_FILETIME_to_unix(&pFileInfo->ftLastWriteTime);
+    info.lastAccessTime   = fs_FILETIME_to_unix(&pFileInfo->ftLastAccessTime);
+    info.directory        = (pFileInfo->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+
+    return info;
+}
+
+
+static size_t fs_alloc_size_win32(const void* pBackendConfig)
+{
+    (void)pBackendConfig;
+    return 0;
+}
+
+static fs_result fs_init_win32(fs* pFS, const void* pBackendConfig, fs_stream* pStream)
+{
+    (void)pFS;
+    (void)pBackendConfig;
+    (void)pStream;
+
+    return FS_SUCCESS;
+}
+
+static void fs_uninit_win32(fs* pFS)
+{
+    (void)pFS;
+}
+
+static fs_result fs_ioctl_win32(fs* pFS, int op, void* pArg)
+{
+    (void)pFS;
+    (void)op;
+    (void)pArg;
+
+    return FS_NOT_IMPLEMENTED;
+}
+
+static fs_result fs_remove_win32(fs* pFS, const char* pFilePath)
+{
+    BOOL resultWin32;
+    fs_result result;
+    fs_win32_path path;
+
+    result = fs_win32_path_init(&path, pFilePath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    resultWin32 = DeleteFile(path.path);
+    if (resultWin32 == FS_FALSE) {
+        /* It may have been a directory. */
+        DWORD error = GetLastError();
+        if (error == ERROR_ACCESS_DENIED || error == ERROR_FILE_NOT_FOUND) {
+            DWORD attributes = GetFileAttributes(path.path);
+            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                resultWin32 = RemoveDirectory(path.path);
+                if (resultWin32 == FS_FALSE) {
+                    result = fs_result_from_GetLastError();
+                    goto done;
+                } else {
+                    return FS_SUCCESS;
+                }
+            } else {
+                result = fs_result_from_GetLastError();
+                goto done;
+            }
+        } else {
+            result = fs_result_from_GetLastError();
+            goto done;
+        }
+
+        result = fs_result_from_GetLastError();
+        goto done;
+    } else {
+        result = FS_SUCCESS;
+    }
+
+done:
+    fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
+
+    (void)pFS;
+    return result;
+}
+
+static fs_result fs_rename_win32(fs* pFS, const char* pOldPath, const char* pNewPath)
+{
+    BOOL resultWin32;
+    fs_result result;
+    fs_win32_path pathOld;
+    fs_win32_path pathNew;
+
+    result = fs_win32_path_init(&pathOld, pOldPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    result = fs_win32_path_init(&pathNew, pNewPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        fs_win32_path_uninit(&pathOld, fs_get_allocation_callbacks(pFS));
+        return result;
+    }
+
+    resultWin32 = MoveFile(pathOld.path, pathNew.path);
+    if (resultWin32 == FS_FALSE) {
+        result = fs_result_from_GetLastError();
+    }
+
+    fs_win32_path_uninit(&pathOld, fs_get_allocation_callbacks(pFS));
+    fs_win32_path_uninit(&pathNew, fs_get_allocation_callbacks(pFS));
+
+    (void)pFS;
+    return result;
+}
+
+static fs_result fs_mkdir_win32(fs* pFS, const char* pPath)
+{
+    BOOL resultWin32;
+    fs_result result;
+    fs_win32_path path;
+
+    /* If it's a drive letter segment just pretend it's successful. */
+    if ((pPath[0] >= 'a' && pPath[0] <= 'z') || (pPath[0] >= 'A' && pPath[0] <= 'Z')) {
+        if (pPath[1] == ':' && pPath[2] == '\0') {
+            return FS_SUCCESS;
+        }
+    }
+
+    result = fs_win32_path_init(&path, pPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    resultWin32 = CreateDirectory(path.path, NULL);
+    if (resultWin32 == FS_FALSE) {
+        result = fs_result_from_GetLastError();
+        goto done;
+    }
+
+done:
+    fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
+
+    (void)pFS;
+    return result;
+}
+
+static fs_result fs_info_from_stdio_win32(HANDLE hFile, fs_file_info* pInfo)
+{
+    BY_HANDLE_FILE_INFORMATION fileInfo;
+
+    if (GetFileInformationByHandle(hFile, &fileInfo) == FS_FALSE) {
+        return fs_result_from_GetLastError();
+    }
+
+    *pInfo = fs_file_info_from_HANDLE_FILE_INFORMATION(&fileInfo);
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_info_win32(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
+{
+    HANDLE hFind;
+    WIN32_FIND_DATA fd;
+    fs_result result;
+    fs_win32_path path;
+
+    /* Special case for standard IO files. */
+    /*  */ if (pPath == FS_STDIN ) {
+        return fs_info_from_stdio_win32(GetStdHandle(STD_INPUT_HANDLE ), pInfo);
+    } else if (pPath == FS_STDOUT) {
+        return fs_info_from_stdio_win32(GetStdHandle(STD_OUTPUT_HANDLE), pInfo);
+    } else if (pPath == FS_STDERR) {
+        return fs_info_from_stdio_win32(GetStdHandle(STD_ERROR_HANDLE ), pInfo);
+    }
+
+    result = fs_win32_path_init(&path, pPath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    hFind = FindFirstFile(path.path, &fd);
+
+    fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
+
+    if (hFind == INVALID_HANDLE_VALUE) {
+        result = fs_result_from_GetLastError();
+        goto done;
+    } else {
+        result = FS_SUCCESS;
+    }
+
+    FindClose(hFind);
+    hFind = NULL;
+
+    *pInfo = fs_file_info_from_WIN32_FIND_DATA(&fd);
+
+done:
+    (void)openMode;
+    (void)pFS;
+    return result;
+}
+
+
+typedef struct fs_file_win32
+{
+    HANDLE hFile;
+    fs_bool32 isStandardHandle;
+    int openMode;       /* The original open mode for duplication purposes. */
+    char* pFilePath;
+    char  pFilePathStack[256];
+    char* pFilePathHeap;
+} fs_file_win32;
+
+static size_t fs_file_alloc_size_win32(fs* pFS)
+{
+    (void)pFS;
+    return sizeof(fs_file_win32);
+}
+
+static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    fs_result result;
+    fs_win32_path path;
+    HANDLE hFile;
+    DWORD dwDesiredAccess = 0;
+    DWORD dwShareMode = 0;
+    DWORD dwCreationDisposition = OPEN_EXISTING;
+
+    /*  */ if (pFilePath == FS_STDIN ) {
+        hFile = GetStdHandle(STD_INPUT_HANDLE);
+        pFileWin32->isStandardHandle = FS_TRUE;
+    } else if (pFilePath == FS_STDOUT) {
+        hFile = GetStdHandle(STD_OUTPUT_HANDLE);
+        pFileWin32->isStandardHandle = FS_TRUE;
+    } else if (pFilePath == FS_STDERR) {
+        hFile = GetStdHandle(STD_ERROR_HANDLE);
+        pFileWin32->isStandardHandle = FS_TRUE;
+    } else {
+        pFileWin32->isStandardHandle = FS_FALSE;
+    }
+
+    if (pFileWin32->isStandardHandle) {
+        pFileWin32->hFile = hFile;
+        return FS_SUCCESS;
+    }
+
+
+    if ((openMode & FS_READ) != 0) {
+        dwDesiredAccess      |= GENERIC_READ;
+        dwShareMode          |= FILE_SHARE_READ;
+        dwCreationDisposition = OPEN_EXISTING;  /* In read mode, our default is to open an existing file, and fail if it doesn't exist. This can be overwritten in the write case below. */
+    }
+
+    if ((openMode & FS_WRITE) != 0) {
+        dwShareMode |= FILE_SHARE_WRITE;
+
+        if ((openMode & FS_EXCLUSIVE) != 0) {
+            dwDesiredAccess      |= GENERIC_WRITE;
+            dwCreationDisposition = CREATE_NEW;
+        } else if ((openMode & FS_APPEND) != 0) {
+            dwDesiredAccess      |= FILE_APPEND_DATA;
+            dwCreationDisposition = OPEN_ALWAYS;
+        } else if ((openMode & FS_TRUNCATE) != 0) {
+            dwDesiredAccess      |= GENERIC_WRITE;
+            dwCreationDisposition = CREATE_ALWAYS;
+        } else {
+            dwDesiredAccess      |= GENERIC_WRITE;
+            dwCreationDisposition = OPEN_ALWAYS;
+        }
+    }
+
+    /* As an added safety check, make sure one or both of read and write was specified. */
+    if (dwDesiredAccess == 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    result = fs_win32_path_init(&path, pFilePath, (size_t)-1, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    hFile = CreateFile(path.path, dwDesiredAccess, dwShareMode, NULL, dwCreationDisposition, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        result = fs_result_from_GetLastError();
+    } else {
+        result = FS_SUCCESS;
+        pFileWin32->hFile = hFile;
+    }
+
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* We need to keep track of the open mode for duplication purposes. */
+    pFileWin32->openMode = openMode;
+
+    /* We need to make a copy of the path for duplication purposes. */
+    if (path.len < FS_COUNTOF(pFileWin32->pFilePathStack)) {
+        pFileWin32->pFilePath = pFileWin32->pFilePathStack;
+    } else {
+        pFileWin32->pFilePathHeap = (char*)fs_malloc(path.len + 1, fs_get_allocation_callbacks(pFS));
+        if (pFileWin32->pFilePathHeap == NULL) {
+            result = FS_OUT_OF_MEMORY;
+            if (pFileWin32->isStandardHandle == FS_FALSE) {
+                CloseHandle(pFileWin32->hFile);
+            }
+
+            fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+
+        pFileWin32->pFilePath = pFileWin32->pFilePathHeap;
+    }
+
+    fs_strcpy(pFileWin32->pFilePath, pFilePath);
+
+
+    /* All done. */
+    fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
+
+    (void)pFS;
+    (void)pStream;
+    return FS_SUCCESS;
+}
+
+static void fs_file_close_win32(fs_file* pFile)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+
+    if (pFileWin32->isStandardHandle == FS_FALSE) {
+        CloseHandle(pFileWin32->hFile);
+        fs_free(pFileWin32->pFilePathHeap, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+    }
+}
+
+static fs_result fs_file_read_win32(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    BOOL resultWin32;
+    size_t bytesRemaining = bytesToRead;
+    char* pRunningDst = (char*)pDst;
+
+    /*
+    ReadFile() expects a DWORD for the number of bytes to read which means we'll need to run it in a loop in case
+    our bytesToRead argument is larger than 4GB.
+    */
+    while (bytesRemaining > 0) {
+        DWORD bytesToReadNow = (DWORD)FS_MIN(bytesRemaining, (size_t)0xFFFFFFFF);
+        DWORD bytesReadNow;
+
+        resultWin32 = ReadFile(pFileWin32->hFile, pRunningDst, bytesToReadNow, &bytesReadNow, NULL);
+        if (resultWin32 == FS_FALSE) {
+            return fs_result_from_GetLastError();
+        }
+
+        if (bytesReadNow == 0) {
+            break;
+        }
+
+        bytesRemaining -= bytesReadNow;
+        pRunningDst    += bytesReadNow;
+    }
+
+    *pBytesRead = bytesToRead - bytesRemaining;
+    
+    if (*pBytesRead == 0) {
+        return FS_AT_END;
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_write_win32(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    BOOL resultWin32;
+    size_t bytesRemaining = bytesToWrite;
+    const char* pRunningSrc = (const char*)pSrc;
+
+    /*
+    WriteFile() expects a DWORD for the number of bytes to write which means we'll need to run it in a loop in case
+    our bytesToWrite argument is larger than 4GB.
+    */
+    while (bytesRemaining > 0) {
+        DWORD bytesToWriteNow = (DWORD)FS_MIN(bytesRemaining, (size_t)0xFFFFFFFF);
+        DWORD bytesWrittenNow;
+
+        resultWin32 = WriteFile(pFileWin32->hFile, pRunningSrc, bytesToWriteNow, &bytesWrittenNow, NULL);
+        if (resultWin32 == FS_FALSE) {
+            return fs_result_from_GetLastError();
+        }
+
+        if (bytesWrittenNow == 0) {
+            break;
+        }
+
+        bytesRemaining -= bytesWrittenNow;
+        pRunningSrc    += bytesWrittenNow;
+    }
+
+    *pBytesWritten = bytesToWrite - bytesRemaining;
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_seek_win32(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    LARGE_INTEGER liDistanceToMove;
+    DWORD dwMoveMethod;
+
+    switch (origin) {
+    case FS_SEEK_SET:
+        dwMoveMethod = FILE_BEGIN;
+        liDistanceToMove.QuadPart = offset;
+        break;
+    case FS_SEEK_CUR:
+        dwMoveMethod = FILE_CURRENT;
+        liDistanceToMove.QuadPart = offset;
+        break;
+    case FS_SEEK_END:
+        dwMoveMethod = FILE_END;
+        liDistanceToMove.QuadPart = offset;
+        break;
+    default:
+        return FS_INVALID_ARGS;
+    }
+
+    /*
+    Use SetFilePointer() instead of SetFilePointerEx() for compatibility with old Windows.
+
+    Note from MSDN:
+
+        If you do not need the high order 32-bits, this pointer must be set to NULL.
+    */
+    if (SetFilePointer(pFileWin32->hFile, liDistanceToMove.LowPart, (liDistanceToMove.HighPart == 0 ? NULL : &liDistanceToMove.HighPart), dwMoveMethod) == INVALID_SET_FILE_POINTER) {
+        return fs_result_from_GetLastError();
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_tell_win32(fs_file* pFile, fs_int64* pCursor)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    LARGE_INTEGER liCursor;
+
+    liCursor.HighPart = 0;
+    liCursor.LowPart  = SetFilePointer(pFileWin32->hFile, 0, &liCursor.HighPart, FILE_CURRENT);
+
+    if (liCursor.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+        return fs_result_from_GetLastError();
+    }
+
+    *pCursor = liCursor.QuadPart;
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_flush_win32(fs_file* pFile)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+
+    if (FlushFileBuffers(pFileWin32->hFile) == FS_FALSE) {
+        return fs_result_from_GetLastError();
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_truncate_win32(fs_file* pFile)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+
+    if (SetEndOfFile(pFileWin32->hFile) == FS_FALSE) {
+        return fs_result_from_GetLastError();
+    }
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_info_win32(fs_file* pFile, fs_file_info* pInfo)
+{
+    fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    BY_HANDLE_FILE_INFORMATION fileInfo;
+
+    if (GetFileInformationByHandle(pFileWin32->hFile, &fileInfo) == FS_FALSE) {
+        return fs_result_from_GetLastError();
+    }
+
+    *pInfo = fs_file_info_from_HANDLE_FILE_INFORMATION(&fileInfo);
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_file_duplicate_win32(fs_file* pFile, fs_file* pDuplicate)
+{
+    fs_file_win32* pFileWin32      = (fs_file_win32*)fs_file_get_backend_data(pFile);
+    fs_file_win32* pDuplicateWin32 = (fs_file_win32*)fs_file_get_backend_data(pDuplicate);
+    fs_result result;
+    BY_HANDLE_FILE_INFORMATION info1, info2;
+
+    if (pFileWin32->isStandardHandle) {
+        pDuplicateWin32->hFile = pFileWin32->hFile;
+        pDuplicateWin32->isStandardHandle = FS_TRUE;
+        
+        return FS_SUCCESS;
+    }
+
+    /*
+    We cannot duplicate the handle because that will result in a shared read/write pointer. We need to
+    open the file again with the same path and flags. We're not going to allow duplication of files
+    that were opened in write mode.
+    */
+    if ((pFileWin32->openMode & FS_WRITE) != 0) {
+        return FS_INVALID_OPERATION;
+    }
+
+    result = fs_file_open_win32(fs_file_get_fs(pFile), NULL, pFileWin32->pFilePath, pFileWin32->openMode, pDuplicate);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Now check the file information in case it got replaced with a different file from under us. */
+    if (GetFileInformationByHandle(pFileWin32->hFile, &info1) == FS_FALSE) {
+        fs_file_close_win32(pDuplicate);
+        return fs_result_from_GetLastError();
+    }
+    if (GetFileInformationByHandle(pDuplicateWin32->hFile, &info2) == FS_FALSE) {
+        fs_file_close_win32(pDuplicate);
+        return fs_result_from_GetLastError();
+    }
+
+    if ((info1.dwVolumeSerialNumber != info2.dwVolumeSerialNumber) || (info1.nFileIndexLow != info2.nFileIndexLow) || (info1.nFileIndexHigh != info2.nFileIndexHigh)) {
+        fs_file_close_win32(pDuplicate);
+        return FS_INVALID_OPERATION;
+    }
+
+    return FS_SUCCESS;
+}
+
+
+#define FS_WIN32_MIN_ITERATOR_ALLOCATION_SIZE 1024
+
+typedef struct fs_iterator_win32
+{
+    fs_iterator iterator;
+    HANDLE hFind;
+    WIN32_FIND_DATAA findData;
+    char* pFullFilePath;        /* Points to the end of the structure. */
+    size_t directoryPathLen;    /* The length of the directory section. */
+} fs_iterator_win32;
+
+static void fs_free_iterator_win32(fs_iterator* pIterator);
+
+static fs_iterator* fs_iterator_win32_resolve(fs_iterator_win32* pIteratorWin32, fs* pFS, HANDLE hFind, const WIN32_FIND_DATA* pFD)
+{
+    fs_iterator_win32* pNewIteratorWin32;
+    size_t allocSize;
+    int nameLenIncludingNullTerminator;
+
+    /*
+    The name is stored at the end of the struct. In order to know how much memory to allocate we'll
+    need to calculate the length of the name.
+    */
+    #if defined(UNICODE) || defined(_UNICODE)
+    {
+        nameLenIncludingNullTerminator = WideCharToMultiByte(CP_UTF8, 0, pFD->cFileName, -1, NULL, 0, NULL, NULL);
+        if (nameLenIncludingNullTerminator == 0) {
+            fs_free_iterator_win32((fs_iterator*)pIteratorWin32);
+            return NULL;
+        }
+    }
+    #else
+    {
+        nameLenIncludingNullTerminator = (int)strlen(pFD->cFileName) + 1;  /* +1 for the null terminator. */
+    }
+    #endif
+
+    allocSize = FS_MAX(sizeof(fs_iterator_win32) + nameLenIncludingNullTerminator, FS_WIN32_MIN_ITERATOR_ALLOCATION_SIZE);    /* 1KB just to try to avoid excessive internal reallocations inside realloc(). */
+
+    pNewIteratorWin32 = (fs_iterator_win32*)fs_realloc(pIteratorWin32, allocSize, fs_get_allocation_callbacks(pFS));
+    if (pNewIteratorWin32 == NULL) {
+        fs_free_iterator_win32((fs_iterator*)pIteratorWin32);
+        return NULL;
+    }
+
+    pNewIteratorWin32->iterator.pFS = pFS;
+    pNewIteratorWin32->hFind        = hFind;
+
+    /* Name. */
+    pNewIteratorWin32->iterator.pName   = (char*)pNewIteratorWin32 + sizeof(fs_iterator_win32);
+    pNewIteratorWin32->iterator.nameLen = (size_t)nameLenIncludingNullTerminator - 1;
+
+    #if defined(UNICODE) || defined(_UNICODE)
+    {
+        WideCharToMultiByte(CP_UTF8, 0, pFD->cFileName, -1, (char*)pNewIteratorWin32->iterator.pName, nameLenIncludingNullTerminator, NULL, NULL);  /* const-cast is safe here. */
+    }
+    #else
+    {
+        fs_strcpy((char*)pNewIteratorWin32->iterator.pName, pFD->cFileName);  /* const-cast is safe here. */
+    }
+    #endif
+
+    /* Info. */
+    pNewIteratorWin32->iterator.info = fs_file_info_from_WIN32_FIND_DATA(pFD);
+
+    return (fs_iterator*)pNewIteratorWin32;
+}
+
+static fs_iterator* fs_first_win32(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
+{
+    HANDLE hFind;
+    WIN32_FIND_DATA fd;
+    fs_result result;
+    fs_win32_path query;
+
+    /* An empty path means the current directory. Win32 will want us to specify "." in this case. */
+    if (pDirectoryPath == NULL || pDirectoryPath[0] == '\0') {
+        pDirectoryPath = ".";
+        directoryPathLen = 1;
+    }
+
+    result = fs_win32_path_init(&query, pDirectoryPath, directoryPathLen, fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        return NULL;
+    }
+
+    /*
+    At this point we have converted the first part of the query. Now we need to append "\*" to it. To do this
+    properly, we'll first need to remove any trailing slash, if any.
+    */
+    if (query.len > 0 && query.path[query.len - 1] == '\\') {
+        query.len -= 1;
+        query.path[query.len] = '\0';
+    }
+
+    result = fs_win32_path_append(&query, "\\*", fs_get_allocation_callbacks(pFS));
+    if (result != FS_SUCCESS) {
+        fs_win32_path_uninit(&query, fs_get_allocation_callbacks(pFS));
+        return NULL;
+    }
+
+    hFind = FindFirstFile(query.path, &fd);
+    fs_win32_path_uninit(&query, fs_get_allocation_callbacks(pFS));
+
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return NULL;
+    }
+
+    return fs_iterator_win32_resolve(NULL, pFS, hFind, &fd);
+}
+
+static fs_iterator* fs_next_win32(fs_iterator* pIterator)
+{
+    fs_iterator_win32* pIteratorWin32 = (fs_iterator_win32*)pIterator;
+    WIN32_FIND_DATA fd;
+
+    if (!FindNextFile(pIteratorWin32->hFind, &fd)) {
+        fs_free_iterator_win32(pIterator);
+        return NULL;
+    }
+
+    return fs_iterator_win32_resolve(pIteratorWin32, pIterator->pFS, pIteratorWin32->hFind, &fd);
+}
+
+static void fs_free_iterator_win32(fs_iterator* pIterator)
+{
+    fs_iterator_win32* pIteratorWin32 = (fs_iterator_win32*)pIterator;
+
+    FindClose(pIteratorWin32->hFind);
+    fs_free(pIteratorWin32, fs_get_allocation_callbacks(pIterator->pFS));
+}
+
+static fs_backend fs_win32_backend =
+{
+    fs_alloc_size_win32,
+    fs_init_win32,
+    fs_uninit_win32,
+    fs_ioctl_win32,
+    fs_remove_win32,
+    fs_rename_win32,
+    fs_mkdir_win32,
+    fs_info_win32,
+    fs_file_alloc_size_win32,
+    fs_file_open_win32,
+    fs_file_close_win32,
+    fs_file_read_win32,
+    fs_file_write_win32,
+    fs_file_seek_win32,
+    fs_file_tell_win32,
+    fs_file_flush_win32,
+    fs_file_truncate_win32,
+    fs_file_info_win32,
+    fs_file_duplicate_win32,
+    fs_first_win32,
+    fs_next_win32,
+    fs_free_iterator_win32
+};
+
+const fs_backend* FS_BACKEND_WIN32 = &fs_win32_backend;
+#else
+const fs_backend* FS_BACKEND_WIN32 = NULL;
+#endif
+/* END fs_backend_win32.c */
+
 
 /******************************************************************************
 *
@@ -5153,32 +6685,6 @@ static fs_file_info fs_file_info_from_stat(struct stat* pStat)
     return info;
 }
 
-#if defined(_WIN32)
-FS_API fs_uint64 fs_FILETIME_to_unix(const FILETIME* pFT)
-{
-    ULARGE_INTEGER li;
-
-    li.HighPart = pFT->dwHighDateTime;
-    li.LowPart  = pFT->dwLowDateTime;
-
-    return (fs_uint64)(li.QuadPart / 10000000UL - ((fs_uint64)116444736UL * 100UL));   /* Convert from Windows epoch to Unix epoch. */
-}
-
-static fs_file_info fs_file_info_from_WIN32_FIND_DATAW(const WIN32_FIND_DATAW* pFD)
-{
-    fs_file_info info;
-
-    FS_ZERO_OBJECT(&info);
-    info.size             = ((fs_uint64)pFD->nFileSizeHigh << 32) | (fs_uint64)pFD->nFileSizeLow;
-    info.lastModifiedTime = fs_FILETIME_to_unix(&pFD->ftLastWriteTime);
-    info.lastAccessTime   = fs_FILETIME_to_unix(&pFD->ftLastAccessTime);
-    info.directory        = (pFD->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)     != 0;
-    info.symlink          = (pFD->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-
-    return info;
-}
-#endif
-
 
 typedef struct fs_stdio_registered_file
 {
@@ -5296,64 +6802,16 @@ static fs_result fs_mkdir_stdio(fs* pFS, const char* pPath)
 
 static fs_result fs_info_stdio(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)
 {
-    /* We don't want to use stat() with Win32 because, from what I can tell, there's no way to determine if it's a symbolic link. S_IFLNK does not seem to be defined. */
-    #if defined(_WIN32)
-    {
-        int pathLen;
-        wchar_t  pPathWStack[1024];
-        wchar_t* pPathWHeap = NULL;
-        wchar_t* pPathW;
-        HANDLE hFind;
-        WIN32_FIND_DATAW fd;
+    struct stat info;
 
-        /* Use Win32 to convert from UTF-8 to wchar_t. */
-        pathLen = MultiByteToWideChar(CP_UTF8, 0, pPath, -1, NULL, 0);
-        if (pathLen == 0) {
-            return fs_result_from_GetLastError();
-        }
+    FS_UNUSED(pFS);
+    FS_UNUSED(openMode);
 
-        if (pathLen <= (int)FS_COUNTOF(pPathWStack)) {
-            pPathW = pPathWStack;
-        } else {
-            pPathWHeap = (wchar_t*)fs_malloc(pathLen * sizeof(wchar_t), fs_get_allocation_callbacks(pFS));  /* pathLen includes the null terminator. */
-            if (pPathWHeap == NULL) {
-                return FS_OUT_OF_MEMORY;
-            }
-
-            pPathW = pPathWHeap;
-        }
-
-        MultiByteToWideChar(CP_UTF8, 0, pPath, -1, pPathW, pathLen);
-
-        hFind = FindFirstFileW(pPathW, &fd);
-
-        fs_free(pPathWHeap, fs_get_allocation_callbacks(pFS));
-        pPathWHeap = NULL;
-
-        if (hFind == INVALID_HANDLE_VALUE) {
-            return fs_result_from_errno(GetLastError());
-        }
-
-        FindClose(hFind);
-        hFind = NULL;
-
-        *pInfo = fs_file_info_from_WIN32_FIND_DATAW(&fd);
+    if (stat(pPath, &info) != 0) {
+        return fs_result_from_errno(errno);
     }
-    #else
-    {
-        struct stat info;
 
-        FS_UNUSED(pFS);
-
-        if (stat(pPath, &info) != 0) {
-            return fs_result_from_errno(errno);
-        }
-
-        *pInfo = fs_file_info_from_stat(&info);
-    }
-    #endif
-
-    (void)openMode;
+    *pInfo = fs_file_info_from_stat(&info);
 
     return FS_SUCCESS;
 }
@@ -5392,7 +6850,7 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
             } else if ((openMode & FS_TRUNCATE) == FS_TRUNCATE) {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, truncating. */
             } else if ((openMode & FS_EXCLUSIVE) == FS_EXCLUSIVE) {
-                pFileStdio->openMode[0] = 'x'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, failing if the file already exists. Not standard, may fail. */
+                return FS_INVALID_ARGS; /* Exclusive mode (fail-if-exists) is not supported by stdio. */
             } else {
                 pFileStdio->openMode[0] = 'r'; pFileStdio->openMode[1] = '+'; pFileStdio->openMode[2] = 'b'; pFileStdio->openMode[3] = 0;   /* Read-and-write, without truncating (overwrite mode). */
             }
@@ -5403,10 +6861,9 @@ static fs_result fs_file_open_stdio(fs* pFS, fs_stream* pStream, const char* pPa
             } else if ((openMode & FS_TRUNCATE) == FS_TRUNCATE) {
                 pFileStdio->openMode[0] = 'w'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, truncating. */
             } else if ((openMode & FS_EXCLUSIVE) == FS_EXCLUSIVE) {
-                pFileStdio->openMode[0] = 'x'; pFileStdio->openMode[1] = 'b'; pFileStdio->openMode[2] = 0; /* Write-only, failing if the file already exists. Not standard, may fail. */
+                return FS_INVALID_ARGS; /* Exclusive mode (fail-if-exists) is not supported by stdio. */
             } else {
-                /* Write-only overwrite mode is not supported by stdio. */
-                return FS_INVALID_ARGS;
+                return FS_INVALID_ARGS; /* Write-only overwrite mode is not supported by stdio. */
             }
         }
     } else {
@@ -5660,7 +7117,7 @@ static fs_result fs_file_info_stdio(fs_file* pFile, fs_file_info* pInfo)
 #include <fcntl.h>
 #include <io.h>
 
-FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFile)
+static fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFile)
 {
     fs_file_stdio* pFileStdio;
     fs_file_stdio* pDuplicatedFileStdio;
@@ -5703,154 +7160,11 @@ FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFil
 
     return FS_SUCCESS;
 }
-
-
-typedef struct fs_iterator_stdio
-{
-    fs_iterator iterator;
-    HANDLE hFind;
-} fs_iterator_stdio;
-
-FS_API void fs_free_iterator_stdio(fs_iterator* pIterator)
-{
-    fs_iterator_stdio* pIteratorStdio = (fs_iterator_stdio*)pIterator;
-
-    FindClose(pIteratorStdio->hFind);
-    fs_free(pIteratorStdio, fs_get_allocation_callbacks(pIterator->pFS));
-}
-
-static fs_iterator* fs_iterator_stdio_resolve(fs_iterator_stdio* pIteratorStdio, fs* pFS, HANDLE hFind, const WIN32_FIND_DATAW* pFD)
-{
-    fs_iterator_stdio* pNewIteratorStdio;
-    size_t allocSize;
-    int nameLen;
-
-    /*
-    The name is stored at the end of the struct. In order to know how much memory to allocate we'll
-    need to calculate the length of the name.
-    */
-    nameLen = WideCharToMultiByte(CP_UTF8, 0, pFD->cFileName, -1, NULL, 0, NULL, NULL);
-    if (nameLen == 0) {
-        fs_free_iterator_stdio((fs_iterator*)pIteratorStdio);
-        return NULL;
-    }
-
-    allocSize = FS_MAX(sizeof(fs_iterator_stdio) + nameLen, FS_STDIO_MIN_ITERATOR_ALLOCATION_SIZE);    /* "nameLen" includes the null terminator. 1KB just to try to avoid excessive internal reallocations inside realloc(). */
-
-    pNewIteratorStdio = (fs_iterator_stdio*)fs_realloc(pIteratorStdio, allocSize, fs_get_allocation_callbacks(pFS));
-    if (pNewIteratorStdio == NULL) {
-        fs_free_iterator_stdio((fs_iterator*)pIteratorStdio);
-        return NULL;
-    }
-
-    pNewIteratorStdio->iterator.pFS = pFS;
-    pNewIteratorStdio->hFind        = hFind;
-
-    /* Name. */
-    pNewIteratorStdio->iterator.pName   = (char*)pNewIteratorStdio + sizeof(fs_iterator_stdio);
-    pNewIteratorStdio->iterator.nameLen = (size_t)nameLen - 1;  /* nameLen includes the null terminator. */
-    WideCharToMultiByte(CP_UTF8, 0, pFD->cFileName, -1, (char*)pNewIteratorStdio->iterator.pName, nameLen, NULL, NULL);  /* const-cast is safe here. */
-
-    /* Info. */
-    pNewIteratorStdio->iterator.info = fs_file_info_from_WIN32_FIND_DATAW(pFD);
-
-    return (fs_iterator*)pNewIteratorStdio;
-}
-
-FS_API fs_iterator* fs_first_stdio(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
-{
-    size_t i;
-    int queryLen;
-    int cbMultiByte;
-    wchar_t  pQueryStack[1024];
-    wchar_t* pQueryHeap = NULL;
-    wchar_t* pQuery;
-    HANDLE hFind;
-    WIN32_FIND_DATAW fd;
-
-    /* An empty path means the current directory. Win32 will want us to specify "." in this case. */
-    if (pDirectoryPath == NULL || pDirectoryPath[0] == '\0') {
-        pDirectoryPath = ".";
-        directoryPathLen = 1;
-    }
-
-    if (directoryPathLen == FS_NULL_TERMINATED) {
-        cbMultiByte = -1;
-    } else {
-        if (directoryPathLen > 0xFFFFFFFF) {
-            return NULL;
-        }
-
-        cbMultiByte = (int)directoryPathLen;
-    }
-
-    /* When iterating over files using Win32 you specify a wildcard pattern. The "+ 3" you see in the code below is for the wildcard pattern. We also need to make everything a backslash. */
-    queryLen = MultiByteToWideChar(CP_UTF8, 0, pDirectoryPath, cbMultiByte, NULL, 0);
-    if (queryLen == 0) {
-        return NULL;
-    }
-
-    if ((queryLen + 3) > (int)FS_COUNTOF(pQueryStack)) {
-        pQueryHeap = (wchar_t*)fs_malloc((queryLen + 3) * sizeof(wchar_t), fs_get_allocation_callbacks(pFS));
-        if (pQueryHeap == NULL) {
-            return NULL;
-        }
-
-        pQuery = pQueryHeap;
-    }
-    else {
-        pQuery = pQueryStack;
-    }
-
-    MultiByteToWideChar(CP_UTF8, 0, pDirectoryPath, cbMultiByte, pQuery, queryLen);
-
-    if (directoryPathLen == FS_NULL_TERMINATED) {
-        queryLen -= 1;  /* Remove the null terminator. Will not include the null terminator if the input string is not null terminated, hence why this is inside the conditional. */
-    }
-
-    /* Remove the trailing slash, if any. */
-    if (pQuery[queryLen - 1] == L'\\' || pQuery[queryLen - 1] == L'/') {
-        queryLen -= 1;
-    }
-
-    pQuery[queryLen + 0] = L'\\';
-    pQuery[queryLen + 1] = L'*';
-    pQuery[queryLen + 2] = L'\0';
-
-    /* Convert to backslashes. */
-    for (i = 0; i < (size_t)queryLen; i += 1) {
-        if (pQuery[i] == L'/') {
-            pQuery[i] = L'\\';
-        }
-    }
-
-    hFind = FindFirstFileW(pQuery, &fd);
-    fs_free(pQueryHeap, fs_get_allocation_callbacks(pFS));
-
-    if (hFind == INVALID_HANDLE_VALUE) {
-        return NULL;
-    }
-
-    return fs_iterator_stdio_resolve(NULL, pFS, hFind, &fd);
-}
-
-FS_API fs_iterator* fs_next_stdio(fs_iterator* pIterator)
-{
-    fs_iterator_stdio* pIteratorStdio = (fs_iterator_stdio*)pIterator;
-    WIN32_FIND_DATAW fd;
-
-    if (!FindNextFileW(pIteratorStdio->hFind, &fd)) {
-        fs_free_iterator_stdio(pIterator);
-        return NULL;
-    }
-
-    return fs_iterator_stdio_resolve(pIteratorStdio, pIterator->pFS, pIteratorStdio->hFind, &fd);
-}
 #else
 #include <unistd.h>
 #include <dirent.h>
 
-FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFile)
+static fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFile)
 {
     fs_file_stdio* pFileStdio;
     fs_file_stdio* pDuplicatedFileStdio;
@@ -5876,176 +7190,57 @@ FS_API fs_result fs_file_duplicate_stdio(fs_file* pFile, fs_file* pDuplicatedFil
 
     return FS_SUCCESS;
 }
-
-
-typedef struct fs_iterator_stdio
-{
-    fs_iterator iterator;
-    DIR* pDir;
-    char* pFullFilePath;        /* Points to the end of the structure. */
-    size_t directoryPathLen;    /* The length of the directory section. */
-} fs_iterator_stdio;
-
-FS_API void fs_free_iterator_stdio(fs_iterator* pIterator)
-{
-    fs_iterator_stdio* pIteratorStdio = (fs_iterator_stdio*)pIterator;
-
-    FS_ASSERT(pIteratorStdio != NULL);
-
-    closedir(pIteratorStdio->pDir);
-    fs_free(pIteratorStdio, fs_get_allocation_callbacks(pIterator->pFS));
-}
-
-FS_API fs_iterator* fs_first_stdio(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
-{
-    fs_iterator_stdio* pIteratorStdio;
-    struct dirent* info;
-    struct stat statInfo;
-    size_t fileNameLen;
-
-    FS_ASSERT(pDirectoryPath != NULL);
-
-    /*
-    Our input string isn't necessarily null terminated so we'll need to make a copy. This isn't
-    the end of the world because we need to keep a copy of it anyway for when we need to stat
-    the file for information like it's size.
-
-    To do this we're going to allocate memory for our iterator which will include space for the
-    directory path. Then we copy the directory path into the allocated memory and point the
-    pFullFilePath member of the iterator to it. Then we call opendir(). Once that's done we
-    can go to the first file and reallocate the iterator to make room for the file name portion,
-    including the separating slash. Then we copy the file name portion over to the buffer.
-    */
-
-    if (directoryPathLen == 0 || pDirectoryPath[0] == '\0') {
-        directoryPathLen = 1;
-        pDirectoryPath = ".";
-    }
-
-    /* The first step is to calculate the length of the path if we need to. */
-    if (directoryPathLen == (size_t)-1) {
-        directoryPathLen = strlen(pDirectoryPath);
-    }
-
-
-    /*
-    Now that we know the length of the directory we can allocate space for the iterator. The
-    directory path will be placed at the end of the structure.
-    */
-    pIteratorStdio = (fs_iterator_stdio*)fs_malloc(FS_MAX(sizeof(*pIteratorStdio) + directoryPathLen + 1, FS_STDIO_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pFS));    /* +1 for null terminator. */
-    if (pIteratorStdio == NULL) {
-        return NULL;
-    }
-
-    /* Point pFullFilePath to the end of structure to where the path is located. */
-    pIteratorStdio->pFullFilePath = (char*)pIteratorStdio + sizeof(*pIteratorStdio);
-    pIteratorStdio->directoryPathLen = directoryPathLen;
-
-    /* We can now copy over the directory path. This will null terminate the path which will allow us to call opendir(). */
-    fs_strncpy_s(pIteratorStdio->pFullFilePath, directoryPathLen + 1, pDirectoryPath, directoryPathLen);
-
-    /* We can now open the directory. */
-    pIteratorStdio->pDir = opendir(pIteratorStdio->pFullFilePath);
-    if (pIteratorStdio->pDir == NULL) {
-        fs_free(pIteratorStdio, fs_get_allocation_callbacks(pFS));
-        return NULL;
-    }
-
-    /* We now need to get information about the first file. */
-    info = readdir(pIteratorStdio->pDir);
-    if (info == NULL) {
-        closedir(pIteratorStdio->pDir);
-        fs_free(pIteratorStdio, fs_get_allocation_callbacks(pFS));
-        return NULL;
-    }
-
-    fileNameLen = strlen(info->d_name);
-
-    /*
-    Now that we have the file name we need to append it to the full file path in the iterator. To do
-    this we need to reallocate the iterator to account for the length of the file name, including the
-    separating slash.
-    */
-    {
-        fs_iterator_stdio* pNewIteratorStdio= (fs_iterator_stdio*)fs_realloc(pIteratorStdio, FS_MAX(sizeof(*pIteratorStdio) + directoryPathLen + 1 + fileNameLen + 1, FS_STDIO_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pFS));    /* +1 for null terminator. */
-        if (pNewIteratorStdio == NULL) {
-            closedir(pIteratorStdio->pDir);
-            fs_free(pIteratorStdio, fs_get_allocation_callbacks(pFS));
-            return NULL;
-        }
-
-        pIteratorStdio = pNewIteratorStdio;
-    }
-
-    /* Memory has been allocated. Copy over the separating slash and file name. */
-    pIteratorStdio->pFullFilePath = (char*)pIteratorStdio + sizeof(*pIteratorStdio);
-    pIteratorStdio->pFullFilePath[directoryPathLen] = '/';
-    fs_strcpy(pIteratorStdio->pFullFilePath + directoryPathLen + 1, info->d_name);
-
-    /* The pFileName member of the base iterator needs to be set to the file name. */
-    pIteratorStdio->iterator.pName   = pIteratorStdio->pFullFilePath + directoryPathLen + 1;
-    pIteratorStdio->iterator.nameLen = fileNameLen;
-
-    /* We can now get the file information. */
-    if (stat(pIteratorStdio->pFullFilePath, &statInfo) != 0) {
-        closedir(pIteratorStdio->pDir);
-        fs_free(pIteratorStdio, fs_get_allocation_callbacks(pFS));
-        return NULL;
-    }
-
-    pIteratorStdio->iterator.info = fs_file_info_from_stat(&statInfo);
-
-    return (fs_iterator*)pIteratorStdio;
-}
-
-FS_API fs_iterator* fs_next_stdio(fs_iterator* pIterator)
-{
-    fs_iterator_stdio* pIteratorStdio = (fs_iterator_stdio*)pIterator;
-    struct dirent* info;
-    struct stat statInfo;
-    size_t fileNameLen;
-
-    FS_ASSERT(pIteratorStdio != NULL);
-
-    /* We need to get information about the next file. */
-    info = readdir(pIteratorStdio->pDir);
-    if (info == NULL) {
-        fs_free_iterator_stdio((fs_iterator*)pIteratorStdio);
-        return NULL;    /* The end of the directory. */
-    }
-
-    fileNameLen = strlen(info->d_name);
-
-    /* We need to reallocate the iterator to account for the new file name. */
-    {
-        fs_iterator_stdio* pNewIteratorStdio = (fs_iterator_stdio*)fs_realloc(pIteratorStdio, FS_MAX(sizeof(*pIteratorStdio) + pIteratorStdio->directoryPathLen + 1 + fileNameLen + 1, FS_STDIO_MIN_ITERATOR_ALLOCATION_SIZE), fs_get_allocation_callbacks(pIterator->pFS));    /* +1 for null terminator. */
-        if (pNewIteratorStdio == NULL) {
-            fs_free_iterator_stdio((fs_iterator*)pIteratorStdio);
-            return NULL;
-        }
-
-        pIteratorStdio = pNewIteratorStdio;
-    }
-
-    /* Memory has been allocated. Copy over the file name. */
-    pIteratorStdio->pFullFilePath = (char*)pIteratorStdio + sizeof(*pIteratorStdio);
-    fs_strcpy(pIteratorStdio->pFullFilePath + pIteratorStdio->directoryPathLen + 1, info->d_name);
-
-    /* The pFileName member of the base iterator needs to be set to the file name. */
-    pIteratorStdio->iterator.pName   = pIteratorStdio->pFullFilePath + pIteratorStdio->directoryPathLen + 1;
-    pIteratorStdio->iterator.nameLen = fileNameLen;
-
-    /* We can now get the file information. */
-    if (stat(pIteratorStdio->pFullFilePath, &statInfo) != 0) {
-        fs_free_iterator_stdio((fs_iterator*)pIteratorStdio);
-        return NULL;
-    }
-
-    pIteratorStdio->iterator.info = fs_file_info_from_stat(&statInfo);
-
-    return (fs_iterator*)pIteratorStdio;
-}
 #endif
+
+/*
+A note on iteration. The stdio API does not provide a standard way to iterate over files and
+directories. To work around this, we're going to use platform-specific implementations. Since
+we have already written the code in the POSIX and Win32 backends, I'm just going to call
+directly into those functions. This works because I know that those backends do not have any
+fs-specific state.
+
+This is poor form, but I'm not willing to restructure the code just for the sake of the stdio
+backend which I'm really just leaving here use as a reference. If you are looking at this as a
+reference for your own backend, do not copy this technique for file iteration.
+*/
+static void fs_free_iterator_stdio(fs_iterator* pIterator)
+{
+    #if defined(FS_HAS_WIN32)
+    {
+        fs_free_iterator_win32(pIterator);
+    }
+    #elif defined(FS_HAS_POSIX)
+    {
+        fs_free_iterator_posix(pIterator);
+    }
+    #endif
+}
+
+static fs_iterator* fs_first_stdio(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
+{
+    #if defined(FS_HAS_WIN32)
+    {
+        return fs_first_win32(pFS, pDirectoryPath, directoryPathLen);
+    }
+    #elif defined(FS_HAS_POSIX)
+    {
+        return fs_first_posix(pFS, pDirectoryPath, directoryPathLen);
+    }
+    #endif
+}
+
+static fs_iterator* fs_next_stdio(fs_iterator* pIterator)
+{
+    #if defined(FS_HAS_WIN32)
+    {
+        return fs_next_win32(pIterator);
+    }
+    #elif defined(FS_HAS_POSIX)
+    {
+        return fs_next_posix(pIterator);
+    }
+    #endif
+}
 
 fs_backend fs_stdio_backend =
 {

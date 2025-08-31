@@ -1280,8 +1280,17 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
 FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pData, size_t dataSize);
 
 
-/* Default Backend. */
-extern const fs_backend* FS_BACKEND_STDIO;  /* The default stdio backend. The handle for fs_file_open_from_handle() is a FILE*. */
+/* BEG fs_backend_posix.h */
+extern const fs_backend* FS_BACKEND_POSIX;
+/* END fs_backend_posix.h */
+
+/* BEG fs_backend_win32.h */
+extern const fs_backend* FS_BACKEND_WIN32;
+/* END fs_backend_win32.h */
+
+/* BEG fs_backend_stdio.h */
+extern const fs_backend* FS_BACKEND_STDIO;
+/* END fs_backend_stdio.h */
 /* END fs.h */
 
 

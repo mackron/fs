@@ -1,6 +1,4 @@
 #include "../fs.c"
-#include "../extras/backends/posix/fs_posix.c"
-#include "../extras/backends/win32/fs_win32.c"
 
 
 const fs_backend* fs_test_get_backend(int argc, char** argv)
