@@ -1,5 +1,8 @@
-#include "../fs.c"
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
 
+#include "../fs.c"
 
 const fs_backend* fs_test_get_backend(int argc, char** argv)
 {
