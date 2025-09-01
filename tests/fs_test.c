@@ -2360,7 +2360,7 @@ int fs_test_archives_opaque(fs_test* pTest)
     fs_file* pFile;
 
     /* Test that attempting to open a file inside an archive in opaque mode fails. */
-    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_OPAQUE, &pFile);
+    result = fs_file_open(pTestState->pFS, "test1.zip/b", FS_READ | FS_OPAQUE, &pFile);
     if (result == FS_SUCCESS) {
         printf("%s: Unexpected success when opening file inside archive in opaque mode.\n", pTest->name);
         fs_file_close(pFile);
@@ -2368,7 +2368,7 @@ int fs_test_archives_opaque(fs_test* pTest)
     }
 
     /* Same test, this time with a transparent path (no explicit mention of the archive) */
-    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_OPAQUE, &pFile);
+    result = fs_file_open(pTestState->pFS, "b", FS_READ | FS_OPAQUE, &pFile);
     if (result == FS_SUCCESS) {
         printf("%s: Unexpected success when opening file inside archive in opaque mode.\n", pTest->name);
         fs_file_close(pFile);
@@ -2387,7 +2387,7 @@ int fs_test_archives_verbose(fs_test* pTest)
     fs_file* pFile;
 
     /* Test that we can successfully open a file inside the archive with an explicit (verbose) path. */
-    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_VERBOSE, &pFile);
+    result = fs_file_open(pTestState->pFS, "test1.zip/b", FS_READ | FS_VERBOSE, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file inside archive with verbose path.\n", pTest->name);
         return FS_ERROR;
@@ -2397,7 +2397,7 @@ int fs_test_archives_verbose(fs_test* pTest)
 
 
     /* Same test, this time with a transparent path (no explicit mention of the archive). This should fail. */
-    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_VERBOSE, &pFile);
+    result = fs_file_open(pTestState->pFS, "b", FS_READ | FS_VERBOSE, &pFile);
     if (result == FS_SUCCESS) {
         printf("%s: Unexpected success when opening file inside archive in verbose mode.\n", pTest->name);
         fs_file_close(pFile);
@@ -2416,7 +2416,7 @@ int fs_test_archives_transparent(fs_test* pTest)
     fs_file* pFile;
 
     /* Test that we can successfully open a file inside the archive with an explicit (verbose) path. */
-    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_TRANSPARENT, &pFile);
+    result = fs_file_open(pTestState->pFS, "test1.zip/b", FS_READ | FS_TRANSPARENT, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file inside archive with verbose path.\n", pTest->name);
         return FS_ERROR;
@@ -2425,8 +2425,8 @@ int fs_test_archives_transparent(fs_test* pTest)
     fs_file_close(pFile);
 
 
-    /* Same test, this time with a transparent path (no explicit mention of the archive). This should fail. */
-    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_TRANSPARENT, &pFile);
+    /* Same test, this time with a transparent path (no explicit mention of the archive). */
+    result = fs_file_open(pTestState->pFS, "b", FS_READ | FS_TRANSPARENT, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file inside archive with transparent path.\n", pTest->name);
         return FS_ERROR;
@@ -2455,7 +2455,7 @@ int fs_test_archives_mount(fs_test* pTest)
         return FS_ERROR;
     }
 
-    result = fs_file_open(pTestState->pFS, "archive/a", FS_READ, &pFile);
+    result = fs_file_open(pTestState->pFS, "archive/b", FS_READ, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file inside mounted archive.\n", pTest->name);
         return FS_ERROR;
@@ -2480,7 +2480,7 @@ int fs_test_archives_mount(fs_test* pTest)
         return FS_ERROR;
     }
 
-    result = fs_file_open(pTestState->pFS, "archive/b", FS_READ, &pFile);
+    result = fs_file_open(pTestState->pFS, "archive/c", FS_READ, &pFile);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to open file inside mounted archive.\n", pTest->name);
         return FS_ERROR;
