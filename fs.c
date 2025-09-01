@@ -4487,6 +4487,38 @@ FS_API void fs_free_iterator(fs_iterator* pIterator)
 }
 
 
+static fs_result fs_unmount_read(fs* pFS, const char* pActualPath, int options)
+{
+    fs_result iteratorResult;
+    fs_mount_list_iterator iterator;
+
+    if (pFS == NULL || pActualPath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    FS_UNUSED(options);
+
+    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
+        if (strcmp(pActualPath, iterator.pPath) == 0) {
+            if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
+                fs_close_archive(iterator.pArchive);
+            }
+
+            fs_mount_list_remove(pFS->pReadMountPoints, iterator.internal.pMountPoint);
+
+            /*
+            Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
+            the members in preparation for the next iteration.
+            */
+            fs_mount_list_iterator_resolve_members(&iterator, iterator.internal.cursor);
+        } else {
+            iteratorResult = fs_mount_list_next(&iterator);
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
 static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options)
 {
     fs_result result;
@@ -4552,24 +4584,20 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_unmount_read(fs* pFS, const char* pActualPath, int options)
+
+static fs_result fs_unmount_write(fs* pFS, const char* pActualPath, int options)
 {
     fs_result iteratorResult;
     fs_mount_list_iterator iterator;
 
-    if (pFS == NULL || pActualPath == NULL) {
-        return FS_INVALID_ARGS;
-    }
+    FS_ASSERT(pFS != NULL);
+    FS_ASSERT(pActualPath != NULL);
 
     FS_UNUSED(options);
 
-    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
+    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (strcmp(pActualPath, iterator.pPath) == 0) {
-            if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
-                fs_close_archive(iterator.pArchive);
-            }
-
-            fs_mount_list_remove(pFS->pReadMountPoints, iterator.internal.pMountPoint);
+            fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
 
             /*
             Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
@@ -4586,10 +4614,12 @@ FS_API fs_result fs_unmount_read(fs* pFS, const char* pActualPath, int options)
 
 static fs_result fs_mount_write(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options)
 {
+    fs_result result;
     fs_mount_list_iterator iterator;
     fs_result iteratorResult;
     fs_mount_point* pNewMountPoint;
     fs_mount_list* pMountList;
+    fs_file_info fileInfo;
 
     if (pFS == NULL || pActualPath == NULL) {
         return FS_INVALID_ARGS;
@@ -4614,39 +4644,31 @@ static fs_result fs_mount_write(fs* pFS, const char* pActualPath, const char* pV
 
     pFS->pWriteMountPoints = pMountList;
     
-    /* We don't support mounting archives. Explicitly disable this. */
+    /*
+    We need to determine if we're mounting a directory or an archive. If it's an archive we need
+    to fail because we do not support mounting archives in write mode.
+    */
     pNewMountPoint->pArchive = NULL;
     pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
 
-    /* Since we'll be wanting to write out files to the mount point we should ensure the folder actually exists. */
-    if ((options & FS_NO_CREATE_DIRS) == 0) {
-        fs_mkdir(pFS, pActualPath, FS_IGNORE_MOUNTS);
+    /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
+    result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
+    if (result != FS_SUCCESS && result != FS_DOES_NOT_EXIST) {
+        fs_unmount_write(pFS, pActualPath, options);
+        return result;
     }
 
-    return FS_SUCCESS;
-}
+    if (!fileInfo.directory && result != FS_DOES_NOT_EXIST) {
+        fs_unmount_write(pFS, pActualPath, options);
+        return FS_INVALID_ARGS;
+    }
 
-static fs_result fs_unmount_write(fs* pFS, const char* pActualPath, int options)
-{
-    fs_result iteratorResult;
-    fs_mount_list_iterator iterator;
-
-    FS_ASSERT(pFS != NULL);
-    FS_ASSERT(pActualPath != NULL);
-
-    FS_UNUSED(options);
-
-    for (iteratorResult = fs_mount_list_first(pFS->pWriteMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
-        if (strcmp(pActualPath, iterator.pPath) == 0) {
-            fs_mount_list_remove(pFS->pWriteMountPoints, iterator.internal.pMountPoint);
-
-            /*
-            Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
-            the members in preparation for the next iteration.
-            */
-            fs_mount_list_iterator_resolve_members(&iterator, iterator.internal.cursor);
-        } else {
-            iteratorResult = fs_mount_list_next(&iterator);
+    /* Since we'll be wanting to write out files to the mount point we should ensure the folder actually exists. */
+    if ((options & FS_NO_CREATE_DIRS) == 0) {
+        fs_result result = fs_mkdir(pFS, pActualPath, FS_IGNORE_MOUNTS);
+        if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
+            fs_unmount_write(pFS, pActualPath, options);
+            return result;
         }
     }
 
