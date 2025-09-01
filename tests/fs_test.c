@@ -2495,6 +2495,13 @@ int fs_test_archives_mount(fs_test* pTest)
     }
     #endif
 
+    /* Test that attempting to mount an archive for writing fails as expected (write mode for archives is not supported). */
+    result = fs_mount(pTestState->pFS, pActualPath, "archive", FS_WRITE);
+    if (result == FS_SUCCESS) {
+        printf("%s: Unexpected success when mounting archive for writing.\n", pTest->name);
+        return FS_ERROR;
+    }
+
     return FS_SUCCESS;
 }
 /* END archives_mount */
