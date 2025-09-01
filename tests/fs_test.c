@@ -274,7 +274,7 @@ static int fs_test_breakup_path_reverse(const char* pPath, size_t pathLen, fs_pa
     }
 }
 
-static int fs_test_reconstruct_path_forward(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+static int fs_test_reconstruct_path_forward(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[256])
 {
     size_t i;
     size_t len = 0;
@@ -295,7 +295,7 @@ static int fs_test_reconstruct_path_forward(const fs_path_iterator* pIterator, s
     return 0;
 }
 
-static int fs_test_reconstruct_path_reverse(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[1024])
+static int fs_test_reconstruct_path_reverse(const fs_path_iterator* pIterator, size_t iteratorCount, char pPath[256])
 {
     size_t i;
     size_t len = 0;
@@ -322,8 +322,8 @@ static int fs_test_path_iteration_internal(fs_test* pTest, const char* pPath)
     fs_path_iterator segmentsReverse[32];
     size_t segmentsForwardCount;
     size_t segmentsReverseCount;
-    char pPathReconstructedForward[1024];
-    char pPathReconstructedReverse[1024];
+    char pPathReconstructedForward[256];
+    char pPathReconstructedReverse[256];
     int forwardResult = 0;
     int reverseResult = 0;
 
@@ -386,7 +386,7 @@ int fs_test_path_iteration(fs_test* pTest)
 /* BEG path_normalize */
 static int fs_test_path_normalize_internal(fs_test* pTest, const char* pPath, const char* pExpected)
 {
-    char pNormalizedPath[1024];
+    char pNormalizedPath[256];
     int result;
     int length;
 
@@ -460,7 +460,7 @@ typedef struct
 {
     const fs_backend* pBackend;
     fs* pFS;
-    char pTempDir[1024];
+    char pTempDir[256];
 } fs_test_state;
 
 fs_test_state fs_test_state_init(const fs_backend* pBackend)
@@ -477,7 +477,7 @@ fs_test_state fs_test_state_init(const fs_backend* pBackend)
 /* BEG system_sysdir */
 int fs_test_system_sysdir_internal(fs_test* pTest, fs_sysdir_type type, const char* pTypeName)
 {
-    char path[1024];
+    char path[256];
     size_t pathLen;
 
     pathLen = fs_sysdir(type, path, sizeof(path));
@@ -536,7 +536,7 @@ int fs_test_system_mktmp(fs_test* pTest)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    char pTempFile[1024];
+    char pTempFile[256];
 
     if (pTestState->pFS == NULL) {
         printf("%s: File system not initialized. Aborting test.\n", pTest->name);
@@ -579,7 +579,7 @@ int fs_test_system_mkdir(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file_info info;
-    char pDirPath[1024];
+    char pDirPath[256];
 
     fs_path_append(pDirPath, sizeof(pDirPath), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
 
@@ -636,7 +636,7 @@ int fs_test_system_write_new(fs_test* pTest)
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath[1024];
+    char pFilePath[256];
     const char data[4] = {1, 2, 3, 4};
     char dataRead[4];
     size_t bytesWritten;
@@ -721,7 +721,7 @@ static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath[1024];
+    char pFilePath[256];
     char dataRead[4];
     size_t bytesRead;
     size_t newDataSize = 4;
@@ -823,7 +823,7 @@ int fs_test_system_write_append(fs_test* pTest)
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath[1024];
+    char pFilePath[256];
     const char dataToAppend[4] = {5, 6, 7, 8};
     char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     char dataRead[8];
@@ -949,8 +949,8 @@ int fs_test_system_write_exclusive(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
-    char pFilePathA[1024];
-    char pFilePathB[1024];
+    char pFilePathA[256];
+    char pFilePathB[256];
 
     if (pTestState->pFS == NULL) {
         printf("%s: File system not initialized. Aborting test.\n", pTest->name);
@@ -1010,7 +1010,7 @@ int fs_test_system_write_seek(fs_test* pTest)
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath[1024];
+    char pFilePath[256];
     size_t bytesWritten;
     size_t bytesRead;
     char data[4] = {5, 6, 7, 8};
@@ -1202,7 +1202,7 @@ int fs_test_system_write_truncate2(fs_test* pTest)
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath[1024];
+    char pFilePath[256];
     char data[6] = {3, 4, 5, 6, 7, 8};
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
@@ -1285,7 +1285,7 @@ int fs_test_system_write_flush(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_file* pFile = NULL;
     fs_result result;
-    char pFilePath[1024];
+    char pFilePath[256];
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
@@ -1314,7 +1314,7 @@ int fs_test_system_read(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile = NULL;
-    char pFilePath[1024];
+    char pFilePath[256];
     char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     size_t dataRead[16];
     size_t bytesRead;
@@ -1372,7 +1372,7 @@ int fs_test_system_read_readonly(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile = NULL;
-    char pFilePath[1024];
+    char pFilePath[256];
     char data[8] = {1, 2, 3, 4};
     size_t bytesWritten;
     
@@ -1437,7 +1437,7 @@ int fs_test_system_duplicate(fs_test* pTest)
     fs_result result;
     fs_file* pFile1 = NULL;
     fs_file* pFile2 = NULL;
-    char pFilePath[1024];
+    char pFilePath[256];
     char data1[2];
     char data2[2];
 
@@ -1479,9 +1479,9 @@ int fs_test_system_rename(fs_test* pTest)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    char pFilePathA[1024];
-    char pFilePathC[1024];
-    char pFilePathD[1024];
+    char pFilePathA[256];
+    char pFilePathC[256];
+    char pFilePathD[256];
     fs_file_info fileInfo;
 
     /* We're going to rename "a" to "c", and then verify with fs_info(). */
@@ -1540,7 +1540,7 @@ static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDi
     fs_iterator* pIterator;
     
     for (pIterator = fs_first(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS | FS_OPAQUE); pIterator != NULL; pIterator = fs_next(pIterator)) {
-        char pSubPath[1024];
+        char pSubPath[256];
         fs_path_append(pSubPath, sizeof(pSubPath), pDirPath, (size_t)-1, pIterator->pName, pIterator->nameLen);
 
         if (pIterator->info.directory) {
@@ -1617,10 +1617,10 @@ int fs_test_mounts(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_config fsConfig;
-    char pRootPath[128];
-    char pDir1Path[128];
-    char pDir2Path[128];
-    char pDir3Path[128];
+    char pRootPath[256];
+    char pDir1Path[256];
+    char pDir2Path[256];
+    char pDir3Path[256];
 
     fsConfig = fs_config_init(pTestState->pBackend, NULL, NULL);
 
@@ -1765,9 +1765,9 @@ int fs_test_mounts_write(fs_test* pTest)
     fs_result result;
     fs_file* pFile;
     fs_file_info fileInfo;
-    char pFilePath1[128];
-    char pFilePath2[128];
-    char pFilePath3[128];
+    char pFilePath1[256];
+    char pFilePath2[256];
+    char pFilePath3[256];
     char data1[1] = {1};
     char data2[2] = {2};
     char data3[3] = {3};
@@ -2250,9 +2250,9 @@ int fs_test_unmount(fs_test* pTest)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    char pDir1Path[1024];
-    char pDir2Path[1024];
-    char pDir3Path[1024];
+    char pDir1Path[256];
+    char pDir2Path[256];
+    char pDir3Path[256];
 
     fs_path_append(pDir1Path, sizeof(pDir1Path), pTestState->pTempDir, (size_t)-1, "dir1", (size_t)-1);
     fs_path_append(pDir2Path, sizeof(pDir2Path), pTestState->pTempDir, (size_t)-1, "dir2", (size_t)-1);
@@ -2304,7 +2304,7 @@ int fs_test_archives(fs_test* pTest)
     fs_result result;
     fs_config config;
     fs_archive_type pArchiveTypes[2];
-    char pRootPath[128];
+    char pRootPath[256];
 
     pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
     pArchiveTypes[1] = fs_archive_type_init(FS_PAK, "pak");
@@ -2438,6 +2438,67 @@ int fs_test_archives_transparent(fs_test* pTest)
 }
 /* END archives_transparent */
 
+/* BEG archives_mount */
+int fs_test_archives_mount(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+    char pActualPath[256];
+
+    /* Test that we can mount an archive directly by it's path. */
+    fs_path_append(pActualPath, sizeof(pActualPath), pTestState->pTempDir, (size_t)-1, "root/test1.zip", (size_t)-1);
+
+    result = fs_mount(pTestState->pFS, pActualPath, "archive", FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_open(pTestState->pFS, "archive/a", FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file inside mounted archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    result = fs_unmount(pTestState->pFS, pActualPath, FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* TODO: Consider adding support for this. */
+    #if 0
+    /* Test that we can mount a sub-directory inside an archive. */
+    fs_path_append(pActualPath, sizeof(pActualPath), pTestState->pTempDir, (size_t)-1, "root/test1.zip/dir1", (size_t)-1);
+
+    result = fs_mount(pTestState->pFS, pActualPath, "archive", FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount sub-directory inside archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_open(pTestState->pFS, "archive/b", FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file inside mounted archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    result = fs_unmount(pTestState->pFS, pActualPath, FS_READ);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to unmount archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+    #endif
+
+    return FS_SUCCESS;
+}
+/* END archives_mount */
+
 /* BEG archives_uninit */
 int fs_test_archives_uninit(fs_test* pTest)
 {
@@ -2500,6 +2561,7 @@ int main(int argc, char** argv)
     fs_test test_archives_opaque;           /* Tests that opening files inside an archive in opaque mode fails as expected. */
     fs_test test_archives_verbose;          /* Tests that opening files inside an archive with an explicit (verbose) path works as expected. */
     fs_test test_archives_transparent;      /* Tests that opening files inside an archive with a transparent path works as expected. */
+    fs_test test_archives_mount;            /* Tests that mounting an archive works as expected. */
     fs_test test_archives_uninit;           /* This needs to be the last archive test. */
 
     /* Test states. */
@@ -2527,57 +2589,58 @@ int main(int argc, char** argv)
     fs_test_init(&test_root, NULL, NULL, NULL, NULL);
 
     /* Paths. */
-    fs_test_init(&test_path,           "Path",           NULL,                   NULL, &test_root);
-    fs_test_init(&test_path_iteration, "Path Iteration", fs_test_path_iteration, NULL, &test_path);
-    fs_test_init(&test_path_normalize, "Path Normalize", fs_test_path_normalize, NULL, &test_path);
+    fs_test_init(&test_path,                   "Path",                      NULL,                           NULL,                 &test_root);
+    fs_test_init(&test_path_iteration,         "Path Iteration",            fs_test_path_iteration,         NULL,                 &test_path);
+    fs_test_init(&test_path_normalize,         "Path Normalize",            fs_test_path_normalize,         NULL,                 &test_path);
 
     /*
     Default System IO.
 
     This only tests basic file operations. It does not test mounts or archives.
     */
-    fs_test_init(&test_system,                 "System IO",          NULL,                           &test_system_state, &test_root);
-    fs_test_init(&test_system_sysdir,          "System Directories", fs_test_system_sysdir,          &test_system_state, &test_system);
-    fs_test_init(&test_system_init,            "Initialization",     fs_test_system_init,            &test_system_state, &test_system);
-    fs_test_init(&test_system_mktmp,           "Temporaries",        fs_test_system_mktmp,           &test_system_state, &test_system);
-    fs_test_init(&test_system_mkdir,           "Make Directory",     fs_test_system_mkdir,           &test_system_state, &test_system);
-    fs_test_init(&test_system_write,           "Write",              NULL,                           &test_system_state, &test_system);
-    fs_test_init(&test_system_write_new,       "Write New",          fs_test_system_write_new,       &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_overwrite, "Write Overwrite",    fs_test_system_write_overwrite, &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_append,    "Write Append",       fs_test_system_write_append,    &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_exclusive, "Write Exclusive",    fs_test_system_write_exclusive, &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_truncate,  "Write Truncate",     fs_test_system_write_truncate,  &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_seek,      "Write Seek",         fs_test_system_write_seek,      &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()", fs_test_system_write_truncate2, &test_system_state, &test_system_write);
-    fs_test_init(&test_system_write_flush,     "Write Flush",        fs_test_system_write_flush,     &test_system_state, &test_system_write);
-    fs_test_init(&test_system_read,            "Read",               fs_test_system_read,            &test_system_state, &test_system);
-    fs_test_init(&test_system_read_readonly,   "Read Read-Only",     fs_test_system_read_readonly,   &test_system_state, &test_system_read);
-    fs_test_init(&test_system_read_noexist,    "Read Non-Existent",  fs_test_system_read_noexist,    &test_system_state, &test_system_read);
-    fs_test_init(&test_system_duplicate,       "Duplicate",          fs_test_system_duplicate,       &test_system_state, &test_system);
-    fs_test_init(&test_system_rename,          "Rename",             fs_test_system_rename,          &test_system_state, &test_system);
-    fs_test_init(&test_system_remove,          "Remove",             fs_test_system_remove,          &test_system_state, &test_system);
-    fs_test_init(&test_system_uninit,          "Uninitialization",   fs_test_system_uninit,          &test_system_state, &test_system);
+    fs_test_init(&test_system,                 "System IO",                 NULL,                           &test_system_state,   &test_root);
+    fs_test_init(&test_system_sysdir,          "System Directories",        fs_test_system_sysdir,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_init,            "Initialization",            fs_test_system_init,            &test_system_state,   &test_system);
+    fs_test_init(&test_system_mktmp,           "Temporaries",               fs_test_system_mktmp,           &test_system_state,   &test_system);
+    fs_test_init(&test_system_mkdir,           "Make Directory",            fs_test_system_mkdir,           &test_system_state,   &test_system);
+    fs_test_init(&test_system_write,           "Write",                     NULL,                           &test_system_state,   &test_system);
+    fs_test_init(&test_system_write_new,       "Write New",                 fs_test_system_write_new,       &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_overwrite, "Write Overwrite",           fs_test_system_write_overwrite, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_append,    "Write Append",              fs_test_system_write_append,    &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_exclusive, "Write Exclusive",           fs_test_system_write_exclusive, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_truncate,  "Write Truncate",            fs_test_system_write_truncate,  &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_seek,      "Write Seek",                fs_test_system_write_seek,      &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()",        fs_test_system_write_truncate2, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_flush,     "Write Flush",               fs_test_system_write_flush,     &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_read,            "Read",                      fs_test_system_read,            &test_system_state,   &test_system);
+    fs_test_init(&test_system_read_readonly,   "Read Read-Only",            fs_test_system_read_readonly,   &test_system_state,   &test_system_read);
+    fs_test_init(&test_system_read_noexist,    "Read Non-Existent",         fs_test_system_read_noexist,    &test_system_state,   &test_system_read);
+    fs_test_init(&test_system_duplicate,       "Duplicate",                 fs_test_system_duplicate,       &test_system_state,   &test_system);
+    fs_test_init(&test_system_rename,          "Rename",                    fs_test_system_rename,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_remove,          "Remove",                    fs_test_system_remove,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_uninit,          "Uninitialization",          fs_test_system_uninit,          &test_system_state,   &test_system);
 
     /*
     Mounts.
     */
-    fs_test_init(&test_mounts,           "Mounts",                fs_test_mounts,           &test_mounts_state, &test_root);
-    fs_test_init(&test_mounts_write,     "Mounts Write",          fs_test_mounts_write,     &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_read,      "Mounts Read",           fs_test_mounts_read,      &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_mkdir,     "Mounts Make Directory", fs_test_mounts_mkdir,     &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_rename,    "Mounts Rename",         fs_test_mounts_rename,    &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_remove,    "Mounts Remove",         fs_test_mounts_remove,    &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_iteration, "Mounts Iteration",      fs_test_mounts_iteration, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_unmount,          "Unmount",               fs_test_unmount,          &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts,                 "Mounts",                    fs_test_mounts,                 &test_mounts_state,   &test_root);
+    fs_test_init(&test_mounts_write,           "Mounts Write",              fs_test_mounts_write,           &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_read,            "Mounts Read",               fs_test_mounts_read,            &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_mkdir,           "Mounts Make Directory",     fs_test_mounts_mkdir,           &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_rename,          "Mounts Rename",             fs_test_mounts_rename,          &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_remove,          "Mounts Remove",             fs_test_mounts_remove,          &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_iteration,       "Mounts Iteration",          fs_test_mounts_iteration,       &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_unmount,                "Unmount",                   fs_test_unmount,                &test_mounts_state,   &test_mounts);
 
     /*
     Archives.
     */
-    fs_test_init(&test_archives,             "Archives",                  fs_test_archives,             &test_archives_state, &test_root);
-    fs_test_init(&test_archives_opaque,      "Archives Opaque",           fs_test_archives_opaque,      &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_verbose,     "Archives Verbose",          fs_test_archives_verbose,     &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_transparent, "Archives Transparent",      fs_test_archives_transparent, &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_uninit,      "Archives Uninitialization", fs_test_archives_uninit,      &test_archives_state, &test_archives);
+    fs_test_init(&test_archives,               "Archives",                  fs_test_archives,               &test_archives_state, &test_root);
+    fs_test_init(&test_archives_opaque,        "Archives Opaque",           fs_test_archives_opaque,        &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_verbose,       "Archives Verbose",          fs_test_archives_verbose,       &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_transparent,   "Archives Transparent",      fs_test_archives_transparent,   &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_mount,         "Archives Mounted",          fs_test_archives_mount,         &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_uninit,        "Archives Uninitialization", fs_test_archives_uninit,        &test_archives_state, &test_archives);
 
 
     result = fs_test_run(&test_root);
