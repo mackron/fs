@@ -7703,7 +7703,7 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
 
                 /* Don't move the base path if we're appending in-place. */
                 if (pDst != pBasePath) {
-                    FS_COPY_MEMORY(pDst, pBasePath, FS_MIN(basePathLen, dstCap));
+                    FS_COPY_MEMORY(pDst, pBasePath, bytesToCopy);
                 }
             }
 
@@ -7734,10 +7734,20 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
             }
 
             FS_COPY_MEMORY(pDst, pPathToAppend, bytesToCopy);
-            pDst[bytesToCopy] = '\0';
         }
+
+        pDst   += bytesToCopy;
+        dstCap -= bytesToCopy;
     }
     dstLen += pathToAppendLen;
+
+
+    /* Null terminator. */
+    if (pDst != NULL) {
+        if (dstCap > 0) {
+            pDst[0] = '\0';
+        }
+    }
 
 
     if (dstLen > 0x7FFFFFFF) {
