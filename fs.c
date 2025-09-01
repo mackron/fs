@@ -4527,7 +4527,6 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
     fs_mount_list* pMountPoints;
     fs_mount_point* pNewMountPoint;
     fs_file_info fileInfo;
-    int openMode;
 
     FS_ASSERT(pFS != NULL);
     FS_ASSERT(pActualPath != NULL);
@@ -4554,27 +4553,32 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
         return FS_OUT_OF_MEMORY;
     }
 
+    pNewMountPoint->pArchive = NULL;
+    pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
+
     pFS->pReadMountPoints = pMountPoints;
 
     /*
     We need to determine if we're mounting a directory or an archive. If it's an archive, we need to
     open it.
     */
-    openMode = FS_READ | FS_VERBOSE;
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
     result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
     if (result != FS_SUCCESS && result != FS_DOES_NOT_EXIST) {
+        fs_unmount_read(pFS, pActualPath, options);
         return result;
     }
 
-    /* If we failed to find the info (result == FS_DOES_NOT_EXIST), we can just assume we're trying to mount a directory. */
-    if (fileInfo.directory || result == FS_DOES_NOT_EXIST) {
-        pNewMountPoint->pArchive = NULL;
-        pNewMountPoint->closeArchiveOnUnmount = FS_FALSE;
-    } else {
-        result = fs_open_archive(pFS, pActualPath, openMode, &pNewMountPoint->pArchive);
+    /*
+    if the path is not pointing to a directory, assume it's a file, and therefore an archive. Likewise, if
+    we get FS_DOES_NOT_EXIST, it might just mean that we're trying to mount to a directory that does not
+    yet exist.
+    */
+    if (!fileInfo.directory && result != FS_DOES_NOT_EXIST) {
+        result = fs_open_archive(pFS, pActualPath, FS_READ | FS_VERBOSE, &pNewMountPoint->pArchive);
         if (result != FS_SUCCESS) {
+            fs_unmount_read(pFS, pActualPath, options);
             return result;
         }
 
