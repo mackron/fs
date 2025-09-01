@@ -4565,17 +4565,13 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
 
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
     result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
-    if (result != FS_SUCCESS && result != FS_DOES_NOT_EXIST) {
+    if (result != FS_SUCCESS) {
         fs_unmount_read(pFS, pActualPath, options);
         return result;
     }
 
-    /*
-    if the path is not pointing to a directory, assume it's a file, and therefore an archive. Likewise, if
-    we get FS_DOES_NOT_EXIST, it might just mean that we're trying to mount to a directory that does not
-    yet exist.
-    */
-    if (!fileInfo.directory && result != FS_DOES_NOT_EXIST) {
+    /* if the path is not pointing to a directory, assume it's a file, and therefore an archive. */
+    if (!fileInfo.directory) {
         result = fs_open_archive(pFS, pActualPath, FS_READ | FS_VERBOSE, &pNewMountPoint->pArchive);
         if (result != FS_SUCCESS) {
             fs_unmount_read(pFS, pActualPath, options);
@@ -4695,15 +4691,15 @@ FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtual
         return FS_INVALID_ARGS;
     }
 
-    if ((options & FS_READ) == FS_READ) {
-        fs_result result = fs_mount_read(pFS, pActualPath, pVirtualPath, options);
+    if ((options & FS_WRITE) == FS_WRITE) {
+        fs_result result = fs_mount_write(pFS, pActualPath, pVirtualPath, options);
         if (result != FS_SUCCESS) {
             return result;
         }
     }
 
-    if ((options & FS_WRITE) == FS_WRITE) {
-        fs_result result = fs_mount_write(pFS, pActualPath, pVirtualPath, options);
+    if ((options & FS_READ) == FS_READ) {
+        fs_result result = fs_mount_read(pFS, pActualPath, pVirtualPath, options);
         if (result != FS_SUCCESS) {
             return result;
         }
