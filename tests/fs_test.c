@@ -1,4 +1,8 @@
 #include "../fs.c"
+#include "../extras/backends/zip/fs_zip.h"
+#include "../extras/backends/pak/fs_pak.h"
+
+#include "files/test1.zip.c"
 
 #include <stdio.h>
 #include <assert.h>
@@ -35,6 +39,28 @@ const char* fs_test_get_backend_name(const fs_backend* pBackend)
     }
 }
 
+
+fs_result fs_create_new_file(fs* pFS, const char* pPath, const void* pData, size_t dataSize)
+{
+    fs_result result;
+    fs_file* pFile;
+
+    result = fs_file_open(pFS, pPath, FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    if (pData != NULL && dataSize > 0) {
+        result = fs_file_write(pFile, pData, dataSize, NULL);
+        if (result != FS_SUCCESS) {
+            fs_file_close(pFile);
+            return result;
+        }
+    }
+
+    fs_file_close(pFile);
+    return FS_SUCCESS;
+}
 
 /* BEG fs_test.c */
 typedef struct fs_test fs_test;
@@ -518,7 +544,7 @@ int fs_test_system_mktmp(fs_test* pTest)
     }
 
     /* Start with creating a temporary directory. If this works, the output from this will be where we output our test files going forward in future tests. */
-    result = fs_mktmp(".fs_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    result = fs_mktmp("fs_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create temporary directory.\n", pTest->name);
         return FS_ERROR;
@@ -1513,7 +1539,7 @@ static fs_result fs_test_system_remove_directory(fs_test* pTest, const char* pDi
     fs_result result;
     fs_iterator* pIterator;
     
-    for (pIterator = fs_first(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS); pIterator != NULL; pIterator = fs_next(pIterator)) {
+    for (pIterator = fs_first(pTestState->pFS, pDirPath, FS_IGNORE_MOUNTS | FS_OPAQUE); pIterator != NULL; pIterator = fs_next(pIterator)) {
         char pSubPath[1024];
         fs_path_append(pSubPath, sizeof(pSubPath), pDirPath, (size_t)-1, pIterator->pName, pIterator->nameLen);
 
@@ -1605,7 +1631,7 @@ int fs_test_mounts(fs_test* pTest)
     }
 
     /* We will do all of our mounting tests in a temp folder, so create that now. */
-    result = fs_mktmp(".fs_mounts_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    result = fs_mktmp("fs_mounts_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create temp directory for mounting tests.\n", pTest->name);
         return FS_ERROR;
@@ -2135,6 +2161,90 @@ int fs_test_mounts_remove(fs_test* pTest)
 }
 /* END mounts_remove */
 
+/* BEG mounts_iteration */
+int fs_test_mounts_iteration(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_iterator* pIterator;
+    
+    /* Set up a sub-folder with some files for testing. */
+    result = fs_mkdir(pTestState->pFS, "iteration/dir1", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pTestState->pFS, "iteration/dir2", 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_create_new_file(pTestState->pFS, "iteration/file1", NULL, 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_create_new_file(pTestState->pFS, "iteration/file2", NULL, 0);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* TODO: Expand on this test once we have archive tests written and the iteration API has been improved. */
+    pIterator = fs_first(pTestState->pFS, "iteration", FS_READ | FS_OPAQUE);    /* <-- Use opaque here to ignore the archive code paths. That will be tested later in the archive tests. */
+    if (pIterator == NULL) {
+        printf("%s: Failed to create iterator.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    while (pIterator != NULL) {
+        /* The iterator needs to be one of the expected names. */
+        const char* pExpectedNames[] = {
+            "file1",
+            "file2",
+            "dir1",
+            "dir2"
+        };
+        size_t i;
+        fs_bool32 found = FS_FALSE;
+
+        for (i = 0; i < FS_COUNTOF(pExpectedNames); i += 1) {
+            if (fs_strncmp(pExpectedNames[i], pIterator->pName, pIterator->nameLen) == 0) {
+                found = FS_TRUE;
+                break;
+            }
+        }
+
+        if (!found) {
+            printf("%s: Unexpected file found: %.*s\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+            return FS_ERROR;
+        }
+
+        /* Make sure the files and folders are correctly identified as such. */
+        if (pIterator->info.directory) {
+            if (pIterator->pName[0] != 'd' || pIterator->pName[1] != 'i' || pIterator->pName[2] != 'r') {
+                printf("%s: Directory incorrectly identified: %.*s\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+                return FS_ERROR;
+            }
+        } else {
+            if (pIterator->pName[0] != 'f' || pIterator->pName[1] != 'i' || pIterator->pName[2] != 'l' || pIterator->pName[3] != 'e') {
+                printf("%s: File incorrectly identified: %.*s\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+                return FS_ERROR;
+            }
+        }
+
+        pIterator = fs_next(pIterator);
+    }
+
+    /* TODO: Do an iteration tests against write mounts and FS_WRITE | FS_OPAQUE. */
+
+    return FS_SUCCESS;
+}
+/* END mounts_iteration */
+
 /* BEG unmount */
 int fs_test_unmount(fs_test* pTest)
 {
@@ -2187,6 +2297,165 @@ int fs_test_unmount(fs_test* pTest)
 }
 /* END unmount */
 
+/* BEG archives */
+int fs_test_archives(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_config config;
+    fs_archive_type pArchiveTypes[2];
+    char pRootPath[128];
+
+    pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
+    pArchiveTypes[1] = fs_archive_type_init(FS_PAK, "pak");
+
+    config = fs_config_init(pTestState->pBackend, NULL, NULL);
+    config.pArchiveTypes    = pArchiveTypes;
+    config.archiveTypeCount = FS_COUNTOF(pArchiveTypes);
+
+    result = fs_init(&config, &pTestState->pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Setup the root folder for the archive tests. */
+    result = fs_mktmp("fs_archives_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create temp directory for archive tests.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* We'll mount the temp directory as our root directory. */
+    fs_path_append(pRootPath, sizeof(pRootPath), pTestState->pTempDir, (size_t)-1, "root", (size_t)-1);
+
+    result = fs_mount(pTestState->pFS, pRootPath, "", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount temp directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mount(pTestState->pFS, pRootPath, "/", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount temp directory as root.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Output our test archives into the root folder for later use. */
+    result = fs_create_new_file(pTestState->pFS, "test1.zip", fs_test_file_test1_zip, sizeof(fs_test_file_test1_zip));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create test1.zip.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives */
+
+/* BEG archives_opaque */
+int fs_test_archives_opaque(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+
+    /* Test that attempting to open a file inside an archive in opaque mode fails. */
+    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_OPAQUE, &pFile);
+    if (result == FS_SUCCESS) {
+        printf("%s: Unexpected success when opening file inside archive in opaque mode.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Same test, this time with a transparent path (no explicit mention of the archive) */
+    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_OPAQUE, &pFile);
+    if (result == FS_SUCCESS) {
+        printf("%s: Unexpected success when opening file inside archive in opaque mode.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_opaque */
+
+/* BEG archives_verbose */
+int fs_test_archives_verbose(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+
+    /* Test that we can successfully open a file inside the archive with an explicit (verbose) path. */
+    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_VERBOSE, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file inside archive with verbose path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* Same test, this time with a transparent path (no explicit mention of the archive). This should fail. */
+    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_VERBOSE, &pFile);
+    if (result == FS_SUCCESS) {
+        printf("%s: Unexpected success when opening file inside archive in verbose mode.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_verbose */
+
+/* BEG archives_transparent */
+int fs_test_archives_transparent(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_file* pFile;
+
+    /* Test that we can successfully open a file inside the archive with an explicit (verbose) path. */
+    result = fs_file_open(pTestState->pFS, "test1.zip/a", FS_READ | FS_TRANSPARENT, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file inside archive with verbose path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+
+    /* Same test, this time with a transparent path (no explicit mention of the archive). This should fail. */
+    result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_TRANSPARENT, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file inside archive with transparent path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END archives_transparent */
+
+/* BEG archives_uninit */
+int fs_test_archives_uninit(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+
+    /* Clean up the entire temp folder. */
+    result = fs_test_system_remove_directory(pTest, pTestState->pTempDir);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove temp directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    fs_uninit(pTestState->pFS);
+    return FS_SUCCESS;
+}
+/* END archive_uninit */
+
 
 int main(int argc, char** argv)
 {
@@ -2225,11 +2494,18 @@ int main(int argc, char** argv)
     fs_test test_mounts_mkdir;              /* Tests creating directories with mounts. */
     fs_test test_mounts_rename;             /* Tests renaming files with mounts. */
     fs_test test_mounts_remove;             /* Tests removing files with mounts. */
-    fs_test test_unmount;                   /* This needs to be the last mount test.*/
+    fs_test test_mounts_iteration;          /* Tests iterating directories with mounts. */
+    fs_test test_unmount;                   /* This needs to be the last mount test. */
+    fs_test test_archives;                  /* The top-level test for archives. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
+    fs_test test_archives_opaque;           /* Tests that opening files inside an archive in opaque mode fails as expected. */
+    fs_test test_archives_verbose;          /* Tests that opening files inside an archive with an explicit (verbose) path works as expected. */
+    fs_test test_archives_transparent;      /* Tests that opening files inside an archive with a transparent path works as expected. */
+    fs_test test_archives_uninit;           /* This needs to be the last archive test. */
 
     /* Test states. */
     fs_test_state test_system_state;
     fs_test_state test_mounts_state;
+    fs_test_state test_archives_state;
 
     /* Grab the backend so we can pass it into the test state. */
     pBackend = fs_test_get_backend(argc, argv);
@@ -2238,9 +2514,9 @@ int main(int argc, char** argv)
     printf("Backend: %s\n", fs_test_get_backend_name(pBackend));
 
     /* Make sure the test states are initialized before running anything. */
-    test_system_state = fs_test_state_init(pBackend);
-    test_mounts_state = fs_test_state_init(pBackend);
-
+    test_system_state   = fs_test_state_init(pBackend);
+    test_mounts_state   = fs_test_state_init(pBackend);
+    test_archives_state = fs_test_state_init(pBackend);
 
     /*
     Note that the order of tests is important here because we will use the output from previous tests
@@ -2285,13 +2561,24 @@ int main(int argc, char** argv)
     /*
     Mounts.
     */
-    fs_test_init(&test_mounts,        "Mounts",                fs_test_mounts,        &test_mounts_state, &test_root);
-    fs_test_init(&test_mounts_write,  "Mounts Write",          fs_test_mounts_write,  &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_read,   "Mounts Read",           fs_test_mounts_read,   &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_mkdir,  "Mounts Make Directory", fs_test_mounts_mkdir,  &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_rename, "Mounts Rename",         fs_test_mounts_rename, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_mounts_remove, "Mounts Remove",         fs_test_mounts_remove, &test_mounts_state, &test_mounts);
-    fs_test_init(&test_unmount,       "Unmount",               fs_test_unmount,       &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts,           "Mounts",                fs_test_mounts,           &test_mounts_state, &test_root);
+    fs_test_init(&test_mounts_write,     "Mounts Write",          fs_test_mounts_write,     &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_read,      "Mounts Read",           fs_test_mounts_read,      &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_mkdir,     "Mounts Make Directory", fs_test_mounts_mkdir,     &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_rename,    "Mounts Rename",         fs_test_mounts_rename,    &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_remove,    "Mounts Remove",         fs_test_mounts_remove,    &test_mounts_state, &test_mounts);
+    fs_test_init(&test_mounts_iteration, "Mounts Iteration",      fs_test_mounts_iteration, &test_mounts_state, &test_mounts);
+    fs_test_init(&test_unmount,          "Unmount",               fs_test_unmount,          &test_mounts_state, &test_mounts);
+
+    /*
+    Archives.
+    */
+    fs_test_init(&test_archives,             "Archives",                  fs_test_archives,             &test_archives_state, &test_root);
+    fs_test_init(&test_archives_opaque,      "Archives Opaque",           fs_test_archives_opaque,      &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_verbose,     "Archives Verbose",          fs_test_archives_verbose,     &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_transparent, "Archives Transparent",      fs_test_archives_transparent, &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_uninit,      "Archives Uninitialization", fs_test_archives_uninit,      &test_archives_state, &test_archives);
+
 
     result = fs_test_run(&test_root);
 
