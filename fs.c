@@ -4186,13 +4186,13 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                     }
 
                     if (dirPathRemainingLen == 0) {
-                        pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
+                        pArchiveIterator = fs_first_ex(pArchive, "", 0, (mode & ~FS_ONLY_MOUNTS));
                     } else {
-                        pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
+                        pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, (mode & ~FS_ONLY_MOUNTS));
                     }
 
                     while (pArchiveIterator != NULL) {
-                        pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, mode);
+                        pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, (mode & ~FS_ONLY_MOUNTS));
                         pArchiveIterator = fs_next(pArchiveIterator);
                     }
 
@@ -4264,13 +4264,13 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
 
 
                             if (dirPathRemainingLen == 0) {
-                                pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
+                                pArchiveIterator = fs_first_ex(pArchive, "", 0, (mode & ~FS_ONLY_MOUNTS));
                             } else {
-                                pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
+                                pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, (mode & ~FS_ONLY_MOUNTS));
                             }
 
                             while (pArchiveIterator != NULL) {
-                                pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, mode);
+                                pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, (mode & ~FS_ONLY_MOUNTS));
                                 pArchiveIterator = fs_next(pArchiveIterator);
                             }
 
