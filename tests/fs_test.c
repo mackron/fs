@@ -2502,6 +2502,13 @@ int fs_test_archives_mount(fs_test* pTest)
         return FS_ERROR;
     }
 
+    /* Test that attempting to mount a path for reading fails if the actual path does not exist. */
+    result = fs_mount(pTestState->pFS, "does_not_exist", "should_fail", FS_READ);
+    if (result == FS_SUCCESS) {
+        printf("%s: Unexpected success when mounting non-existent path for reading.\n", pTest->name);
+        return FS_ERROR;
+    }
+
     return FS_SUCCESS;
 }
 /* END archives_mount */
