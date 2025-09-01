@@ -451,6 +451,94 @@ int fs_test_path_normalize(fs_test* pTest)
 }
 /* END path_normalize */
 
+/* BEG path_trim_base */
+int fs_test_path_trim_base_internal(fs_test* pTest, const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen, const char* pExpected)
+{
+    const char* pResult;
+    char pPathNT[256] = {0};
+    char pBaseNT[256] = {0};
+    size_t resultOffset;
+
+    /* Make a copy of the input strings just for diagnostics. */
+    if (pPath != NULL) {
+        if (pathLen == FS_NULL_TERMINATED) {
+            fs_strncpy(pPathNT, pPath, sizeof(pPathNT));
+        } else {
+            fs_strncpy(pPathNT, pPath, pathLen);
+        }
+    }
+
+    if (pBasePath != NULL) {
+        if (basePathLen == FS_NULL_TERMINATED) {
+            fs_strncpy(pBaseNT, pBasePath, sizeof(pBaseNT));
+        } else {
+            fs_strncpy(pBaseNT, pBasePath, basePathLen);
+        }
+    }
+
+    pResult = fs_path_trim_base(pPath, pathLen, pBasePath, basePathLen);
+    if (pResult == NULL) {
+        if (pExpected == NULL) {
+            return 0;   /* Expected failure. */
+        } else {
+            printf("%s: Unexpected failure when trimming \"%s\" with base \"%s\"\n", pTest->name, pPathNT, pBaseNT);
+            return 1;   /* Unexpected failure. */
+        }
+    }
+
+    if (pExpected == NULL) {
+        printf("%s: Expected failure when trimming \"%s\" with base \"%s\", but got success.\n", pTest->name, pPathNT, pBaseNT);
+        return 1;   /* Unexpected success. */
+    }
+
+    resultOffset = (size_t)(pResult - pPath);
+
+    if (fs_strncmp(pResult, pExpected, pathLen - resultOffset) != 0) {
+        printf("%s: Trimmed path does not match expected. Got \"%s\", expected \"%s\"\n", pTest->name, pPathNT + resultOffset, pExpected);
+        return 1;
+    }
+
+    return 0;
+}
+
+int fs_test_path_trim_base(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, "/abc",     FS_NULL_TERMINATED, "def");
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, "/abc/def", FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, "/xyz",     FS_NULL_TERMINATED, NULL);         /* Does not start with the base. We should expect NULL to be returned here. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, NULL,       FS_NULL_TERMINATED, "/abc/def");   /* A base path of NULL is equivalent to "". */
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, "/abc/",    FS_NULL_TERMINATED, "def");        /* A trailing slash at the end of the end of the base should be ignored. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc/def", FS_NULL_TERMINATED, "/",        FS_NULL_TERMINATED, "abc/def");    /* A base path of "/" should result in the entire path being returned, minus the leading slash. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, "abc",      FS_NULL_TERMINATED, "def");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, "abc/def",  FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, "xyz",      FS_NULL_TERMINATED, NULL);         /* Does not start with the base. We should expect NULL to be returned here. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, NULL,       FS_NULL_TERMINATED, "abc/def");    /* A base path of NULL is equivalent to "". */
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, "abc/",     FS_NULL_TERMINATED, "def");        /* A trailing slash at the end of the end of the base should be ignored. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc/def",  FS_NULL_TERMINATED, "",         FS_NULL_TERMINATED, "abc/def");    /* A base path of "/" should result in the entire path being returned, minus the leading slash. */
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, "/abc",     FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, "/abc/def", FS_NULL_TERMINATED, NULL);
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, "/xyz",     FS_NULL_TERMINATED, NULL);
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, NULL,       FS_NULL_TERMINATED, "/abc");
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, "/abc/",    FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "/abc",     FS_NULL_TERMINATED, "/",        FS_NULL_TERMINATED, "abc");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, "abc",      FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, "abc/def",  FS_NULL_TERMINATED, NULL);
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, "xyz",      FS_NULL_TERMINATED, NULL);
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, NULL,       FS_NULL_TERMINATED, "abc");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, "abc/",     FS_NULL_TERMINATED, "");
+    errorCount += fs_test_path_trim_base_internal(pTest, "abc",      FS_NULL_TERMINATED, "",         FS_NULL_TERMINATED, "abc");
+    errorCount += fs_test_path_trim_base_internal(pTest, NULL,       0,                  "/abc",     FS_NULL_TERMINATED, NULL);         /* A NULL path should always return NULL. */
+
+    if (errorCount == 0) {
+        return FS_SUCCESS;
+    } else {
+        return FS_ERROR;
+    }
+}
+/* END path_trim_base*/
+
 
 
 
@@ -2606,6 +2694,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_path,                   "Path",                      NULL,                           NULL,                 &test_root);
     fs_test_init(&test_path_iteration,         "Path Iteration",            fs_test_path_iteration,         NULL,                 &test_path);
     fs_test_init(&test_path_normalize,         "Path Normalize",            fs_test_path_normalize,         NULL,                 &test_path);
+    fs_test_init(&test_path_trim_base,         "Path Trim Base",            fs_test_path_trim_base,         NULL,                 &test_path);
 
     /*
     Default System IO.

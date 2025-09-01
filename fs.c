@@ -7629,16 +7629,12 @@ FS_API const char* fs_path_trim_base(const char* pPath, size_t pathLen, const ch
 
     /* We just keep iterating until we find a mismatch or reach the end of the base path. */
     for (;;) {
-        if (iPath.segmentLength != iBase.segmentLength) {
-            return NULL;
-        }
-
-        if (fs_strncmp(iPath.pFullPath + iPath.segmentOffset, iBase.pFullPath + iBase.segmentOffset, iPath.segmentLength) != 0) {
+        if (iPath.segmentLength != iBase.segmentLength || fs_strncmp(iPath.pFullPath + iPath.segmentOffset, iBase.pFullPath + iBase.segmentOffset, iPath.segmentLength) != 0) {
             return NULL;
         }
 
         result = fs_path_next(&iBase);
-        if (result != FS_SUCCESS) {
+        if (result != FS_SUCCESS || (iBase.segmentLength == 0 && fs_path_is_last(&iBase))) {
             fs_path_next(&iPath);   /* Move to the next segment in the path to ensure our iterators are in sync. */
             break;
         }
