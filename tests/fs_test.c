@@ -2393,7 +2393,7 @@ int fs_test_archives(fs_test* pTest)
     fs_config config;
     fs_archive_type pArchiveTypes[2];
     char pRootPath[256];
-    char dataA[] = {1, 2, 3, 4};
+    char dataA[] = { 1, 2, 3, 4 };
 
     pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
     pArchiveTypes[1] = fs_archive_type_init(FS_PAK, "pak");
@@ -2532,6 +2532,46 @@ int fs_test_archives_transparent(fs_test* pTest)
     }
 
     fs_file_close(pFile);
+
+
+    /*
+    Opening files must prioritize the normal file system before archives. In our set up we have a file called "a"
+    in both the archive and the normal file system. On the normal file system it is 4 bytes, whereas the one in
+    the archive is only 1 bytes. We'll now check this.
+    */
+    {
+        char pExpectedDataA[] = { 1, 2, 3, 4 };
+        char pActualDataA[4];
+        size_t bytesRead;
+
+        result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_TRANSPARENT, &pFile);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to open file 'a' with transparent mode.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+        result = fs_file_read(pFile, pActualDataA, sizeof(pActualDataA), &bytesRead);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to read file 'a' with transparent mode.\n", pTest->name);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
+
+        if (bytesRead != 4) {
+            /* Probably means we read from the archive instead of the normal file system. */
+            printf("%s: Read unexpected number of bytes from file 'a' with transparent mode. Expected 4, got %d.\n", pTest->name, (int)bytesRead);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
+
+        if (memcmp(pActualDataA, pExpectedDataA, sizeof(pExpectedDataA)) != 0) {
+            printf("%s: Data mismatch when reading file 'a' with transparent mode.\n", pTest->name);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
+
+        fs_file_close(pFile);
+    }
 
     return FS_SUCCESS;
 }
