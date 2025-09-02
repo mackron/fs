@@ -642,7 +642,7 @@ int fs_test_system_mktmp(fs_test* pTest)
 
 
     /* Now for a file. We just discard with this straight away. */
-    result = fs_mktmp(".fs_", pTempFile, sizeof(pTempFile), FS_MKTMP_FILE);
+    result = fs_mktmp("fs_", pTempFile, sizeof(pTempFile), FS_MKTMP_FILE);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create temporary file.\n", pTest->name);
         return FS_ERROR;
@@ -2393,6 +2393,7 @@ int fs_test_archives(fs_test* pTest)
     fs_config config;
     fs_archive_type pArchiveTypes[2];
     char pRootPath[256];
+    char dataA[] = {1, 2, 3, 4};
 
     pArchiveTypes[0] = fs_archive_type_init(FS_ZIP, "zip");
     pArchiveTypes[1] = fs_archive_type_init(FS_PAK, "pak");
@@ -2433,6 +2434,16 @@ int fs_test_archives(fs_test* pTest)
     result = fs_create_new_file(pTestState->pFS, "test1.zip", fs_test_file_test1_zip, sizeof(fs_test_file_test1_zip));
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create test1.zip.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /*
+    We want some files side-by-side with the archive, with the same name as those inside the archive itself. This is for
+    testing that the correct file is loaded in transparent mode (tested later).
+    */
+    result = fs_create_new_file(pTestState->pFS, "a", dataA, sizeof(dataA));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create file 'a'.\n", pTest->name);
         return FS_ERROR;
     }
 
@@ -2601,6 +2612,223 @@ int fs_test_archives_mount(fs_test* pTest)
 }
 /* END archives_mount */
 
+/* BEG archives_iteration */
+fs_result fs_test_archives_iteration_basic_test(fs_test* pTest, const char* pPath, int mode, const char** pExpectedNames, size_t expectedNameCount)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_iterator* pIterator;
+    size_t i;
+    size_t iterationCount = 0;
+
+    pIterator = fs_first(pTestState->pFS, pPath, mode);
+    if (pIterator == NULL) {
+        printf("%s: Failed to create iterator for path: %s\n", pTest->name, pPath);
+        return FS_ERROR;
+    }
+
+    while (pIterator != NULL) {
+        fs_bool32 found = FS_FALSE;
+
+        iterationCount += 1;
+
+        for (i = 0; i < expectedNameCount; i += 1) {
+            if (fs_strncmp(pExpectedNames[i], pIterator->pName, pIterator->nameLen) == 0) {
+                found = FS_TRUE;
+                break;
+            }
+        }
+
+        if (!found) {
+            printf("%s: Unexpected file found: %.*s\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+            return FS_ERROR;
+        }
+
+        pIterator = fs_next(pIterator);
+    }
+
+    if (iterationCount < expectedNameCount) {
+        printf("%s: Not all expected files were found.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+/* END archives_iteration */
+
+/* BEG archives_iteration_opaque */
+int fs_test_archives_iteration_opaque(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_iterator* pIterator;
+    const char* pExpectedNames[] = {
+        "a",
+        "test1.zip"
+    };
+
+    /* First a basic opaque iteration. This should not scan inside archives and should not allow us to iterate over directories inside archives. */
+    result = fs_test_archives_iteration_basic_test(pTest, "/", FS_READ | FS_OPAQUE | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test that attempting to iterate over the contents of an archive fails in opaque mode. */
+    pIterator = fs_first(pTestState->pFS, "/test1.zip", FS_READ | FS_OPAQUE | FS_ONLY_MOUNTS);
+    if (pIterator != NULL) {
+        printf("%s: Unexpected success when iterating over archive contents.\n", pTest->name);
+        fs_free_iterator(pIterator);
+        return FS_ERROR;
+    }
+
+    /* Test that attempting to iterate over a directory inside an archive fails in opaque mode. */
+    pIterator = fs_first(pTestState->pFS, "/test1.zip/dir1", FS_READ | FS_OPAQUE | FS_ONLY_MOUNTS);
+    if (pIterator != NULL) {
+        printf("%s: Unexpected success when iterating over directory inside archive.\n", pTest->name);
+        fs_free_iterator(pIterator);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_iteration_opaque */
+
+/* BEG archives_iteration_verbose */
+int fs_test_archives_iteration_verbose(fs_test* pTest)
+{
+    /*fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;*/
+    fs_result result;
+
+    /* For verbose iteration we should get the same results as opaque mode when iterating over the root directory. */
+    {
+        const char* pExpectedNames[] = {
+            "a",
+            "test1.zip"
+        };
+
+        result = fs_test_archives_iteration_basic_test(pTest, "/", FS_READ | FS_VERBOSE | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    /* We should be able to pass a path to an archive directly and iterate its contents. */
+    {
+        const char* pExpectedNames[] = {
+            "a",
+            "b",
+            "dir1"
+        };
+
+        result = fs_test_archives_iteration_basic_test(pTest, "/test1.zip", FS_READ | FS_VERBOSE | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    /* We should also be able to pass in a sub-directory of an archive. */
+    {
+        const char* pExpectedNamesp[] = { "a", "b", "c", "d" };
+
+        result = fs_test_archives_iteration_basic_test(pTest, "/test1.zip/dir1", FS_READ | FS_VERBOSE | FS_ONLY_MOUNTS, pExpectedNamesp, FS_COUNTOF(pExpectedNamesp));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_iteration_verbose */
+
+/* BEG archives_iteration_transparent */
+int fs_test_archives_iteration_transparent(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+
+    /*
+    Transparent should prioritize files from outside archives. It should also still include the archive itself in the iteration in case the application
+    needs explicit knowledge of it.
+    */
+    {
+        fs_iterator* pIterator;
+        size_t i;
+        size_t iterationCount = 0;
+        const char* pExpectedNames[] = {
+            "a",        /* <-- This should be from the normal file system and not the archive. We test this by looking at the size in the info. In the archive it is 1 byte, whereas on the normal file system it is 4 bytes. */
+            "b",        /* <-- From inside the archive. */
+            "dir1",     /* <-- From inside the archive. */
+            "test1.zip" /* <-- The archive itself should still be included in the iteration. */
+        };
+
+        pIterator = fs_first(pTestState->pFS, "/", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS);
+        if (pIterator == NULL) {
+            printf("%s: Failed to create iterator for path: %s\n", pTest->name, "/");
+            return FS_ERROR;
+        }
+
+        while (pIterator != NULL) {
+            fs_bool32 found = FS_FALSE;
+
+            iterationCount += 1;
+
+            for (i = 0; i < FS_COUNTOF(pExpectedNames); i += 1) {
+                if (fs_strncmp(pExpectedNames[i], pIterator->pName, pIterator->nameLen) == 0) {
+                    found = FS_TRUE;
+
+                    /* For the "a" file, we need to check that it picked the file from the file sytem and not the archive. */
+                    if (fs_strncmp("a", pIterator->pName, pIterator->nameLen) == 0) {
+                        if (pIterator->info.size != 4) {
+                            printf("%s: Found archive version of file: \"%.*s\". Expecting file system version.\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+            if (!found) {
+                printf("%s: Unexpected file found: %.*s\n", pTest->name, (int)pIterator->nameLen, pIterator->pName);
+                return FS_ERROR;
+            }
+
+            pIterator = fs_next(pIterator);
+        }
+
+        if (iterationCount < FS_COUNTOF(pExpectedNames)) {
+            printf("%s: Not all expected files were found.\n", pTest->name);
+            return FS_ERROR;
+        }
+    }
+
+    /* We should be able to pass a path to an archive directly and iterate its contents. */
+    {
+        const char* pExpectedNames[] = {
+            "a",
+            "b",
+            "dir1"
+        };
+
+        result = fs_test_archives_iteration_basic_test(pTest, "/test1.zip", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    /* We should also be able to pass in a sub-directory of an archive. */
+    {
+        const char* pExpectedNamesp[] = { "a", "b", "c", "d" };
+
+        result = fs_test_archives_iteration_basic_test(pTest, "/test1.zip/dir1", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS, pExpectedNamesp, FS_COUNTOF(pExpectedNamesp));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_iteration_transparent */
+
 /* BEG archives_uninit */
 int fs_test_archives_uninit(fs_test* pTest)
 {
@@ -2628,43 +2856,48 @@ int main(int argc, char** argv)
     /* Tests. */
     fs_test test_root;
     fs_test test_path;
-    fs_test test_path_iteration;            /* Tests path breakup logic. This is critical for some internal logic in the library. */
-    fs_test test_path_normalize;            /* Tests path normalization, like resolving ".." and "." segments. Again, this is used extensively for path validation and therefore needs proper testing. */
+    fs_test test_path_iteration;                    /* Tests path breakup logic. This is critical for some internal logic in the library. */
+    fs_test test_path_normalize;                    /* Tests path normalization, like resolving ".." and "." segments. Again, this is used extensively for path validation and therefore needs proper testing. */
+    fs_test test_path_trim_base;
     fs_test test_system;
-    fs_test test_system_sysdir;             /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
+    fs_test test_system_sysdir;                     /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
     fs_test test_system_init;
-    fs_test test_system_mktmp;              /* The output from this test will be used for subsequent tests. Tests will output into the temp directory created here. */
+    fs_test test_system_mktmp;                      /* The output from this test will be used for subsequent tests. Tests will output into the temp directory created here. */
     fs_test test_system_mkdir;
     fs_test test_system_write;
-    fs_test test_system_write_new;          /* Tests creation of a new file. */
-    fs_test test_system_write_overwrite;    /* Tests FS_WRITE (overwrite mode). */
-    fs_test test_system_write_append;       /* Tests FS_WRITE | FS_APPEND. */
-    fs_test test_system_write_exclusive;    /* Tests FS_WRITE | FS_EXCLUSIVE. */
-    fs_test test_system_write_truncate;     /* Tests FS_WRITE | FS_TRUNCATE. */
-    fs_test test_system_write_truncate2;    /* Tests fs_file_truncate(). */
-    fs_test test_system_write_seek;         /* Tests seeking while writing. */
-    fs_test test_system_write_flush;        /* Tests fs_file_flush(). */
-    fs_test test_system_read;               /* Tests FS_READ. Also acts as the parent test for other reading related tests. */
-    fs_test test_system_read_readonly;      /* Tests that writing to a read-only file fails. */
-    fs_test test_system_read_noexist;       /* Tests that reading a non-existent file fails cleanly. */
-    fs_test test_system_duplicate;          /* Tests fs_file_duplicate(). */
-    fs_test test_system_rename;             /* Tests fs_rename(). Make sure this is done before the remove test. */
-    fs_test test_system_remove;             /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
-    fs_test test_system_uninit;             /* Needs to be last since this is where the fs_uninit() function is called. */
-    fs_test test_mounts;                    /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
-    fs_test test_mounts_write;              /* Tests writing to mounts. */
-    fs_test test_mounts_read;               /* Tests reading from mounts. */
-    fs_test test_mounts_mkdir;              /* Tests creating directories with mounts. */
-    fs_test test_mounts_rename;             /* Tests renaming files with mounts. */
-    fs_test test_mounts_remove;             /* Tests removing files with mounts. */
-    fs_test test_mounts_iteration;          /* Tests iterating directories with mounts. */
-    fs_test test_unmount;                   /* This needs to be the last mount test. */
-    fs_test test_archives;                  /* The top-level test for archives. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
-    fs_test test_archives_opaque;           /* Tests that opening files inside an archive in opaque mode fails as expected. */
-    fs_test test_archives_verbose;          /* Tests that opening files inside an archive with an explicit (verbose) path works as expected. */
-    fs_test test_archives_transparent;      /* Tests that opening files inside an archive with a transparent path works as expected. */
-    fs_test test_archives_mount;            /* Tests that mounting an archive works as expected. */
-    fs_test test_archives_uninit;           /* This needs to be the last archive test. */
+    fs_test test_system_write_new;                  /* Tests creation of a new file. */
+    fs_test test_system_write_overwrite;            /* Tests FS_WRITE (overwrite mode). */
+    fs_test test_system_write_append;               /* Tests FS_WRITE | FS_APPEND. */
+    fs_test test_system_write_exclusive;            /* Tests FS_WRITE | FS_EXCLUSIVE. */
+    fs_test test_system_write_truncate;             /* Tests FS_WRITE | FS_TRUNCATE. */
+    fs_test test_system_write_truncate2;            /* Tests fs_file_truncate(). */
+    fs_test test_system_write_seek;                 /* Tests seeking while writing. */
+    fs_test test_system_write_flush;                /* Tests fs_file_flush(). */
+    fs_test test_system_read;                       /* Tests FS_READ. Also acts as the parent test for other reading related tests. */
+    fs_test test_system_read_readonly;              /* Tests that writing to a read-only file fails. */
+    fs_test test_system_read_noexist;               /* Tests that reading a non-existent file fails cleanly. */
+    fs_test test_system_duplicate;                  /* Tests fs_file_duplicate(). */
+    fs_test test_system_rename;                     /* Tests fs_rename(). Make sure this is done before the remove test. */
+    fs_test test_system_remove;                     /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
+    fs_test test_system_uninit;                     /* Needs to be last since this is where the fs_uninit() function is called. */
+    fs_test test_mounts;                            /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
+    fs_test test_mounts_write;                      /* Tests writing to mounts. */
+    fs_test test_mounts_read;                       /* Tests reading from mounts. */
+    fs_test test_mounts_mkdir;                      /* Tests creating directories with mounts. */
+    fs_test test_mounts_rename;                     /* Tests renaming files with mounts. */
+    fs_test test_mounts_remove;                     /* Tests removing files with mounts. */
+    fs_test test_mounts_iteration;                  /* Tests iterating directories with mounts. */
+    fs_test test_unmount;                           /* This needs to be the last mount test. */
+    fs_test test_archives;                          /* The top-level test for archives. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
+    fs_test test_archives_opaque;                   /* Tests that opening files inside an archive in opaque mode fails as expected. */
+    fs_test test_archives_verbose;                  /* Tests that opening files inside an archive with an explicit (verbose) path works as expected. */
+    fs_test test_archives_transparent;              /* Tests that opening files inside an archive with a transparent path works as expected. */
+    fs_test test_archives_mount;                    /* Tests that mounting an archive works as expected. */
+    fs_test test_archives_iteration;                /* Tests iteration with archives. */
+    fs_test test_archives_iteration_opaque;         /* Tests iteration with archives in opaque mode. */
+    fs_test test_archives_iteration_verbose;        /* Tests iteration with archives in verbose mode. */
+    fs_test test_archives_iteration_transparent;    /* Tests iteration with archives in transparent mode. */
+    fs_test test_archives_uninit;                   /* This needs to be the last archive test. */
 
     /* Test states. */
     fs_test_state test_system_state;
@@ -2691,59 +2924,63 @@ int main(int argc, char** argv)
     fs_test_init(&test_root, NULL, NULL, NULL, NULL);
 
     /* Paths. */
-    fs_test_init(&test_path,                   "Path",                      NULL,                           NULL,                 &test_root);
-    fs_test_init(&test_path_iteration,         "Path Iteration",            fs_test_path_iteration,         NULL,                 &test_path);
-    fs_test_init(&test_path_normalize,         "Path Normalize",            fs_test_path_normalize,         NULL,                 &test_path);
-    fs_test_init(&test_path_trim_base,         "Path Trim Base",            fs_test_path_trim_base,         NULL,                 &test_path);
+    fs_test_init(&test_path,                       "Path",                       NULL,                           NULL,                 &test_root);
+    fs_test_init(&test_path_iteration,             "Path Iteration",             fs_test_path_iteration,         NULL,                 &test_path);
+    fs_test_init(&test_path_normalize,             "Path Normalize",             fs_test_path_normalize,         NULL,                 &test_path);
+    fs_test_init(&test_path_trim_base,             "Path Trim Base",             fs_test_path_trim_base,         NULL,                 &test_path);
 
     /*
     Default System IO.
 
     This only tests basic file operations. It does not test mounts or archives.
     */
-    fs_test_init(&test_system,                 "System IO",                 NULL,                           &test_system_state,   &test_root);
-    fs_test_init(&test_system_sysdir,          "System Directories",        fs_test_system_sysdir,          &test_system_state,   &test_system);
-    fs_test_init(&test_system_init,            "Initialization",            fs_test_system_init,            &test_system_state,   &test_system);
-    fs_test_init(&test_system_mktmp,           "Temporaries",               fs_test_system_mktmp,           &test_system_state,   &test_system);
-    fs_test_init(&test_system_mkdir,           "Make Directory",            fs_test_system_mkdir,           &test_system_state,   &test_system);
-    fs_test_init(&test_system_write,           "Write",                     NULL,                           &test_system_state,   &test_system);
-    fs_test_init(&test_system_write_new,       "Write New",                 fs_test_system_write_new,       &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_overwrite, "Write Overwrite",           fs_test_system_write_overwrite, &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_append,    "Write Append",              fs_test_system_write_append,    &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_exclusive, "Write Exclusive",           fs_test_system_write_exclusive, &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_truncate,  "Write Truncate",            fs_test_system_write_truncate,  &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_seek,      "Write Seek",                fs_test_system_write_seek,      &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_truncate2, "fs_file_truncate()",        fs_test_system_write_truncate2, &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_write_flush,     "Write Flush",               fs_test_system_write_flush,     &test_system_state,   &test_system_write);
-    fs_test_init(&test_system_read,            "Read",                      fs_test_system_read,            &test_system_state,   &test_system);
-    fs_test_init(&test_system_read_readonly,   "Read Read-Only",            fs_test_system_read_readonly,   &test_system_state,   &test_system_read);
-    fs_test_init(&test_system_read_noexist,    "Read Non-Existent",         fs_test_system_read_noexist,    &test_system_state,   &test_system_read);
-    fs_test_init(&test_system_duplicate,       "Duplicate",                 fs_test_system_duplicate,       &test_system_state,   &test_system);
-    fs_test_init(&test_system_rename,          "Rename",                    fs_test_system_rename,          &test_system_state,   &test_system);
-    fs_test_init(&test_system_remove,          "Remove",                    fs_test_system_remove,          &test_system_state,   &test_system);
-    fs_test_init(&test_system_uninit,          "Uninitialization",          fs_test_system_uninit,          &test_system_state,   &test_system);
+    fs_test_init(&test_system,                     "System IO",                  NULL,                           &test_system_state,   &test_root);
+    fs_test_init(&test_system_sysdir,              "System Directories",         fs_test_system_sysdir,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_init,                "Initialization",             fs_test_system_init,            &test_system_state,   &test_system);
+    fs_test_init(&test_system_mktmp,               "Temporaries",                fs_test_system_mktmp,           &test_system_state,   &test_system);
+    fs_test_init(&test_system_mkdir,               "Make Directory",             fs_test_system_mkdir,           &test_system_state,   &test_system);
+    fs_test_init(&test_system_write,               "Write",                      NULL,                           &test_system_state,   &test_system);
+    fs_test_init(&test_system_write_new,           "Write New",                  fs_test_system_write_new,       &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_overwrite,     "Write Overwrite",            fs_test_system_write_overwrite, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_append,        "Write Append",               fs_test_system_write_append,    &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_exclusive,     "Write Exclusive",            fs_test_system_write_exclusive, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_truncate,      "Write Truncate",             fs_test_system_write_truncate,  &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_seek,          "Write Seek",                 fs_test_system_write_seek,      &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_truncate2,     "fs_file_truncate()",         fs_test_system_write_truncate2, &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_write_flush,         "Write Flush",                fs_test_system_write_flush,     &test_system_state,   &test_system_write);
+    fs_test_init(&test_system_read,                "Read",                       fs_test_system_read,            &test_system_state,   &test_system);
+    fs_test_init(&test_system_read_readonly,       "Read Read-Only",             fs_test_system_read_readonly,   &test_system_state,   &test_system_read);
+    fs_test_init(&test_system_read_noexist,        "Read Non-Existent",          fs_test_system_read_noexist,    &test_system_state,   &test_system_read);
+    fs_test_init(&test_system_duplicate,           "Duplicate",                  fs_test_system_duplicate,       &test_system_state,   &test_system);
+    fs_test_init(&test_system_rename,              "Rename",                     fs_test_system_rename,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_remove,              "Remove",                     fs_test_system_remove,          &test_system_state,   &test_system);
+    fs_test_init(&test_system_uninit,              "Uninitialization",           fs_test_system_uninit,          &test_system_state,   &test_system);
 
     /*
     Mounts.
     */
-    fs_test_init(&test_mounts,                 "Mounts",                    fs_test_mounts,                 &test_mounts_state,   &test_root);
-    fs_test_init(&test_mounts_write,           "Mounts Write",              fs_test_mounts_write,           &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_read,            "Mounts Read",               fs_test_mounts_read,            &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_mkdir,           "Mounts Make Directory",     fs_test_mounts_mkdir,           &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_rename,          "Mounts Rename",             fs_test_mounts_rename,          &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_remove,          "Mounts Remove",             fs_test_mounts_remove,          &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_iteration,       "Mounts Iteration",          fs_test_mounts_iteration,       &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_unmount,                "Unmount",                   fs_test_unmount,                &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts,                     "Mounts",                     fs_test_mounts,                 &test_mounts_state,   &test_root);
+    fs_test_init(&test_mounts_write,               "Mounts Write",               fs_test_mounts_write,           &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_read,                "Mounts Read",                fs_test_mounts_read,            &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_mkdir,               "Mounts Make Directory",      fs_test_mounts_mkdir,           &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_rename,              "Mounts Rename",              fs_test_mounts_rename,          &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_remove,              "Mounts Remove",              fs_test_mounts_remove,          &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_iteration,           "Mounts Iteration",           fs_test_mounts_iteration,       &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_unmount,                    "Unmount",                    fs_test_unmount,                &test_mounts_state,   &test_mounts);
 
     /*
     Archives.
     */
-    fs_test_init(&test_archives,               "Archives",                  fs_test_archives,               &test_archives_state, &test_root);
-    fs_test_init(&test_archives_opaque,        "Archives Opaque",           fs_test_archives_opaque,        &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_verbose,       "Archives Verbose",          fs_test_archives_verbose,       &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_transparent,   "Archives Transparent",      fs_test_archives_transparent,   &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_mount,         "Archives Mounted",          fs_test_archives_mount,         &test_archives_state, &test_archives);
-    fs_test_init(&test_archives_uninit,        "Archives Uninitialization", fs_test_archives_uninit,        &test_archives_state, &test_archives);
+    fs_test_init(&test_archives,                       "Archives",                       fs_test_archives,                       &test_archives_state, &test_root);
+    fs_test_init(&test_archives_opaque,                "Archives Opaque",                fs_test_archives_opaque,                &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_verbose,               "Archives Verbose",               fs_test_archives_verbose,               &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_transparent,           "Archives Transparent",           fs_test_archives_transparent,           &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_mount,                 "Archives Mounted",               fs_test_archives_mount,                 &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_iteration,             "Archives Iteration",             NULL,                                   &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_iteration_opaque,      "Archives Iteration Opaque",      fs_test_archives_iteration_opaque,      &test_archives_state, &test_archives_iteration);
+    fs_test_init(&test_archives_iteration_verbose,     "Archives Iteration Verbose",     fs_test_archives_iteration_verbose,     &test_archives_state, &test_archives_iteration);
+    fs_test_init(&test_archives_iteration_transparent, "Archives Iteration Transparent", fs_test_archives_iteration_transparent, &test_archives_state, &test_archives_iteration);
+    fs_test_init(&test_archives_uninit,                "Archives Uninitialization",      fs_test_archives_uninit,                &test_archives_state, &test_archives);
 
 
     result = fs_test_run(&test_root);
