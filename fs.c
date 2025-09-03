@@ -4383,92 +4383,31 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
         /* Check mount points. */
         if (pFS != NULL && (mode & FS_IGNORE_MOUNTS) == 0) {
             for (mountPointIerationResult = fs_mount_list_first(pFS->pReadMountPoints, &iMountPoint); mountPointIerationResult == FS_SUCCESS; mountPointIerationResult = fs_mount_list_next(&iMountPoint)) {
-                /*
-                Just like when opening a file, we need to check that the directory path starts with the mount point. If it
-                doesn't match we just skip to the next mount point.
-                */
-                char  pDirSubPathCleanStack[1024];
-                char* pDirSubPathCleanHeap = NULL;
-                char* pDirSubPathClean;
-                int dirSubPathCleanLen;
-                unsigned int cleanOptions = (mode & FS_NO_ABOVE_ROOT_NAVIGATION);
-
-                size_t dirSubPathLen;
-                const char* pDirSubPath = fs_path_trim_mount_point_base(pDirectoryPath, directoryPathLen, iMountPoint.pMountPointPath, FS_NULL_TERMINATED);
-                if (pDirSubPath == NULL) {
-                    continue;
-                }
-
-                dirSubPathLen = directoryPathLen - (size_t)(pDirSubPath - pDirectoryPath); 
-
-
-                /* If the mount point starts with a root segment, i.e. "/", we cannot allow navigation above that. */
-                if (iMountPoint.pMountPointPath[0] == '/' || iMountPoint.pMountPointPath[0] == '\\') {
-                    cleanOptions |= FS_NO_ABOVE_ROOT_NAVIGATION;
-                }
-
-                /* We need to clean the file sub-path, but can skip it if FS_NO_SPECIAL_DIRS is specified since it's implied. */
-                if ((mode & FS_NO_SPECIAL_DIRS) == 0) {
-                    dirSubPathCleanLen = fs_path_normalize(pDirSubPathCleanStack, sizeof(pDirSubPathCleanStack), pDirSubPath, dirSubPathLen, cleanOptions);
-                    if (dirSubPathCleanLen < 0) {
-                        continue;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
-                    }
-
-                    if (dirSubPathCleanLen >= (int)sizeof(pDirSubPathCleanStack)) {
-                        pDirSubPathCleanHeap = (char*)fs_malloc(dirSubPathCleanLen + 1, fs_get_allocation_callbacks(pFS));
-                        if (pDirSubPathCleanHeap == NULL) {
-                            return NULL;    /* Out of memory. */
-                        }
-
-                        fs_path_normalize(pDirSubPathCleanHeap, dirSubPathCleanLen + 1, pDirSubPath, dirSubPathLen, cleanOptions);    /* <-- This should never fail. */
-                        pDirSubPathClean = pDirSubPathCleanHeap;
-                    } else {
-                        pDirSubPathClean = pDirSubPathCleanStack;
-                    }
-                } else {
-                    pDirSubPathClean = (char*)pDirSubPath;  /* Safe cast. Will not be modified past this point. */
-                    dirSubPathCleanLen = (int)dirSubPathLen;
-                }
-
-                
                 if (iMountPoint.pArchive != NULL) {
-                    /* The mount point is an archive. We need to iterate over the contents of the archive. */
-                    pBackendIterator = fs_first_ex(iMountPoint.pArchive, pDirSubPathClean, dirSubPathCleanLen, mode);
+                    fs_string dirSubPath;
+
+                    result = fs_resolve_sub_path_from_mount_point(pFS, iMountPoint.internal.pMountPoint, pDirectoryPath, mode, &dirSubPath);
+                    if (result != FS_SUCCESS) {
+                        continue;
+                    }
+
+                    pBackendIterator = fs_first_ex(iMountPoint.pArchive, fs_string_cstr(&dirSubPath), fs_string_len(&dirSubPath), mode);
                     while (pBackendIterator != NULL) {
                         pIterator = fs_iterator_internal_append(pIterator, pBackendIterator, pFS, mode);
                         pBackendIterator = fs_next(pBackendIterator);
                     }
+
+                    fs_string_free(&dirSubPath, fs_get_allocation_callbacks(pFS));
                 } else {
-                    /*
-                    The mount point is a directory. We need to construct a path that is the concatenation of the mount point's internal path and
-                    our input directory. This is the path we'll be using to iterate over the contents of the directory.
-                    */
-                    char pInterpolatedPathStack[1024];
-                    char* pInterpolatedPathHeap = NULL;
-                    char* pInterpolatedPath;
-                    int interpolatedPathLen;
+                    fs_string dirRealPath;
 
-                    interpolatedPathLen = fs_path_append(pInterpolatedPathStack, sizeof(pInterpolatedPathStack), iMountPoint.pPath, FS_NULL_TERMINATED, pDirSubPathClean, dirSubPathCleanLen);
-                    if (interpolatedPathLen > 0 && (size_t)interpolatedPathLen >= sizeof(pInterpolatedPathStack)) {
-                        /* Not enough room on the stack. Allocate on the heap. */
-                        pInterpolatedPathHeap = (char*)fs_malloc(interpolatedPathLen + 1, fs_get_allocation_callbacks(pFS));
-                        if (pInterpolatedPathHeap == NULL) {
-                            fs_free_iterator((fs_iterator*)pIterator);
-                            return NULL;    /* Out of memory. */
-                        }
-
-                        fs_path_append(pInterpolatedPathHeap, interpolatedPathLen + 1, iMountPoint.pPath, FS_NULL_TERMINATED, pDirSubPathClean, dirSubPathCleanLen);    /* <-- This should never fail. */
-                        pInterpolatedPath = pInterpolatedPathHeap;
-                    } else {
-                        pInterpolatedPath = pInterpolatedPathStack;
+                    result = fs_resolve_real_path_from_mount_point(pFS, iMountPoint.internal.pMountPoint, pDirectoryPath, mode, &dirRealPath);
+                    if (result != FS_SUCCESS) {
+                        continue;
                     }
 
-                    pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, pInterpolatedPath, FS_NULL_TERMINATED, mode);
-
-                    if (pInterpolatedPathHeap != NULL) {
-                        fs_free(pInterpolatedPathHeap, fs_get_allocation_callbacks(pFS));
-                        pInterpolatedPathHeap = NULL;
-                    }
+                    pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, fs_string_cstr(&dirRealPath), fs_string_len(&dirRealPath), mode);
+                    fs_string_free(&dirRealPath, fs_get_allocation_callbacks(pFS));
                 }
             }
         }
