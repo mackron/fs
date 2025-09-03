@@ -84,8 +84,8 @@ if (result != FS_SUCCESS) {
 result = fs_file_write(pFile, pBuffer, bytesToWrite, &bytesWritten);
 ```
 
-The `FS_WRITE` option will default to overwrite mode. You can use `FS_TRUNCATE` if you want to append
-to the file instead of truncating it.
+The `FS_WRITE` option will default to overwrite mode. You can use `FS_TRUNCATE` if you want to
+truncate the file instead of overwriting it.
 
 ```c
 fs_file_open(pFS, "file.txt", FS_WRITE | FS_TRUNCATE, &pFile);
@@ -193,8 +193,8 @@ fs_init(&fsConfig, &pFS);
 
 In the code above we are registering support for ZIP archives (`FS_ZIP`) and Quake PAK archives
 (`FS_PAK`). Whenever a file with a "zip" or "pak" extension is found, the library will be able to
-access the archive. The library will determine whether or not a file is an archive based on it's
-extension. You can use whatever extension you would like for a backend, and you can associated
+access the archive. The library will determine whether or not a file is an archive based on its
+extension. You can use whatever extension you would like for a backend, and you can associate
 multiple extensions to the same backend. You can also associate different backends to the same
 extension, in which case the library will use the first one that works. If the extension of a file
 does not match with one of the registered archive types it'll assume it's not an archive and will
@@ -426,7 +426,7 @@ fs_file_open(pFS, "/gamedata/file.txt", FS_READ, &pFile);   // Note how the path
 ```
 
 
-You can also mount a archives to a virtual path:
+You can also mount an archive to a virtual path:
 
 ```c
 fs_mount(pFS, "/usr/share/mygame/gamedata.zip", "gamedata", FS_READ);
@@ -435,7 +435,7 @@ fs_mount(pFS, "/usr/share/mygame/gamedata.zip", "gamedata", FS_READ);
 In order to do this, the `fs` object must have been configured with support for the given archive
 type. Note that writing directly into an archive is not supported by this API. To write into an
 archive, the backend itself must support writing, and you will need to manually initialize a `fs`
-object for the archive an write into it directly.
+object for the archive and write into it directly.
 
 
 The examples above have been hard coding paths, but you can use `fs_mount_sysdir()` to mount a
@@ -740,8 +740,8 @@ If the directory is empty, or an error occurs, `fs_first` should return `NULL`. 
 should return `NULL` when there are no more entries. When `next` returns `NULL`, the backend needs
 to free the iterator object. The `free_iterator` function is used to free the iterator object
 explicitly. The backend is responsible for any memory management of the name string. A typical way
-to deal with this is to allocate the allocate additional space for the name immediately after the
-`fs_iterator` allocation.
+to deal with this is to allocate additional space for the name immediately after the `fs_iterator`
+allocation.
 
 Backends are responsible for guaranteeing thread-safety of different files across different
 threads. This should typically be quite easy since most system backends, such as stdio, are already
