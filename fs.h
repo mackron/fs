@@ -1232,7 +1232,7 @@ FS_API void fs_close_archive(fs* pArchive);
 FS_API void fs_gc_archives(fs* pFS, int policy);
 FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
 FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
-FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);
+FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);    /* Does not validate that it's an actual valid archive. */
 
 FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile);
 FS_API void fs_file_close(fs_file* pFile);
