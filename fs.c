@@ -3069,6 +3069,51 @@ FS_API size_t fs_get_archive_gc_threshold(fs* pFS)
 }
 
 
+static fs_result fs_find_registered_archive_type_by_path(fs* pFS, const char* pPath, size_t pathLen, const fs_backend** ppBackend, const void** ppBackendConfig)
+{
+    fs_result result;
+    fs_registered_backend_iterator iBackend;
+
+    if (ppBackend != NULL) {
+        *ppBackend = NULL;
+    }
+    if (ppBackendConfig != NULL) {
+        *ppBackendConfig = NULL;
+    }
+
+    for (result = fs_first_registered_backend(pFS, &iBackend); result == FS_SUCCESS; result = fs_next_registered_backend(&iBackend)) {
+        if (fs_path_extension_equal(pPath, pathLen, iBackend.pExtension, iBackend.extensionLen)) {
+            if (ppBackend != NULL) {
+                *ppBackend = iBackend.pBackend;
+            }
+            if (ppBackendConfig != NULL) {
+                *ppBackendConfig = iBackend.pBackendConfig;
+            }
+            
+            return FS_SUCCESS;
+        }
+    }
+
+    return FS_DOES_NOT_EXIST;
+}
+
+FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen)
+{
+    fs_result result;
+
+    if (pFS == NULL || pPath == NULL || pathLen == 0 || pPath[0] == '\0') {
+        return FS_FALSE;
+    }
+
+    result = fs_find_registered_archive_type_by_path(pFS, pPath, pathLen, NULL, NULL);
+    if (result == FS_SUCCESS) {
+        return FS_TRUE;
+    }
+
+    return FS_FALSE;
+}
+
+
 static size_t fs_file_duplicate_alloc_size(fs* pFS)
 {
     return sizeof(fs_file) + fs_backend_file_alloc_size(fs_get_backend_or_default(pFS), pFS);
