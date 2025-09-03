@@ -2952,7 +2952,7 @@ FS_API void fs_close_archive(fs* pArchive)
         fs* pArchiveOwnerFS = (fs*)pArchive->pRefCountChangedUserData;
         FS_ASSERT(pArchiveOwnerFS != NULL);
 
-        fs_gc_archives(pArchiveOwnerFS, FS_GC_POLICY_THRESHOLD);
+        fs_gc_archives(pArchiveOwnerFS, FS_GC_POLICY_FULL);
     }
 }
 
