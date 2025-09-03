@@ -1498,7 +1498,7 @@ FS_API fs_config fs_config_init_default(void)
     return config;
 }
 
-FS_API fs_config fs_config_init(const fs_backend* pBackend, void* pBackendConfig, fs_stream* pStream)
+FS_API fs_config fs_config_init(const fs_backend* pBackend, const void* pBackendConfig, fs_stream* pStream)
 {
     fs_config config = fs_config_init_default();
     config.pBackend       = pBackend;
@@ -2776,7 +2776,7 @@ static void fs_on_refcount_changed_internal(void* pUserData, fs* pFS, fs_uint32 
     }
 }
 
-static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
+static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
 {
     fs_result result;
     fs* pArchive;
@@ -2862,7 +2862,7 @@ static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, voi
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
+FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
 {
     fs_result result;
 
@@ -3240,8 +3240,8 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
 
     do
     {
-        fs_result backendIteratorResult;
-        fs_registered_backend_iterator iBackend;
+        const fs_backend* pBackend;
+        const void* pBackendConfig;
         fs_bool32 isArchive = FS_FALSE;
 
         /* Skip over "." and ".." segments. */
@@ -3253,47 +3253,46 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
         }
 
         /* If an archive has been explicitly listed in the path, we must try loading from that. */
-        for (backendIteratorResult = fs_first_registered_backend(pFS, &iBackend); backendIteratorResult == FS_SUCCESS; backendIteratorResult = fs_next_registered_backend(&iBackend)) {
-            if (fs_path_extension_equal(iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset, iFilePathSeg.segmentLength, iBackend.pExtension, iBackend.extensionLen)) {
-                isArchive = FS_TRUE;
+        result = fs_find_registered_archive_type_by_path(pFS, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset, iFilePathSeg.segmentLength, &pBackend, &pBackendConfig);
+        if (result == FS_SUCCESS) {
+            isArchive = FS_TRUE;
 
-                /* This path points to an explicit archive. If this is the file we're trying to actually load, we'll want to handle that too. */
-                if (fs_path_iterators_compare(&iFilePathSeg, &iFilePathSegLast) == 0) {
+            /* This path points to an explicit archive. If this is the file we're trying to actually load, we'll want to handle that too. */
+            if (fs_path_iterators_compare(&iFilePathSeg, &iFilePathSegLast) == 0) {
+                /*
+                The archive file itself is the last segment in the path which means that's the file
+                we're actually trying to load. We shouldn't need to try opening this here because if
+                it existed and was able to be opened, it should have been done so at a higher level.
+                */
+                return FS_DOES_NOT_EXIST;
+            } else {
+                fs* pArchive;
+
+                result = fs_open_archive_ex(pFS, pBackend, pBackendConfig, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
+                if (result != FS_SUCCESS) {
                     /*
-                    The archive file itself is the last segment in the path which means that's the file
-                    we're actually trying to load. We shouldn't need to try opening this here because if
-                    it existed and was able to be opened, it should have been done so at a higher level.
+                    We failed to open the archive. If it's due to the archive not existing we just continue searching. Otherwise
+                    a proper error code needs to be returned.
                     */
-                    return FS_DOES_NOT_EXIST;
-                } else {
-                    fs* pArchive;
-
-                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
-                    if (result != FS_SUCCESS) {
-                        /*
-                        We failed to open the archive. If it's due to the archive not existing we just continue searching. Otherwise
-                        a proper error code needs to be returned.
-                        */
-                        if (result != FS_DOES_NOT_EXIST) {
-                            return result;
-                        } else {
-                            continue;
-                        }
-                    }
-
-                    result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);
-                    if (result != FS_SUCCESS) {
-                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
+                    if (result != FS_DOES_NOT_EXIST) {
                         return result;
+                    } else {
+                        continue;
                     }
-
-                    if (ppFile == NULL) {
-                        /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
-                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
-                    }
-
-                    return FS_SUCCESS;
                 }
+
+                result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);
+                if (result != FS_SUCCESS) {
+                    if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
+                    return result;
+                }
+
+                if (ppFile == NULL) {
+                    /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
+                    if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
+                }
+
+                return FS_SUCCESS;
             }
         }
 
@@ -3325,63 +3324,62 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
             fs_iterator* pIterator;
 
             for (pIterator = fs_backend_first(fs_get_backend_or_default(pFS), pFS, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength); pIterator != NULL; pIterator = fs_backend_next(fs_get_backend_or_default(pFS), pIterator)) {
-                for (backendIteratorResult = fs_first_registered_backend(pFS, &iBackend); backendIteratorResult == FS_SUCCESS; backendIteratorResult = fs_next_registered_backend(&iBackend)) {
-                    if (fs_path_extension_equal(pIterator->pName, pIterator->nameLen, iBackend.pExtension, iBackend.extensionLen)) {
-                        /* Looks like an archive. We can load this one up and try opening from it. */
-                        fs* pArchive;
-                        char pArchivePathNTStack[1024];
-                        char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
-                        char* pArchivePathNT;
-                        size_t archivePathLen;
+                result = fs_find_registered_archive_type_by_path(pFS, pIterator->pName, pIterator->nameLen, &pBackend, &pBackendConfig);
+                if (result == FS_SUCCESS) {
+                    /* Looks like an archive. We can load this one up and try opening from it. */
+                    fs* pArchive;
+                    char pArchivePathNTStack[1024];
+                    char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
+                    char* pArchivePathNT;
+                    size_t archivePathLen;
 
-                        archivePathLen = iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1 + pIterator->nameLen;
-                        if (archivePathLen >= sizeof(pArchivePathNTStack)) {
-                            pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
-                            if (pArchivePathNTHeap == NULL) {
-                                fs_backend_free_iterator(fs_get_backend_or_default(pFS), pIterator);
-                                return FS_OUT_OF_MEMORY;
-                            }
-
-                            pArchivePathNT = pArchivePathNTHeap;
-                        } else {
-                            pArchivePathNT = pArchivePathNTStack;
+                    archivePathLen = iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1 + pIterator->nameLen;
+                    if (archivePathLen >= sizeof(pArchivePathNTStack)) {
+                        pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
+                        if (pArchivePathNTHeap == NULL) {
+                            fs_backend_free_iterator(fs_get_backend_or_default(pFS), pIterator);
+                            return FS_OUT_OF_MEMORY;
                         }
 
-                        FS_COPY_MEMORY(pArchivePathNT, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength);
-                        pArchivePathNT[iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength] = '/';
-                        FS_COPY_MEMORY(pArchivePathNT + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, pIterator->pName, pIterator->nameLen);
-                        pArchivePathNT[archivePathLen] = '\0';
-
-                        /* At this point we've constructed the archive name and we can now open it. */
-                        result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
-                        fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
-
-                        if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
-                            continue;   /* Failed to open this archive. Keep looking. */
-                        }
-
-                        /*
-                        Getting here means we've successfully opened the archive. We can now try opening the file
-                        from there. The path we load from will be the next segment in the path.
-                        */
-                        result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);  /* +1 to skip the separator. */
-                        if (result != FS_SUCCESS) {
-                            if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
-                            continue;  /* Failed to open the file. Keep looking. */
-                        }
-
-                        /* The iterator is no longer required. */
-                        fs_backend_free_iterator(fs_get_backend_or_default(pFS), pIterator);
-                        pIterator = NULL;
-
-                        if (ppFile == NULL) {
-                            /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
-                            if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
-                        }
-
-                        /* Getting here means we successfully opened the file. We're done. */
-                        return FS_SUCCESS;
+                        pArchivePathNT = pArchivePathNTHeap;
+                    } else {
+                        pArchivePathNT = pArchivePathNTStack;
                     }
+
+                    FS_COPY_MEMORY(pArchivePathNT, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength);
+                    pArchivePathNT[iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength] = '/';
+                    FS_COPY_MEMORY(pArchivePathNT + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, pIterator->pName, pIterator->nameLen);
+                    pArchivePathNT[archivePathLen] = '\0';
+
+                    /* At this point we've constructed the archive name and we can now open it. */
+                    result = fs_open_archive_ex(pFS, pBackend, pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_NO_INCREMENT_REFCOUNT | FS_OPAQUE | openMode, &pArchive);
+                    fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
+
+                    if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
+                        continue;   /* Failed to open this archive. Keep looking. */
+                    }
+
+                    /*
+                    Getting here means we've successfully opened the archive. We can now try opening the file
+                    from there. The path we load from will be the next segment in the path.
+                    */
+                    result = fs_file_open_or_info(pArchive, iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength + 1, openMode, ppFile, pInfo);  /* +1 to skip the separator. */
+                    if (result != FS_SUCCESS) {
+                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
+                        continue;  /* Failed to open the file. Keep looking. */
+                    }
+
+                    /* The iterator is no longer required. */
+                    fs_backend_free_iterator(fs_get_backend_or_default(pFS), pIterator);
+                    pIterator = NULL;
+
+                    if (ppFile == NULL) {
+                        /* We were only grabbing file info. We can garbage collect the archive straight away if necessary. */
+                        if (fs_refcount(pArchive) == 1) { fs_gc_archives(pFS, FS_GC_POLICY_THRESHOLD); }
+                    }
+
+                    /* Getting here means we successfully opened the file. We're done. */
+                    return FS_SUCCESS;
                 }
 
                 /*

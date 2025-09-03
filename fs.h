@@ -1182,7 +1182,7 @@ struct fs_config
 };
 
 FS_API fs_config fs_config_init_default(void);
-FS_API fs_config fs_config_init(const fs_backend* pBackend, void* pBackendConfig, fs_stream* pStream);
+FS_API fs_config fs_config_init(const fs_backend* pBackend, const void* pBackendConfig, fs_stream* pStream);
 
 
 struct fs_backend
@@ -1226,7 +1226,7 @@ FS_API fs* fs_ref(fs* pFS);     /* Increments the reference count. Returns pFS. 
 FS_API fs_uint32 fs_unref(fs* pFS);  /* Decrements the reference count. Does not uninitialize. */
 FS_API fs_uint32 fs_refcount(fs* pFS);
 
-FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
+FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
 FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive);
 FS_API void fs_close_archive(fs* pArchive);
 FS_API void fs_gc_archives(fs* pFS, int policy);
