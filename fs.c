@@ -4171,7 +4171,7 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
 
                     isArchive = FS_TRUE;
 
-                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength, FS_READ | FS_IGNORE_MOUNTS | mode, &pArchive);
+                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
                     if (result != FS_SUCCESS) {
                         /*
                         We failed to open the archive. If it's due to the archive not existing we just continue searching. Otherwise
@@ -4255,7 +4255,7 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                             pArchivePathNT[archivePathLen] = '\0';
 
                             /* At this point we've constructed the archive name and we can now open it. */
-                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | mode, &pArchive);
+                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
                             fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
 
                             if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
