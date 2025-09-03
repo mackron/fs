@@ -3362,7 +3362,7 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
                     }
 
                     fs_string_append_preallocated(&archivePath, iFilePathSeg.pFullPath, iFilePathSeg.segmentOffset + iFilePathSeg.segmentLength);
-                    fs_string_append_preallocated(&archivePath, "/", 1);
+                    fs_string_append_preallocated(&archivePath, "/", FS_NULL_TERMINATED);
                     fs_string_append_preallocated(&archivePath, pIterator->pName, pIterator->nameLen);
 
                     /* At this point we've constructed the archive name and we can now open it. */
@@ -4288,32 +4288,21 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                             /* Looks like an archive. We can load this one up and try iterating from it. */
                             fs* pArchive;
                             fs_iterator* pArchiveIterator;
-                            char pArchivePathNTStack[1024];
-                            char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
-                            char* pArchivePathNT;
-                            size_t archivePathLen;
+                            fs_string archivePath;
 
-                            archivePathLen = iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1 + pInnerIterator->nameLen;
-                            if (archivePathLen >= sizeof(pArchivePathNTStack)) {
-                                pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
-                                if (pArchivePathNTHeap == NULL) {
-                                    fs_backend_free_iterator(pBackend, pInnerIterator);
-                                    return pIterator;
-                                }
-
-                                pArchivePathNT = pArchivePathNTHeap;
-                            } else {
-                                pArchivePathNT = pArchivePathNTStack;
+                            result = fs_string_alloc(iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1 + pInnerIterator->nameLen, fs_get_allocation_callbacks(pFS), &archivePath);
+                            if (result != FS_SUCCESS) {
+                                fs_backend_free_iterator(pBackend, pInnerIterator);
+                                return pIterator;
                             }
 
-                            FS_COPY_MEMORY(pArchivePathNT, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength);
-                            pArchivePathNT[iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength] = '/';
-                            FS_COPY_MEMORY(pArchivePathNT + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, pInnerIterator->pName, pInnerIterator->nameLen);
-                            pArchivePathNT[archivePathLen] = '\0';
+                            fs_string_append_preallocated(&archivePath, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength);
+                            fs_string_append_preallocated(&archivePath, "/", FS_NULL_TERMINATED);
+                            fs_string_append_preallocated(&archivePath, pInnerIterator->pName, pInnerIterator->nameLen);
 
                             /* At this point we've constructed the archive name and we can now open it. */
-                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePathNT, FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
-                            fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
+                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, fs_string_cstr(&archivePath), FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
+                            fs_string_free(&archivePath, fs_get_allocation_callbacks(pFS));
 
                             if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
                                 continue;   /* Failed to open this archive. Keep looking. */
