@@ -93,17 +93,6 @@ if(FS_BUILD_TESTS)
     )
     target_compile_options(fs_test PRIVATE ${COMPILE_OPTIONS})
     add_test(NAME fs_test COMMAND fs_test)
-
-
-    add_executable(fstest tests/fstest.c)
-    target_link_libraries(fstest PRIVATE
-        fs
-        fszip
-        fspak
-        fssub
-    )
-    target_compile_options(fstest PRIVATE ${COMPILE_OPTIONS})
-    #add_test(NAME fstest COMMAND fstest)
 endif()
 
 
