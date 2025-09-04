@@ -3004,6 +3004,78 @@ int fs_test_archives_recursive(fs_test* pTest)
         }
     }
 
+    /* Basic iteration test. */
+    {
+        /* Opaque. Should fail. */
+        {
+            fs_iterator* pIterator;
+
+            pIterator = fs_first(pTestState->pFS, "/test2.zip/archives/test1.zip", FS_READ | FS_OPAQUE | FS_ONLY_MOUNTS);
+            if (pIterator != NULL) {
+                printf("%s: Unexpected success when iterating over nested archive contents in opaque mode.\n", pTest->name);
+                fs_free_iterator(pIterator);
+                return FS_ERROR;
+            }
+        }
+
+        /* Verbose. */
+        {
+            const char* pExpectedNames[] = {
+                "a",
+                "dir1"
+            };
+
+            result = fs_test_archives_iteration_basic_test(pTest, "/test2.zip/archives/test1.zip", FS_READ | FS_VERBOSE | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+            if (result != FS_SUCCESS) {
+                return FS_ERROR;
+            }
+        }
+
+        /* Transparent. */
+        {
+            /* With verbose path. */
+            {
+                const char* pExpectedNames[] = {
+                    "a",
+                    "dir1"
+                };
+
+                result = fs_test_archives_iteration_basic_test(pTest, "/test2.zip/archives/test1.zip", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+                if (result != FS_SUCCESS) {
+                    return FS_ERROR;
+                }
+            }
+
+            /* With transparent inner archive. */
+            {
+                const char* pExpectedNames[] = {
+                    "a",
+                    "dir1",
+                    "test1.zip"
+                };
+
+                result = fs_test_archives_iteration_basic_test(pTest, "/test2.zip/archives", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+                if (result != FS_SUCCESS) {
+                    return FS_ERROR;
+                }
+            }
+
+            /* With transparent inner and outer archive. */
+            {
+                const char* pExpectedNames[] = {
+                    "a",
+                    "dir1",
+                    "test1.zip"
+                };
+
+                result = fs_test_archives_iteration_basic_test(pTest, "/archives", FS_READ | FS_TRANSPARENT | FS_ONLY_MOUNTS, pExpectedNames, FS_COUNTOF(pExpectedNames));
+                if (result != FS_SUCCESS) {
+                    return FS_ERROR;
+                }
+            }
+        }
+    }
+
     return FS_SUCCESS;
 }
 /* END archives_recursive */
