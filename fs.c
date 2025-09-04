@@ -4186,6 +4186,15 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
     if (pFS != NULL && !FS_IS_OPAQUE(mode)) {
         fs_path_iterator iDirPathSeg;
 
+        /*
+        When we get here, we are iterating over the actual files in archives that are located in the
+        file system `pFS`. There's no real concept of mounts here. In order to make iteration work
+        as expected, we need to modify our mode flags to ensure it does not attempt to read from
+        mounts.
+        */
+        mode |=  FS_IGNORE_MOUNTS;
+        mode &= ~FS_ONLY_MOUNTS;
+
         /* If no archive types have been configured we can abort early. */
         if (pFS->archiveTypesAllocSize == 0) {
             return pIterator;
@@ -4234,7 +4243,7 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
 
                     isArchive = FS_TRUE;
 
-                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
+                    result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, iDirPathSeg.pFullPath, iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength, FS_READ | (mode & ~FS_WRITE), &pArchive);
                     if (result != FS_SUCCESS) {
                         /*
                         We failed to open the archive. If it's due to the archive not existing we just continue searching. Otherwise
@@ -4249,13 +4258,13 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                     }
 
                     if (dirPathRemainingLen == 0) {
-                        pArchiveIterator = fs_first_ex(pArchive, "", 0, (mode & ~FS_ONLY_MOUNTS));
+                        pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
                     } else {
-                        pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, (mode & ~FS_ONLY_MOUNTS));
+                        pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
                     }
 
                     while (pArchiveIterator != NULL) {
-                        pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, (mode & ~FS_ONLY_MOUNTS));
+                        pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, mode);
                         pArchiveIterator = fs_next(pArchiveIterator);
                     }
 
@@ -4307,22 +4316,21 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
                             fs_string_append_preallocated(&archivePath, pInnerIterator->pName, pInnerIterator->nameLen);
 
                             /* At this point we've constructed the archive name and we can now open it. */
-                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, fs_string_cstr(&archivePath), FS_NULL_TERMINATED, FS_READ | FS_IGNORE_MOUNTS | (mode & ~FS_ONLY_MOUNTS), &pArchive);
+                            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, fs_string_cstr(&archivePath), FS_NULL_TERMINATED, FS_READ | (mode & ~FS_WRITE), &pArchive);
                             fs_string_free(&archivePath, fs_get_allocation_callbacks(pFS));
 
                             if (result != FS_SUCCESS) { /* <-- This is checking the result of fs_open_archive_ex(). */
                                 continue;   /* Failed to open this archive. Keep looking. */
                             }
 
-
                             if (dirPathRemainingLen == 0) {
-                                pArchiveIterator = fs_first_ex(pArchive, "", 0, (mode & ~FS_ONLY_MOUNTS));
+                                pArchiveIterator = fs_first_ex(pArchive, "", 0, mode);
                             } else {
-                                pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, (mode & ~FS_ONLY_MOUNTS));
+                                pArchiveIterator = fs_first_ex(pArchive, iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset + iDirPathSeg.segmentLength + 1, dirPathRemainingLen, mode);
                             }
 
                             while (pArchiveIterator != NULL) {
-                                pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, (mode & ~FS_ONLY_MOUNTS));
+                                pIterator = fs_iterator_internal_append(pIterator, pArchiveIterator, pFS, mode);
                                 pArchiveIterator = fs_next(pArchiveIterator);
                             }
 
@@ -4376,7 +4384,25 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
     to be consistent with what would happen when opening files.
     */
     /* Gather files. */
-    {
+    if ((mode & FS_WRITE) != 0) {
+        /* Write mode. */
+        if (pFS != NULL && (mode & FS_IGNORE_MOUNTS) == 0) {
+            fs_mount_point* pBestMountPoint = NULL;
+            fs_string fileRealPath;
+
+            pBestMountPoint = fs_find_best_write_mount_point(pFS, pDirectoryPath, mode, &fileRealPath);
+            if (pBestMountPoint != NULL) {
+                pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, fs_string_cstr(&fileRealPath), fs_string_len(&fileRealPath), mode);
+                fs_string_free(&fileRealPath, fs_get_allocation_callbacks(pFS));
+            }
+        } else {
+            /* No "fs" object was supplied, or we're ignoring mounts. Need to gather directly from the file system. */
+            if ((mode & FS_ONLY_MOUNTS) == 0) {
+                pIterator = fs_iterator_internal_gather(pIterator, pBackend, pFS, pDirectoryPath, directoryPathLen, mode);
+            }
+        }
+    } else {
+        /* Read mode. */
         fs_result mountPointIerationResult;
         fs_mount_list_iterator iMountPoint;
 
