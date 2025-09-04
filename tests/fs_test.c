@@ -3,6 +3,7 @@
 #include "../extras/backends/pak/fs_pak.h"
 
 #include "files/test1.zip.c"
+#include "files/test2.zip.c"
 
 #include <stdio.h>
 #include <assert.h>
@@ -39,28 +40,6 @@ const char* fs_test_get_backend_name(const fs_backend* pBackend)
     }
 }
 
-
-fs_result fs_create_new_file(fs* pFS, const char* pPath, const void* pData, size_t dataSize)
-{
-    fs_result result;
-    fs_file* pFile;
-
-    result = fs_file_open(pFS, pPath, FS_WRITE, &pFile);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
-
-    if (pData != NULL && dataSize > 0) {
-        result = fs_file_write(pFile, pData, dataSize, NULL);
-        if (result != FS_SUCCESS) {
-            fs_file_close(pFile);
-            return result;
-        }
-    }
-
-    fs_file_close(pFile);
-    return FS_SUCCESS;
-}
 
 /* BEG fs_test.c */
 typedef struct fs_test fs_test;
@@ -233,6 +212,63 @@ void fs_test_print_summary(fs_test* pTest)
     printf("---\n%s%d / %d tests passed.\n", (testCount == passedCount) ? "[PASS]: " : "[FAIL]: ", passedCount, testCount);
 }
 /* END fs_test.c */
+
+
+/* BEG common */
+fs_result fs_create_new_file(fs* pFS, const char* pPath, const void* pData, size_t dataSize)
+{
+    fs_result result;
+    fs_file* pFile;
+
+    result = fs_file_open(pFS, pPath, FS_WRITE, &pFile);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    if (pData != NULL && dataSize > 0) {
+        result = fs_file_write(pFile, pData, dataSize, NULL);
+        if (result != FS_SUCCESS) {
+            fs_file_close(pFile);
+            return result;
+        }
+    }
+
+    fs_file_close(pFile);
+    return FS_SUCCESS;
+}
+
+fs_result fs_test_open_and_read_file(fs_test* pTest, fs* pFS, const char* pPath, int openMode, const void* pExpectedData, size_t expectedDataSize)
+{
+    fs_result result;
+    fs_file* pFile;
+    void* pActualData;
+    size_t actualDataSize;
+    
+    result = fs_file_open(pFS, pPath, openMode, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file \"%s\".\n", pTest->name, pPath);
+        return result;
+    }
+
+    result = fs_file_read_to_end(pFile, FS_FORMAT_BINARY, &pActualData, &actualDataSize);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to read file \"%s\".\n", pTest->name, pPath);
+        fs_file_close(pFile);
+        return result;
+    }
+
+    if (actualDataSize != expectedDataSize || memcmp(pActualData, pExpectedData, expectedDataSize) != 0) {
+        printf("%s: File \"%s\" contents do not match expected data.\n", pTest->name, pPath);
+        fs_free(pActualData, fs_get_allocation_callbacks(pFS));
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_free(pActualData, fs_get_allocation_callbacks(pFS));
+    fs_file_close(pFile);
+    return FS_SUCCESS;
+}
+/* END common */
 
 
 /* BEG path_iteration */
@@ -2912,6 +2948,66 @@ int fs_test_archives_iteration_transparent(fs_test* pTest)
 }
 /* END archives_iteration_transparent */
 
+/* BEG archives_recursive */
+int fs_test_archives_recursive(fs_test* pTest)
+{
+    /* This tests archives inside archives. */
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+
+    /* We need to write out our recursive archive. */
+    result = fs_create_new_file(pTestState->pFS, "test2.zip", fs_test_file_test2_zip, sizeof(fs_test_file_test2_zip));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create test2.zip.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Basic read test. */
+    {
+        const char pExpectedDataA[] = { 'a' };
+
+        /* Opaque. Should fail. */
+        result = fs_file_open(pTestState->pFS, "/test2.zip/archives/test1.zip/a", FS_READ | FS_OPAQUE, NULL);
+        if (result == FS_SUCCESS) {
+            printf("%s: Unexpected success when opening file inside nested archive in opaque mode.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+
+        /* Verbose. */
+        result = fs_test_open_and_read_file(pTest, pTestState->pFS, "/test2.zip/archives/test1.zip/a", FS_READ | FS_VERBOSE, pExpectedDataA, sizeof(pExpectedDataA));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+
+        result = fs_file_open(pTestState->pFS, "/test2.zip/archives/a", FS_READ | FS_VERBOSE, NULL);
+        if (result == FS_SUCCESS) {
+            printf("%s: Unexpected success when opening file inside nested archive with incomplete path in verbose mode.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+
+        /* Transparent. */
+        result = fs_test_open_and_read_file(pTest, pTestState->pFS, "/test2.zip/archives/test1.zip/a", FS_READ | FS_TRANSPARENT, pExpectedDataA, sizeof(pExpectedDataA));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+
+        result = fs_test_open_and_read_file(pTest, pTestState->pFS, "/test2.zip/archives/a", FS_READ | FS_TRANSPARENT, pExpectedDataA, sizeof(pExpectedDataA));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+
+        result = fs_test_open_and_read_file(pTest, pTestState->pFS, "/archives/a", FS_READ | FS_TRANSPARENT, pExpectedDataA, sizeof(pExpectedDataA));
+        if (result != FS_SUCCESS) {
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END archives_recursive */
+
 /* BEG archives_uninit */
 int fs_test_archives_uninit(fs_test* pTest)
 {
@@ -2980,6 +3076,7 @@ int main(int argc, char** argv)
     fs_test test_archives_iteration_opaque;         /* Tests iteration with archives in opaque mode. */
     fs_test test_archives_iteration_verbose;        /* Tests iteration with archives in verbose mode. */
     fs_test test_archives_iteration_transparent;    /* Tests iteration with archives in transparent mode. */
+    fs_test test_archives_recursive;                /* Tests archives inside archives. */
     fs_test test_archives_uninit;                   /* This needs to be the last archive test. */
 
     /* Test states. */
@@ -3063,6 +3160,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_archives_iteration_opaque,      "Archives Iteration Opaque",      fs_test_archives_iteration_opaque,      &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_iteration_verbose,     "Archives Iteration Verbose",     fs_test_archives_iteration_verbose,     &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_iteration_transparent, "Archives Iteration Transparent", fs_test_archives_iteration_transparent, &test_archives_state, &test_archives_iteration);
+    fs_test_init(&test_archives_recursive,             "Archives Recursive",             fs_test_archives_recursive,             &test_archives_state, &test_archives);
     fs_test_init(&test_archives_uninit,                "Archives Uninitialization",      fs_test_archives_uninit,                &test_archives_state, &test_archives);
 
 
