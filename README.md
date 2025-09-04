@@ -7,7 +7,7 @@ About
 =====
 See the documentation at the top of [fs.h](fs.h) for details on how to use the library.
 
-This library supports the ability to open files from the both the native file system and virtual
+This library supports the ability to open files from both the native file system and virtual
 file systems through a unified API. File systems are implemented as backends, examples of which can
 be found in the [extras/backends](extras/backends) folder. Custom backends can be implemented and
 plugged in without needing to modify the library.
@@ -70,9 +70,9 @@ You could then load an asset like this:
 fs_file_open(pFS, "gamedata/texture.png", FS_READ, &pFile);
 ```
 
-Here there "mod2" directory would be searched first because it has the highest priority. If the
-file cannot be opened from there it'll fall back to "mod1", and then as a last resort it'll fall
-back to the base game.
+Here the "mod2" directory would be searched first because it has the highest priority. If the file
+cannot be opened from there it'll fall back to "mod1", and then as a last resort it'll fall back to
+the base game.
 
 Internally there are a separate set of mounts for reading and writing. To set up a mount point for
 opening files in write mode, you need to specify the `FS_WRITE` option:
@@ -105,14 +105,15 @@ path, helpers for mounting system directories, and preventing navigation outside
 See the documentation at the top of [fs.h](fs.h) for more details.
 
 In addition to the aforementioned functionality, the library includes all of the standard
-functionality you would expect for file IO, such as file enumeration, stat-ing (referred to as
-"info" in this library), creating directories and deleting and renaming files.
+functionality you would expect for file IO, such as file enumeration, getting file information,
+creating directories and deleting and renaming files.
 
 
 Usage
 =====
-See [fs.h](fs.h) for documentation. Examples can be found in the [examples](examples) folder. Backends can
-be found in the [extras/backends](extras/backends) folder.
+See the documentation at the top of [fs.h](fs.h) for detailed usage instructions. Examples can be
+found in the [examples](examples) folder. Backends can be found in the [extras/backends](extras/backends)
+folder.
 
 
 Building
@@ -128,7 +129,7 @@ archive backends can be found in the [extras/backends](extras/backends) folder. 
 #include "extras/backends/pak/fs_pak.h"
 ```
 
-You need only include backends that you care about. See examples/archives.c for an example on how
+You need only include backends that you care about. See examples/archives.c for an example of how
 to use archives.
 
 You can also use CMake, but support for that is very basic.
