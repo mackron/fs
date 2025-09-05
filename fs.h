@@ -926,37 +926,68 @@ typedef unsigned int  fs_bool32;
 
 
 /* BEG fs_result.h */
-typedef enum fs_result
+typedef enum
 {
-    /* Compression Non-Error Result Codes. */
-    FS_HAS_MORE_OUTPUT     = 102, /* Some stream has more output data to be read, but there's not enough room in the output buffer. */
-    FS_NEEDS_MORE_INPUT    = 100, /* Some stream needs more input data before it can be processed. */
+    FS_SUCCESS                       =  0,
+    FS_ERROR                         = -1,  /* Generic, unknown error. */
+    FS_INVALID_ARGS                  = -2,
+    FS_INVALID_OPERATION             = -3,
+    FS_OUT_OF_MEMORY                 = -4,
+    FS_OUT_OF_RANGE                  = -5,
+    FS_ACCESS_DENIED                 = -6,
+    FS_DOES_NOT_EXIST                = -7,
+    FS_ALREADY_EXISTS                = -8,
+    FS_TOO_MANY_OPEN_FILES           = -9,
+    FS_INVALID_FILE                  = -10,
+    FS_TOO_BIG                       = -11,
+    FS_PATH_TOO_LONG                 = -12,
+    FS_NAME_TOO_LONG                 = -13,
+    FS_NOT_DIRECTORY                 = -14,
+    FS_IS_DIRECTORY                  = -15,
+    FS_DIRECTORY_NOT_EMPTY           = -16,
+    FS_AT_END                        = -17,
+    FS_NO_SPACE                      = -18,
+    FS_BUSY                          = -19,
+    FS_IO_ERROR                      = -20,
+    FS_INTERRUPT                     = -21,
+    FS_UNAVAILABLE                   = -22,
+    FS_ALREADY_IN_USE                = -23,
+    FS_BAD_ADDRESS                   = -24,
+    FS_BAD_SEEK                      = -25,
+    FS_BAD_PIPE                      = -26,
+    FS_DEADLOCK                      = -27,
+    FS_TOO_MANY_LINKS                = -28,
+    FS_NOT_IMPLEMENTED               = -29,
+    FS_NO_MESSAGE                    = -30,
+    FS_BAD_MESSAGE                   = -31,
+    FS_NO_DATA_AVAILABLE             = -32,
+    FS_INVALID_DATA                  = -33,
+    FS_TIMEOUT                       = -34,
+    FS_NO_NETWORK                    = -35,
+    FS_NOT_UNIQUE                    = -36,
+    FS_NOT_SOCKET                    = -37,
+    FS_NO_ADDRESS                    = -38,
+    FS_BAD_PROTOCOL                  = -39,
+    FS_PROTOCOL_UNAVAILABLE          = -40,
+    FS_PROTOCOL_NOT_SUPPORTED        = -41,
+    FS_PROTOCOL_FAMILY_NOT_SUPPORTED = -42,
+    FS_ADDRESS_FAMILY_NOT_SUPPORTED  = -43,
+    FS_SOCKET_NOT_SUPPORTED          = -44,
+    FS_CONNECTION_RESET              = -45,
+    FS_ALREADY_CONNECTED             = -46,
+    FS_NOT_CONNECTED                 = -47,
+    FS_CONNECTION_REFUSED            = -48,
+    FS_NO_HOST                       = -49,
+    FS_IN_PROGRESS                   = -50,
+    FS_CANCELLED                     = -51,
+    FS_MEMORY_ALREADY_MAPPED         = -52,
+    FS_DIFFERENT_DEVICE              = -53,
+    FS_CHECKSUM_MISMATCH             = -100,
+    FS_NO_BACKEND                    = -101,
 
-    /* Main Result Codes. */
-    FS_SUCCESS             =  0,
-    FS_ERROR               = -1,  /* Generic, unknown error. */
-    FS_INVALID_ARGS        = -2,
-    FS_INVALID_OPERATION   = -3,
-    FS_OUT_OF_MEMORY       = -4,
-    FS_OUT_OF_RANGE        = -5,
-    FS_ACCESS_DENIED       = -6,
-    FS_DOES_NOT_EXIST      = -7,
-    FS_ALREADY_EXISTS      = -8,
-    FS_INVALID_FILE        = -10,
-    FS_TOO_BIG             = -11,
-    FS_PATH_TOO_LONG       = -12,
-    FS_NOT_DIRECTORY       = -14,
-    FS_IS_DIRECTORY        = -15,
-    FS_DIRECTORY_NOT_EMPTY = -16,
-    FS_AT_END              = -17,
-    FS_BUSY                = -19,
-    FS_INTERRUPT           = -21,
-    FS_BAD_SEEK            = -25,
-    FS_NOT_IMPLEMENTED     = -29,
-    FS_TIMEOUT             = -34,
-    FS_DIFFERENT_DEVICE    = -53,
-    FS_CHECKSUM_MISMATCH   = -100,
-    FS_NO_BACKEND          = -101
+    /* Non-Error Result Codes. */
+    FS_NEEDS_MORE_INPUT              = 100, /* Some stream needs more input data before it can be processed. */
+    FS_HAS_MORE_OUTPUT               = 102  /* Some stream has more output data to be read, but there's not enough room in the output buffer. */
 } fs_result;
 /* END fs_result.h */
 

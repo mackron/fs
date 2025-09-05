@@ -369,13 +369,13 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 }
 
 
+/* BEG fs_result_from_GetLastError.c */
 #if defined(_WIN32)
-#include <windows.h>    /* <-- Just can't get away from this darn thing... Needed for mutexes and file iteration. */
+#include <windows.h> /* For GetLastError, ERROR_* constants. */
 
-FS_API fs_result fs_result_from_GetLastError()
+FS_API fs_result fs_result_from_GetLastError(void)
 {
-    DWORD error = GetLastError();
-    switch (error)
+    switch (GetLastError())
     {
         case ERROR_SUCCESS:                return FS_SUCCESS;
         case ERROR_NOT_ENOUGH_MEMORY:      return FS_OUT_OF_MEMORY;
@@ -395,6 +395,7 @@ FS_API fs_result fs_result_from_GetLastError()
         case ERROR_BAD_PATHNAME:           return FS_INVALID_ARGS;
         case ERROR_INVALID_PARAMETER:      return FS_INVALID_ARGS;
         case ERROR_INVALID_HANDLE:         return FS_INVALID_ARGS;
+        case ERROR_INVALID_FUNCTION:       return FS_INVALID_OPERATION;
         case ERROR_FILENAME_EXCED_RANGE:   return FS_PATH_TOO_LONG;
         case ERROR_DIRECTORY:              return FS_NOT_DIRECTORY;
         case ERROR_DIR_NOT_EMPTY:          return FS_DIRECTORY_NOT_EMPTY;
@@ -402,15 +403,17 @@ FS_API fs_result fs_result_from_GetLastError()
         case ERROR_DISK_FULL:              return FS_OUT_OF_RANGE;
         case ERROR_HANDLE_EOF:             return FS_AT_END;
         case ERROR_SEEK:                   return FS_BAD_SEEK;
-        case ERROR_OPERATION_ABORTED:      return FS_INTERRUPT;
+        case ERROR_OPERATION_ABORTED:      return FS_CANCELLED;
         case ERROR_CANCELLED:              return FS_INTERRUPT;
-        default: break;
+        case ERROR_TOO_MANY_OPEN_FILES:    return FS_TOO_MANY_OPEN_FILES;
+        case ERROR_INVALID_DATA:           return FS_INVALID_DATA;
+        case ERROR_NO_DATA:                return FS_NO_DATA_AVAILABLE;
+        case ERROR_NOT_SAME_DEVICE:        return FS_DIFFERENT_DEVICE;
+        default:                           return FS_ERROR; /* Generic error. */
     }
-
-    return FS_ERROR;
 }
-#endif
-
+#endif /* _WIN32 */
+/* END fs_result_from_GetLastError.c */
 
 
 /* BEG fs_allocation_callbacks.c */
@@ -7279,26 +7282,246 @@ FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap
 /* END fs_mktmp.c */
 
 
-/* BEG fs_errno.c */
+/* BEG fs_result_from_errno.c */
+#include <errno.h>
+
 FS_API fs_result fs_result_from_errno(int error)
 {
-    switch (error)
-    {
-        case 0:         return FS_SUCCESS;
-        case ENOENT:    return FS_DOES_NOT_EXIST;
-        case ENOMEM:    return FS_OUT_OF_MEMORY;
-        case EACCES:    return FS_ACCESS_DENIED;
-        case EEXIST:    return FS_ALREADY_EXISTS;
-        case EINVAL:    return FS_INVALID_ARGS;
-        case ENOTDIR:   return FS_NOT_DIRECTORY;
-        case ENOTEMPTY: return FS_DIRECTORY_NOT_EMPTY;
-        default: break;
+    if (error == 0) {
+        return FS_SUCCESS;
     }
-
-    /* Fall back to a generic error. */
+#ifdef EPERM
+    else if (error == EPERM) { return FS_INVALID_OPERATION; }
+#endif
+#ifdef ENOENT
+    else if (error == ENOENT) { return FS_DOES_NOT_EXIST; }
+#endif
+#ifdef ESRCH
+    else if (error == ESRCH) { return FS_DOES_NOT_EXIST; }
+#endif
+#ifdef EINTR
+    else if (error == EINTR) { return FS_INTERRUPT; }
+#endif
+#ifdef EIO
+    else if (error == EIO) { return FS_IO_ERROR; }
+#endif
+#ifdef ENXIO
+    else if (error == ENXIO) { return FS_DOES_NOT_EXIST; }
+#endif
+#ifdef E2BIG
+    else if (error == E2BIG) { return FS_INVALID_ARGS; }
+#endif
+#ifdef ENOEXEC
+    else if (error == ENOEXEC) { return FS_INVALID_FILE; }
+#endif
+#ifdef EBADF
+    else if (error == EBADF) { return FS_INVALID_FILE; }
+#endif
+#ifdef EAGAIN
+    else if (error == EAGAIN) { return FS_UNAVAILABLE; }
+#endif
+#ifdef ENOMEM
+    else if (error == ENOMEM) { return FS_OUT_OF_MEMORY; }
+#endif
+#ifdef EACCES
+    else if (error == EACCES) { return FS_ACCESS_DENIED; }
+#endif
+#ifdef EFAULT
+    else if (error == EFAULT) { return FS_BAD_ADDRESS; }
+#endif
+#ifdef EBUSY
+    else if (error == EBUSY) { return FS_BUSY; }
+#endif
+#ifdef EEXIST
+    else if (error == EEXIST) { return FS_ALREADY_EXISTS; }
+#endif
+#ifdef EXDEV
+    else if (error == EXDEV) { return FS_DIFFERENT_DEVICE; }
+#endif
+#ifdef ENODEV
+    else if (error == ENODEV) { return FS_DOES_NOT_EXIST; }
+#endif
+#ifdef ENOTDIR
+    else if (error == ENOTDIR) { return FS_NOT_DIRECTORY; }
+#endif
+#ifdef EISDIR
+    else if (error == EISDIR) { return FS_IS_DIRECTORY; }
+#endif
+#ifdef EINVAL
+    else if (error == EINVAL) { return FS_INVALID_ARGS; }
+#endif
+#ifdef ENFILE
+    else if (error == ENFILE) { return FS_TOO_MANY_OPEN_FILES; }
+#endif
+#ifdef EMFILE
+    else if (error == EMFILE) { return FS_TOO_MANY_OPEN_FILES; }
+#endif
+#ifdef ENOTTY
+    else if (error == ENOTTY) { return FS_INVALID_OPERATION; }
+#endif
+#ifdef ETXTBSY
+    else if (error == ETXTBSY) { return FS_BUSY; }
+#endif
+#ifdef EFBIG
+    else if (error == EFBIG) { return FS_TOO_BIG; }
+#endif
+#ifdef ENOSPC
+    else if (error == ENOSPC) { return FS_NO_SPACE; }
+#endif
+#ifdef ESPIPE
+    else if (error == ESPIPE) { return FS_BAD_SEEK; }
+#endif
+#ifdef EROFS
+    else if (error == EROFS) { return FS_ACCESS_DENIED; }
+#endif
+#ifdef EPIPE
+    else if (error == EPIPE) { return FS_BAD_PIPE; }
+#endif
+#ifdef EDOM
+    else if (error == EDOM) { return FS_OUT_OF_RANGE; }
+#endif
+#ifdef ERANGE
+    else if (error == ERANGE) { return FS_OUT_OF_RANGE; }
+#endif
+#ifdef EDEADLK
+    else if (error == EDEADLK) { return FS_DEADLOCK; }
+#endif
+#ifdef ENAMETOOLONG
+    else if (error == ENAMETOOLONG) { return FS_PATH_TOO_LONG; }
+#endif
+#ifdef ENOSYS
+    else if (error == ENOSYS) { return FS_NOT_IMPLEMENTED; }
+#endif
+#ifdef ENOTEMPTY
+    else if (error == ENOTEMPTY) { return FS_DIRECTORY_NOT_EMPTY; }
+#endif
+#ifdef ELNRNG
+    else if (error == ELNRNG) { return FS_OUT_OF_RANGE; }
+#endif
+#ifdef EBFONT
+    else if (error == EBFONT) { return FS_INVALID_FILE; }
+#endif
+#ifdef ENODATA
+    else if (error == ENODATA) { return FS_NO_DATA_AVAILABLE; }
+#endif
+#ifdef ETIME
+    else if (error == ETIME) { return FS_TIMEOUT; }
+#endif
+#ifdef ENOSR
+    else if (error == ENOSR) { return FS_NO_DATA_AVAILABLE; }
+#endif
+#ifdef ENONET
+    else if (error == ENONET) { return FS_NO_NETWORK; }
+#endif
+#ifdef EOVERFLOW
+    else if (error == EOVERFLOW) { return FS_TOO_BIG; }
+#endif
+#ifdef ELIBACC
+    else if (error == ELIBACC) { return FS_ACCESS_DENIED; }
+#endif
+#ifdef ELIBBAD
+    else if (error == ELIBBAD) { return FS_INVALID_FILE; }
+#endif
+#ifdef ELIBSCN
+    else if (error == ELIBSCN) { return FS_INVALID_FILE; }
+#endif
+#ifdef EILSEQ
+    else if (error == EILSEQ) { return FS_INVALID_DATA; }
+#endif
+#ifdef ENOTSOCK
+    else if (error == ENOTSOCK) { return FS_NOT_SOCKET; }
+#endif
+#ifdef EDESTADDRREQ
+    else if (error == EDESTADDRREQ) { return FS_NO_ADDRESS; }
+#endif
+#ifdef EMSGSIZE
+    else if (error == EMSGSIZE) { return FS_TOO_BIG; }
+#endif
+#ifdef EPROTOTYPE
+    else if (error == EPROTOTYPE) { return FS_BAD_PROTOCOL; }
+#endif
+#ifdef ENOPROTOOPT
+    else if (error == ENOPROTOOPT) { return FS_PROTOCOL_UNAVAILABLE; }
+#endif
+#ifdef EPROTONOSUPPORT
+    else if (error == EPROTONOSUPPORT) { return FS_PROTOCOL_NOT_SUPPORTED; }
+#endif
+#ifdef ESOCKTNOSUPPORT
+    else if (error == ESOCKTNOSUPPORT) { return FS_SOCKET_NOT_SUPPORTED; }
+#endif
+#ifdef EOPNOTSUPP
+    else if (error == EOPNOTSUPP) { return FS_INVALID_OPERATION; }
+#endif
+#ifdef EPFNOSUPPORT
+    else if (error == EPFNOSUPPORT) { return FS_PROTOCOL_FAMILY_NOT_SUPPORTED; }
+#endif
+#ifdef EAFNOSUPPORT
+    else if (error == EAFNOSUPPORT) { return FS_ADDRESS_FAMILY_NOT_SUPPORTED; }
+#endif
+#ifdef EADDRINUSE
+    else if (error == EADDRINUSE) { return FS_ALREADY_IN_USE; }
+#endif
+#ifdef ENETDOWN
+    else if (error == ENETDOWN) { return FS_NO_NETWORK; }
+#endif
+#ifdef ENETUNREACH
+    else if (error == ENETUNREACH) { return FS_NO_NETWORK; }
+#endif
+#ifdef ENETRESET
+    else if (error == ENETRESET) { return FS_NO_NETWORK; }
+#endif
+#ifdef ECONNABORTED
+    else if (error == ECONNABORTED) { return FS_NO_NETWORK; }
+#endif
+#ifdef ECONNRESET
+    else if (error == ECONNRESET) { return FS_CONNECTION_RESET; }
+#endif
+#ifdef ENOBUFS
+    else if (error == ENOBUFS) { return FS_NO_SPACE; }
+#endif
+#ifdef EISCONN
+    else if (error == EISCONN) { return FS_ALREADY_CONNECTED; }
+#endif
+#ifdef ENOTCONN
+    else if (error == ENOTCONN) { return FS_NOT_CONNECTED; }
+#endif
+#ifdef ETIMEDOUT
+    else if (error == ETIMEDOUT) { return FS_TIMEOUT; }
+#endif
+#ifdef ECONNREFUSED
+    else if (error == ECONNREFUSED) { return FS_CONNECTION_REFUSED; }
+#endif
+#ifdef EHOSTDOWN
+    else if (error == EHOSTDOWN) { return FS_NO_HOST; }
+#endif
+#ifdef EHOSTUNREACH
+    else if (error == EHOSTUNREACH) { return FS_NO_HOST; }
+#endif
+#ifdef EALREADY
+    else if (error == EALREADY) { return FS_IN_PROGRESS; }
+#endif
+#ifdef EINPROGRESS
+    else if (error == EINPROGRESS) { return FS_IN_PROGRESS; }
+#endif
+#ifdef ESTALE
+    else if (error == ESTALE) { return FS_INVALID_FILE; }
+#endif
+#ifdef EREMOTEIO
+    else if (error == EREMOTEIO) { return FS_IO_ERROR; }
+#endif
+#ifdef EDQUOT
+    else if (error == EDQUOT) { return FS_NO_SPACE; }
+#endif
+#ifdef ENOMEDIUM
+    else if (error == ENOMEDIUM) { return FS_DOES_NOT_EXIST; }
+#endif
+#ifdef ECANCELED
+    else if (error == ECANCELED) { return FS_CANCELLED; }
+#endif
+    
     return FS_ERROR;
 }
-/* END fs_errno.c */
+/* END fs_result_from_errno.c */
 
 
 

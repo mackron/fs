@@ -1,20 +1,35 @@
 fs_h := <../fs.h>;
 fs_c := <../fs.c>;
 c89thread_h :: <../../c89thread/c89thread.h>;
+results_c   :: <../../refcode/results.c>;
 
+/* Results. */
+rename_results_namespace :: function(src:string) string
+{
+    return @(src)
+        ["\bNS_"] <= "FS_"
+        ["\bns_"] <= "fs_"
+    ;
+}
+
+fs_h("/\* BEG fs_result.h \*/\R"                   : "\R/\* END fs_result.h \*/")                   = rename_results_namespace(@(results_c("/\* BEG result.h \*/\R"                   : "\R/\* END result.h \*/")));
+fs_c("/\* BEG fs_result_from_errno.c \*/\R"        : "\R/\* END fs_result_from_errno.c \*/")        = rename_results_namespace(@(results_c("/\* BEG result_from_errno.c \*/\R"        : "\R/\* END result_from_errno.c \*/")));
+fs_c("/\* BEG fs_result_from_GetLastError.c \*/\R" : "\R/\* END fs_result_from_GetLastError.c \*/") = rename_results_namespace(@(results_c("/\* BEG result_from_GetLastError.c \*/\R" : "\R/\* END result_from_GetLastError.c \*/")));
+
+
+/* Threading. */
 rename_c89thread_namespace :: function(src:string) string
 {
     return @(src)
-        ["\bC89THREAD_"]                             <= "FS_"
-        ["\bc89thread_"]                             <= "fs_"
-        ["\bc89mtx_t\b"]                             <= "fs_mtx"
-        ["\bc89mtx_"]                                <= "fs_mtx_"
-        ["\bc89thrd_success\b"]                      <= "FS_SUCCESS"
-        ["\bc89thrd_error\b"]                        <= "FS_ERROR"
-        ["\bc89thrd_busy\b"]                         <= "FS_BUSY"
-        ["\bc89thrd_result_from_errno\b"]            <= "fs_result_from_errno"
-        ["\bc89thrd_result_from_GetLastError\(\)"] <= "fs_result_from_GetLastError(GetLastError())"
-        ["\bfs_handle\b"]                            <= "void*"
+        ["\bC89THREAD_"]           <= "FS_"
+        ["\bc89thread_"]           <= "fs_"
+        ["\bc89mtx_t\b"]           <= "fs_mtx"
+        ["\bc89mtx_"]              <= "fs_mtx_"
+        ["\bc89thrd_success\b"]    <= "FS_SUCCESS"
+        ["\bc89thrd_error\b"]      <= "FS_ERROR"
+        ["\bc89thrd_busy\b"]       <= "FS_BUSY"
+        ["\bc89thrd_result_from_"] <= "fs_result_from_"
+        ["\bfs_handle\b"]          <= "void*"
     ;
 }
 
