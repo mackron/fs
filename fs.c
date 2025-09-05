@@ -1564,7 +1564,7 @@ typedef enum fs_mount_priority
 } fs_mount_priority;
 
 
-static void fs_gc_archives_nolock(fs* pFS, int policy); /* Defined further down in the file. */
+static void fs_gc(fs* pFS, int policy, fs* pSpecificArchive); /* Generic internal GC function. */
 
 
 static const char* fs_mount_point_real_path(const fs_mount_point* pMountPoint)
@@ -2977,11 +2977,11 @@ FS_API void fs_close_archive(fs* pArchive)
         fs* pArchiveOwnerFS = (fs*)pArchive->pRefCountChangedUserData;
         FS_ASSERT(pArchiveOwnerFS != NULL);
 
-        fs_gc_archives(pArchiveOwnerFS, FS_GC_POLICY_FULL);
+        fs_gc(pArchiveOwnerFS, FS_GC_POLICY_FULL, pArchive);
     }
 }
 
-static void fs_gc_archives_nolock(fs* pFS, int policy)
+static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
 {
     size_t unreferencedCount = 0;
     size_t collectionCount = 0;
@@ -2991,21 +2991,25 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
 
     /*
     If we're doing a full garbage collection we need to recursively run the garbage collection process
-    on opened archives.
+    on opened archives. For specific GC, we only recursively collect the target archive.
     */
     if ((policy & FS_GC_POLICY_FULL) != 0) {
-        cursor = 0;
-        while (cursor < pFS->openedArchivesSize) {
-            fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
-            FS_ASSERT(pOpenedArchive != NULL);
+        /* For full GC, recursively collect all opened archives. */
+        if (pSpecificArchive != NULL) {
+            fs_gc_archives(pSpecificArchive, FS_GC_POLICY_FULL);
+        } else {
+            cursor = 0;
+            while (cursor < pFS->openedArchivesSize) {
+                fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
+                FS_ASSERT(pOpenedArchive != NULL);
 
-            fs_gc_archives(pOpenedArchive->pArchive, policy);
-            cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+                fs_gc_archives(pOpenedArchive->pArchive, policy);
+                cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+            }
         }
     }
 
-
-    /* The first thing to do is count how many unreferenced archives there are. */
+    /* Count unreferenced archives. */
     cursor = 0;
     while (cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
@@ -3014,11 +3018,20 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
             unreferencedCount += 1;
         }
 
-        /* Getting here means this archive is not the one we're looking for. */
+        /* If this is a specific GC, check if this is the target archive. */
+        if (pSpecificArchive != NULL && pSpecificArchive == pOpenedArchive->pArchive) {
+            if (fs_refcount(pSpecificArchive) == 1) {
+                break;
+            } else {
+                /* Archive is still referenced, so we can't collect it. */
+                return;
+            }
+        }
+
         cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
     }
 
-    /* Now we need to determine how many archives we should unload. */
+    /* Determine how many archives to collect. */
     if ((policy & FS_GC_POLICY_THRESHOLD) != 0) {
         if (unreferencedCount > fs_get_archive_gc_threshold(pFS)) {
             collectionCount = unreferencedCount - fs_get_archive_gc_threshold(pFS);
@@ -3031,26 +3044,20 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
         FS_ASSERT(!"Invalid GC policy.");
     }
 
-    /* Now we need to unload the archives. */
+    /* Collect archives. */
     cursor = 0;
     while (collectionCount > 0 && cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
 
-        if (fs_refcount(pOpenedArchive->pArchive) == 1) {
-            fs_file* pArchiveFile;
-
-            /* For our cached archives, the stream should always be a file. */
-            pArchiveFile = (fs_file*)pOpenedArchive->pArchive->pStream;
+        if (fs_refcount(pOpenedArchive->pArchive) == 1 && (pSpecificArchive == NULL || pSpecificArchive == pOpenedArchive->pArchive)) {
+            fs_file* pArchiveFile = (fs_file*)pOpenedArchive->pArchive->pStream;
             FS_ASSERT(pArchiveFile != NULL);
 
             fs_uninit(pOpenedArchive->pArchive);
             fs_file_close(pArchiveFile);
-
-            /* We can remove the archive from the list only after it's been closed. */
             fs_remove_opened_archive(pFS, pOpenedArchive);
 
             collectionCount -= 1;
-
             /* Note that we're not advancing the cursor here because we just removed this entry. */
         } else {
             cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
@@ -3058,7 +3065,7 @@ static void fs_gc_archives_nolock(fs* pFS, int policy)
     }
 }
 
-FS_API void fs_gc_archives(fs* pFS, int policy)
+static void fs_gc(fs* pFS, int policy, fs* pSpecificArchive)
 {
     if (pFS == NULL) {
         return;
@@ -3070,9 +3077,14 @@ FS_API void fs_gc_archives(fs* pFS, int policy)
 
     fs_mtx_lock(&pFS->archiveLock);
     {
-        fs_gc_archives_nolock(pFS, policy);
+        fs_gc_nolock(pFS, policy, pSpecificArchive);
     }
     fs_mtx_unlock(&pFS->archiveLock);
+}
+
+FS_API void fs_gc_archives(fs* pFS, int policy)
+{
+    fs_gc(pFS, policy, NULL);
 }
 
 FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold)
