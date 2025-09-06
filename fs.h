@@ -2202,20 +2202,399 @@ fs_file_write()
 fs_file_writef()
 */
 FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args);
+
+/*
+Moves the read/write cursor of a file.
+
+You can seek relative to the start of the file, the current cursor position, or the end of the file.
+A negative offset seeks backwards.
+
+It is not an error to seek beyond the end of the file. If you seek beyond the end of the file and
+then write, the exact behavior depends on the backend. On POSIX systems, it will most likely result
+in a sparse file. In read mode, attempting to read beyond the end of the file will simply result
+in zero bytes being read, and `FS_AT_END` being returned by `fs_file_read()`.
+
+It is an error to try seeking to before the start of the file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to seek. Must not be NULL.
+
+offset : (in)
+    The offset to seek to, relative to the position specified by `origin`. A negative value seeks
+    backwards.
+
+origin : (in)
+    The origin from which to seek. One of the following values:
+        FS_SEEK_SET
+            Seek from the start of the file.
+
+        FS_SEEK_CUR
+            Seek from the current cursor position.
+
+        FS_SEEK_END
+            Seek from the end of the file.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_file_tell()
+fs_file_read()
+fs_file_write()
+*/
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
+
+/*
+Retrieves the current position of the read/write cursor in a file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to query. Must not be NULL.
+
+pCursor : (out)
+    A pointer to a variable that will receive the current cursor position. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_file_seek()
+fs_file_read()
+fs_file_write()
+*/
 FS_API fs_result fs_file_tell(fs_file* pFile, fs_int64* pCursor);
+
+
+/*
+Flushes any buffered data to disk.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to flush. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+*/
 FS_API fs_result fs_file_flush(fs_file* pFile);
+
+
+/*
+Truncates a file to the current cursor position.
+
+It is possible for a backend to not support truncation, in which case this function will return
+`FS_NOT_IMPLEMENTED`.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to truncate. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Will return `FS_NOT_IMPLEMENTED` if
+the backend does not support truncation.
+*/
 FS_API fs_result fs_file_truncate(fs_file* pFile);
+
+
+/*
+Retrieves information about an opened file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to query. Must not be NULL.
+
+pInfo : (out)
+    A pointer to a fs_file_info structure that will receive the file information. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+*/
 FS_API fs_result fs_file_get_info(fs_file* pFile, fs_file_info* pInfo);
-FS_API fs_result fs_file_duplicate(fs_file* pFile, fs_file** ppDuplicate);  /* Duplicate the file handle. */
+
+
+/*
+Duplicates a file handle.
+
+This creates a new file handle that refers to the same underlying file as the original. The new
+file handle will have its own independent cursor position. The initial position of the new file's
+cursor will be undefined. You should call `fs_file_seek()` to set it to a known position before
+using it.
+
+Note that this does not duplicate the actual file on the file system itself. It just creates a
+new `fs_file` object that refers to the same file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to duplicate. Must not be NULL.
+
+ppDuplicate : (out)
+    A pointer to a pointer which will receive the duplicated file handle. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+*/
+FS_API fs_result fs_file_duplicate(fs_file* pFile, fs_file** ppDuplicate);
+
+/*
+Retrieves the backend-specific data associated with a file.
+
+You should never call this function unless you are implementing a custom backend. The size of the
+data can be retrieved with `fs_file_get_backend_data_size()`.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to query. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the backend-specific data associated with the file, or NULL if there is no
+such data.
+
+
+See Also
+--------
+fs_file_get_backend_data_size()
+*/
 FS_API void* fs_file_get_backend_data(fs_file* pFile);
+
+/*
+Retrieves the size of the backend-specific data associated with a file.
+
+You should never call this function unless you are implementing a custom backend. The data can be
+accessed with `fs_file_get_backend_data()`.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to query. Must not be NULL.
+
+
+Return Value
+------------
+Returns the size of the backend-specific data associated with the file, or 0 if there is no such
+data.
+
+
+See Also
+--------
+fs_file_get_backend_data()
+*/
 FS_API size_t fs_file_get_backend_data_size(fs_file* pFile);
-FS_API fs_stream* fs_file_get_stream(fs_file* pFile);     /* Files are streams. They can be cast directly to fs_stream*, but this function is here for people who prefer function style getters. */
+
+/*
+Files are streams. This function returns a pointer to the `fs_stream` interface of the file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file whose stream pointer is being retrieved. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the `fs_stream` interface of the file, or NULL if `pFile` is NULL.
+
+
+See Also
+--------
+fs_file_get_fs()
+*/
+FS_API fs_stream* fs_file_get_stream(fs_file* pFile);
+
+/*
+Retrieves the file system that owns a file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file whose file system pointer is being retrieved. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the `fs` interface of the file's file system, or NULL if `pFile` is NULL.
+
+
+See Also
+--------
+fs_file_get_stream()
+*/
 FS_API fs* fs_file_get_fs(fs_file* pFile);
 
+
+/*
+The same as `fs_first()`, but with the length of the directory path specified explicitly.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pDirectoryPath : (in)
+    The path to the directory to iterate. Must not be NULL.
+
+directoryPathLen : (in)
+    The length of the directory path. Can be set to `FS_NULL_TERMINATED` if the path is
+    null-terminated.
+
+mode : (in)
+    Options for the iterator. See `fs_file_open()` for a description of the available flags.
+
+
+Return Value
+------------
+Same as `fs_first()`.
+*/
 FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen, int mode);
+
+/*
+Creates an iterator for the first entry in a directory.
+
+This function creates an iterator that can be used to iterate over the entries in a directory. This
+will be the first function called when iterating over the files inside a directory.
+
+To get the next entry in the directory, call `fs_next()`. When `fs_next()` returns NULL, there are
+no more entries in the directory. If you want to end iteration early, use `fs_free_iterator()` to
+free the iterator.
+
+See `fs_file_open()` for a description of the available flags that can be used in the `mode`
+parameter. When `FS_WRITE` is specified, it will look at write mounts. Otherwise, it will look at
+read mounts.
+
+
+Parameter
+---------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pDirectoryPath : (in)
+    The path to the directory to iterate. Must not be NULL.
+
+mode : (in)
+    Options for the iterator. See `fs_file_open()` for a description of the available flags.
+
+
+Return Value
+------------
+Returns a pointer to an iterator object on success; NULL on failure or if the directory is empty.
+
+
+Example
+-------
+The example below shows how to iterate over all entries in a directory. Error checking has been
+omitted for clarity.
+
+```c
+fs_iterator* pIterator = fs_first(pFS, "somefolder", FS_READ);
+while (pIterator != NULL) {
+    // Use pIterator->name and pIterator->info here...
+    printf("Found entry: %.*s\n", (int)pIterator->nameLength, pIterator->pName);
+    pIterator = fs_next(pIterator);
+}
+
+fs_free_iterator(pIterator); // This is only needed if you want to terminate iteration early. If `fs_next()` returns NULL, you need not call this.
+```
+
+See Also
+--------
+fs_next()
+fs_free_iterator()
+fs_first_ex()
+*/
 FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, int mode);
+
+/*
+Gets the next entry in a directory iteration.
+
+This function is used to get the next entry in a directory iteration. It should be called after
+`fs_first()` or `fs_first_ex()` to retrieve the first entry, and then subsequently called to
+retrieve each following entry.
+
+If there are no more entries in the directory, this function will return NULL, and an explicit call
+to `fs_free_iterator()` is not needed.
+
+
+Parameters
+----------
+pIterator : (in)
+    A pointer to the iterator object. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the next iterator object on success; NULL if there are no more entries. If
+NULL is returned, you need not call `fs_free_iterator()`. If you want to terminate iteration early,
+you must call `fs_free_iterator()` to free the iterator.
+
+You cannot assume that the returned pointer is the same as the input pointer. It may need to be
+reallocated internally to hold the data of the next entry.
+
+
+See Also
+--------
+fs_first()
+fs_first_ex()
+fs_free_iterator()
+*/
 FS_API fs_iterator* fs_next(fs_iterator* pIterator);
+
+/*
+Frees an iterator object.
+
+This function frees an iterator object that was created by `fs_first()` or `fs_first_ex()`. You
+need not call this if `fs_next()` returned NULL from an earlier iteration. However, if you want to
+terminate iteration early, you must call this function to free the iterator.
+
+It is safe to call this function with a NULL pointer, in which case it will do nothing.
+
+
+Parameters
+----------
+pIterator : (in, optional)
+    A pointer to the iterator object. Can be NULL.
+
+
+See Also
+--------
+fs_first()
+fs_first_ex()
+fs_next()
+*/
 FS_API void fs_free_iterator(fs_iterator* pIterator);
 
 FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
