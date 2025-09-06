@@ -2054,9 +2054,153 @@ See Also
 fs_file_open()
 */
 FS_API void fs_file_close(fs_file* pFile);
+
+
+/*
+Reads data from a file.
+
+This function reads up to `bytesToRead` bytes from the file into the buffer pointed to by `pDst`.
+The number of bytes actually read will be stored in the variable pointed to by `pBytesRead`.
+
+If the end of the file is reached before any bytes are read, this function will return `FS_AT_END`
+and `*pBytesRead` will be set to 0. `FS_AT_END` will only be returned if `*pBytesRead` is 0.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to read from. Must not be NULL.
+
+pDst : (out)
+    A pointer to the buffer that will receive the read data. Must not be NULL.
+
+bytesToRead : (in)
+    The maximum number of bytes to read from the file.
+
+pBytesRead : (out, optional)
+    A pointer to a variable that will receive the number of bytes actually read. Can be NULL if you
+    do not care about this information. If NULL, the function will return an error if not all
+    requested bytes could be read.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success, `FS_AT_END` on end of file, or an error code otherwise. Will only
+return `FS_AT_END` if `*pBytesRead` is 0.
+
+If `pBytesRead` is NULL, the function will return an error if not all requested bytes could be
+read. Otherwise, if `pBytesRead` is not NULL, the function will return `FS_SUCCESS` even if fewer
+than `bytesToRead` bytes were read.
+
+
+See Also
+--------
+fs_file_open()
+fs_file_write()
+fs_file_seek()
+fs_file_tell()
+*/
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead); /* Returns 0 on success, FS_AT_END on end of file, or an errno result code on error. Will only return FS_AT_END if *pBytesRead is 0. */
+
+
+/*
+Writes data to a file.
+
+This function writes up to `bytesToWrite` bytes from the buffer pointed to by `pSrc` to the file.
+The number of bytes actually written will be stored in the variable pointed to by `pBytesWritten`.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to write to. Must not be NULL.
+
+pSrc : (in)
+    A pointer to the buffer containing the data to write. Must not be NULL.
+
+bytesToWrite : (in)
+    The number of bytes to write to the file.
+
+pBytesWritten : (out, optional)
+    A pointer to a variable that will receive the number of bytes actually written. Can be NULL if
+    you do not care about this information. If NULL, the function will return an error if not all
+    requested bytes could be written.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success, or an error code otherwise.
+
+If `pBytesWritten` is NULL, the function will return an error if not all requested bytes could be
+written. Otherwise, if `pBytesWritten` is not NULL, the function will return `FS_SUCCESS` even if
+fewer than `bytesToWrite` bytes were written.
+
+
+See Also
+--------
+fs_file_open()
+fs_file_read()
+fs_file_seek()
+fs_file_tell()
+fs_file_flush()
+fs_file_truncate()
+*/
 FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
+
+/*
+A helper for writing formatted data to a file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to write to. Must not be NULL.
+
+fmt : (in)
+    A printf-style format string. Must not be NULL.
+
+... : (in)
+    Additional arguments as required by the format string.
+
+
+Return Value
+------------
+Same as `fs_file_write()`.
+
+
+See Also
+--------
+fs_file_write()
+fs_file_writefv()
+*/
 FS_API fs_result fs_file_writef(fs_file* pFile, const char* fmt, ...) FS_ATTRIBUTE_FORMAT(2, 3);
+
+/*
+A helper for writing formatted data to a file.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to write to. Must not be NULL.
+
+fmt : (in)
+    A printf-style format string. Must not be NULL.
+
+args : (in)
+    Additional arguments as required by the format string.
+
+
+Return Value
+------------
+Same as `fs_file_write()`.
+
+
+See Also
+--------
+fs_file_write()
+fs_file_writef()
+*/
 FS_API fs_result fs_file_writefv(fs_file* pFile, const char* fmt, va_list args);
 FS_API fs_result fs_file_seek(fs_file* pFile, fs_int64 offset, fs_seek_origin origin);
 FS_API fs_result fs_file_tell(fs_file* pFile, fs_int64* pCursor);
