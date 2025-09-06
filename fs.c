@@ -432,7 +432,6 @@ FS_API const char* fs_result_to_string(fs_result result)
     }
 }
 
-#if !defined(_WIN32)
 #include <errno.h>
 
 FS_API fs_result fs_result_from_errno(int error)
@@ -671,7 +670,6 @@ FS_API fs_result fs_result_from_errno(int error)
     
     return FS_ERROR;
 }
-#endif /* !_WIN32 */
 
 #if defined(_WIN32)
 #include <windows.h> /* For GetLastError, ERROR_* constants. */
