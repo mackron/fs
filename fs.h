@@ -1327,6 +1327,11 @@ your data from elsewhere, like a memory buffer, you can pass in your own stream.
 specify the backend to use, such as `FS_ZIP` in the case of ZIP archives. See examples below for
 more information.
 
+If you want to use custom allocation callbacks, you can do so by passing in a pointer to a
+`fs_allocation_callbacks` struct into the config. If you pass in NULL, the default allocation
+callbacks which use malloc/realloc/free will be used. If you pass in non-NULL, this function will
+make a copy of the struct, so you can free or modify the struct after this function returns.
+
 
 Parameters
 ----------
@@ -1342,11 +1347,6 @@ ppFS : (out)
 Return Value
 ------------
 Returns FS_SUCCESS on success; any other result code otherwise.
-
-
-Thread Safety
--------------
-Safe, so long as the config is not modified during initialization.
 
 
 Example 1 - Basic Usage
@@ -1497,10 +1497,165 @@ Returns FS_SUCCESS on success; any other result code otherwise. May return FS_NO
 the operation is not supported by the backend.
 */
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
-FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options);                         /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
-FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options);    /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
-FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);  /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. Use FS_NO_CREATE_DIRS to fail with FS_DOES_NOT_EXIST if a parent directory does not exist and to not create the full path hierarchy. Returns FS_ALREADY_EXISTS if directory already exists. */
-FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);  /* openMode flags specify same options as openMode in file_open(), but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_EXCLUSIVE are ignored. */
+
+
+/*
+Removes a file or empty directory.
+
+This function will delete a file or an empty directory from the file system. It will consider write
+mount points unless the FS_IGNORE_MOUNTS flag is specified in the options parameter in which case
+the path will be treated as a real path.
+
+See fs_file_open() for information about the options flags.
+
+
+Parameters
+----------
+pFS : (in, optional)
+    A pointer to the file system object. Can be NULL to use the native file system.
+
+pFilePath : (in)
+    The path to the file or directory to remove. Must not be NULL.
+
+options : (in)
+    Options for the operation. Can be 0 or a combination of the following flags:
+        FS_IGNORE_MOUNTS
+        FS_NO_SPECIAL_DIRS
+        FS_NO_ABOVE_ROOT_NAVIGATION
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
+file or directory does not exist. Returns FS_DIRECTORY_NOT_EMPTY if attempting to remove a
+non-empty directory.
+
+
+See Also
+--------
+fs_file_open()
+*/
+FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options);
+
+
+/*
+Renames or moves a file or directory.
+
+This function will rename or move a file or directory from one location to another. It will
+consider write mount points unless the FS_IGNORE_MOUNTS flag is specified in the options parameter
+in which case the paths will be treated as real paths.
+
+This will fail with FS_DIFFERENT_DEVICE if the source and destination are on different devices.
+
+See fs_file_open() for information about the options flags.
+
+
+Parameters
+----------
+pFS : (in, optional)
+    A pointer to the file system object. Can be NULL to use the native file system.
+
+pOldPath : (in)
+    The current path of the file or directory to rename/move. Must not be NULL.
+
+pNewPath : (in)
+    The new path for the file or directory. Must not be NULL.
+
+options : (in)
+    Options for the operation. Can be 0 or a combination of the following flags:
+        FS_IGNORE_MOUNTS
+        FS_NO_SPECIAL_DIRS
+        FS_NO_ABOVE_ROOT_NAVIGATION
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
+source file or directory does not exist. Returns FS_ALREADY_EXISTS if the destination path already
+exists.
+
+
+See Also
+--------
+fs_file_open()
+*/
+FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options);
+
+
+/*
+Creates a directory.
+
+This function creates a directory at the specified path. By default, it will create the entire
+directory hierarchy if parent directories do not exist. It will consider write mount points unless
+the FS_IGNORE_MOUNTS flag is specified in the options parameter in which case the path will be
+treated as a real path.
+
+See fs_file_open() for information about the options flags.
+
+
+Parameters
+----------
+pFS : (in, optional)
+    A pointer to the file system object. Can be NULL to use the native file system.
+
+pPath : (in)
+    The path of the directory to create. Must not be NULL.
+
+options : (in)
+    Options for the operation. Can be 0 or a combination of the following flags:
+        FS_IGNORE_MOUNTS
+        FS_NO_CREATE_DIRS
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_ALREADY_EXISTS if the
+directory already exists. Returns FS_DOES_NOT_EXIST if FS_NO_CREATE_DIRS is specified and a
+parent directory does not exist.
+
+
+See Also
+--------
+fs_file_open()
+*/
+FS_API fs_result fs_mkdir(fs* pFS, const char* pPath, int options);
+
+
+/*
+Retrieves information about a file or directory without opening it.
+
+This function gets information about a file or directory such as its size, modification time,
+and whether it is a directory or symbolic link. The openMode parameter accepts the same flags as
+fs_file_open() but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_EXCLUSIVE are ignored.
+
+
+Parameters
+----------
+pFS : (in, optional)
+    A pointer to the file system object. Can be NULL to use the native file system.
+
+pPath : (in)
+    The path to the file or directory to get information about. Must not be NULL.
+
+openMode : (in)
+    Open mode flags that may affect how the file is accessed. See fs_file_open() for details.
+
+pInfo : (out)
+    A pointer to a fs_file_info structure that will receive the file information. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
+file or directory does not exist.
+
+
+See Also
+--------
+fs_file_get_info()
+fs_file_open()
+*/
+FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);
 FS_API fs_stream* fs_get_stream(fs* pFS);
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
 FS_API void* fs_get_backend_data(fs* pFS);    /* For use by the backend. Will be the size returned by the alloc_size() function in the vtable. */
