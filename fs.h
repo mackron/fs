@@ -2033,7 +2033,8 @@ automatically when the `fs` object is uninitialized.
 Parameters
 ----------
 pFS : (in, optional)
-    A pointer to the file system object. Can be NULL to use the native file system.
+    A pointer to the file system object. Can be NULL to use the native file system. Note that when
+    this is NULL, archives and mounts will not be supported.
 
 pFilePath : (in)
     The path to the file to open. Must not be NULL.
@@ -2568,8 +2569,9 @@ The same as `fs_first()`, but with the length of the directory path specified ex
 
 Parameters
 ----------
-pFS : (in)
-    A pointer to the file system object. Must not be NULL.
+pFS : (in, optional)
+    A pointer to the file system object. This can be NULL in which case the native file system will
+    be used.
 
 pDirectoryPath : (in)
     The path to the directory to iterate. Must not be NULL.
@@ -2605,8 +2607,9 @@ read mounts.
 
 Parameter
 ---------
-pFS : (in)
-    A pointer to the file system object. Must not be NULL.
+pFS : (in, optional)
+    A pointer to the file system object. This can be NULL in which case the native file system will
+    be used.
 
 pDirectoryPath : (in)
     The path to the directory to iterate. Must not be NULL.
