@@ -1656,12 +1656,173 @@ fs_file_get_info()
 fs_file_open()
 */
 FS_API fs_result fs_info(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo);
+
+
+/*
+Retrieves a pointer to the stream used by the file system object.
+
+This is only relevant if the file system will initialized with a stream (such as when opening an
+archive). If the file system was not initialized with a stream, this will return NULL.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the stream used by the file system object, or NULL if no stream was provided
+at initialization time.
+*/
 FS_API fs_stream* fs_get_stream(fs* pFS);
+
+
+/*
+Retrieves a pointer to the allocation callbacks used by the file system object.
+
+Note that this will *not* return the same pointer that was specified in the config at initialization
+time. This function returns a pointer to the internal copy of the struct.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the allocation callbacks used by the file system object. If `pFS` is NULL, this
+will return NULL.
+*/
 FS_API const fs_allocation_callbacks* fs_get_allocation_callbacks(fs* pFS);
-FS_API void* fs_get_backend_data(fs* pFS);    /* For use by the backend. Will be the size returned by the alloc_size() function in the vtable. */
+
+
+/*
+For use only by backend implementations. Retrieves a pointer to the backend-specific data
+associated with the file system object.
+
+You should never call this function unless you are implementing a custom backend. The size of the
+data can be retrieved with `fs_get_backend_data_size()`.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns a pointer to the backend-specific data associated with the file system object, or NULL if no
+backend data is available.
+
+
+See Also
+--------
+fs_get_backend_data_size()
+*/
+FS_API void* fs_get_backend_data(fs* pFS);
+
+
+/*
+For use only by backend implementations. Retrieves the size of the backend-specific data
+associated with the file system object.
+
+You should never call this function unless you are implementing a custom backend. The data can be
+accessed with `fs_get_backend_data()`.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns the size of the backend-specific data associated with the file system object, or 0 if no
+backend data is available.
+
+
+See Also
+--------
+fs_get_backend_data()
+*/
 FS_API size_t fs_get_backend_data_size(fs* pFS);
-FS_API fs* fs_ref(fs* pFS);     /* Increments the reference count. Returns pFS. */
-FS_API fs_uint32 fs_unref(fs* pFS);  /* Decrements the reference count. Does not uninitialize. */
+
+
+/*
+Increments the reference count of the file system object.
+
+This function would be used to prevent garbage collection of opened archives. It should be rare to
+ever need to call this function directly.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns `pFS`.
+
+
+See Also
+--------
+fs_unref()
+fs_refcount()
+*/
+FS_API fs* fs_ref(fs* pFS);
+
+/*
+Decrements the reference count of the file system object.
+
+This does not uninitialize the object once the reference count hits zero.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns the new reference count.
+
+
+See Also
+--------
+fs_ref()
+fs_refcount()
+*/
+FS_API fs_uint32 fs_unref(fs* pFS);
+
+/*
+Retrieves the current reference count of the file system object.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns the current reference count of the file system object.
+
+
+See Also
+--------
+fs_ref()
+fs_unref()
+*/
 FS_API fs_uint32 fs_refcount(fs* pFS);
 
 FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
