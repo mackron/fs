@@ -12,9 +12,32 @@ rename_results_namespace :: function(src:string) string
     ;
 }
 
-fs_h("/\* BEG fs_result.h \*/\R"                   : "\R/\* END fs_result.h \*/")                   = rename_results_namespace(@(results_c("/\* BEG result.h \*/\R"                   : "\R/\* END result.h \*/")));
-fs_c("/\* BEG fs_result_from_errno.c \*/\R"        : "\R/\* END fs_result_from_errno.c \*/")        = rename_results_namespace(@(results_c("/\* BEG result_from_errno.c \*/\R"        : "\R/\* END result_from_errno.c \*/")));
-fs_c("/\* BEG fs_result_from_GetLastError.c \*/\R" : "\R/\* END fs_result_from_GetLastError.c \*/") = rename_results_namespace(@(results_c("/\* BEG result_from_GetLastError.c \*/\R" : "\R/\* END result_from_GetLastError.c \*/")));
+construct_results_h :: function() string
+{
+    content : string;
+    content["$"] = @(results_c("/\* BEG result.h \*/\R"           : "\R/\* END result.h \*/"));
+    content["$"] = "\n\n";
+    content["$"] = @(results_c("/\* BEG result_to_string.h \*/\R" : "\R/\* END result_to_string.h \*/"));
+
+    return rename_results_namespace(content);
+}
+
+construct_results_c :: function() string
+{
+    content : string;
+    content["$"] = @(results_c("/\* BEG result_to_string.c \*/\R"         : "\R/\* END result_to_string.c \*/"));
+    content["$"] = "\n\n";
+    content["$"] = "#if !defined(_WIN32)\n";
+    content["$"] = @(results_c("/\* BEG result_from_errno.c \*/\R"        : "\R/\* END result_from_errno.c \*/"));
+    content["$"] = "\n#endif /* !_WIN32 */";
+    content["$"] = "\n\n";
+    content["$"] = @(results_c("/\* BEG result_from_GetLastError.c \*/\R" : "\R/\* END result_from_GetLastError.c \*/"));
+    
+    return rename_results_namespace(content);
+}
+
+fs_h("/\* BEG fs_result.h \*/\R" : "\R/\* END fs_result.h \*/") = construct_results_h();
+fs_c("/\* BEG fs_result.c \*/\R" : "\R/\* END fs_result.c \*/") = construct_results_c();
 
 
 /* Threading. */
