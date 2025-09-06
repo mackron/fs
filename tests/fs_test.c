@@ -759,10 +759,8 @@ int fs_test_system_write_new(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
-    fs_file_info fileInfo;
     char pFilePath[256];
     const char data[4] = {1, 2, 3, 4};
-    char dataRead[4];
     size_t bytesWritten;
 
     if (pTestState->pFS == NULL) {
@@ -794,44 +792,9 @@ int fs_test_system_write_new(fs_test* pTest)
 
 
     /* Now we need to open the file and verify. */
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    result = fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, data, sizeof(data));
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to open file for reading.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    /* The file should be exactly sizeof(data) bytes. */
-    result = fs_file_get_info(pFile, &fileInfo);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to get file info.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (fileInfo.size != sizeof(data)) {
-        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)sizeof(data), (unsigned int)fileInfo.size);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesWritten);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to read from file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (bytesWritten != sizeof(dataRead)) {
-        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesWritten);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    if (memcmp(dataRead, data, sizeof(dataRead)) != 0) {
-        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
-        return FS_ERROR;
+        return result;
     }
 
     return FS_SUCCESS;
@@ -844,10 +807,7 @@ static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
-    fs_file_info fileInfo;
     char pFilePath[256];
-    char dataRead[4];
-    size_t bytesRead;
     size_t newDataSize = 4;
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
@@ -868,44 +828,9 @@ static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[
     fs_file_close(pFile);
 
     /* Now we need to open the file and verify. */
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    result = fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, newData, newDataSize);
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to open file for reading.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    /* The file should be exactly sizeof(data) bytes. */
-    result = fs_file_get_info(pFile, &fileInfo);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to get file info.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (fileInfo.size != newDataSize) {
-        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)newDataSize, (unsigned int)fileInfo.size);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to read from file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (bytesRead != sizeof(dataRead)) {
-        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesRead);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    if (memcmp(dataRead, newData, sizeof(dataRead)) != 0) {
-        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
-        return FS_ERROR;
+        return result;
     }
 
     return FS_SUCCESS;
@@ -950,7 +875,6 @@ int fs_test_system_write_append(fs_test* pTest)
     char pFilePath[256];
     const char dataToAppend[4] = {5, 6, 7, 8};
     char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    char dataRead[8];
     size_t bytesWritten;
 
     if (pTestState->pFS == NULL) {
@@ -982,44 +906,9 @@ int fs_test_system_write_append(fs_test* pTest)
 
 
     /* Now we need to open the file and verify. */
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    result = fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, dataExpected, sizeof(dataExpected));
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to open file for reading.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    /* The file should be exactly sizeof(data) bytes. */
-    result = fs_file_get_info(pFile, &fileInfo);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to get file info.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (fileInfo.size != sizeof(dataExpected)) {
-        printf("%s: ERROR: Expecting file size to be %d bytes, but got %u.\n", pTest->name, (int)sizeof(dataExpected), (unsigned int)fileInfo.size);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesWritten);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to read from file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (bytesWritten != sizeof(dataRead)) {
-        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesWritten);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    if (memcmp(dataRead, dataExpected, sizeof(dataRead)) != 0) {
-        printf("%s: ERROR: Data read does not match data written.\n", pTest->name);
-        return FS_ERROR;
+        return result;
     }
 
 
@@ -1133,12 +1022,9 @@ int fs_test_system_write_seek(fs_test* pTest)
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
     fs_file* pFile;
-    fs_file_info fileInfo;
     char pFilePath[256];
     size_t bytesWritten;
-    size_t bytesRead;
     char data[4] = {5, 6, 7, 8};
-    char dataRead[8];
     char dataExpected[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     fs_int64 cursor;
 
@@ -1174,45 +1060,10 @@ int fs_test_system_write_seek(fs_test* pTest)
 
 
     /* Now we need to open the file in read mode and verify the data was written correctly. */
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
+    result = fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, dataExpected, sizeof(dataExpected));
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to open file for reading.\n", pTest->name);
-        return FS_ERROR;
+        return result;
     }
-
-    result = fs_file_get_info(pFile, &fileInfo);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to get file info.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (fileInfo.size != 8) {
-        printf("%s: ERROR: Unexpected file size. Expected 8, got %u.\n", pTest->name, (unsigned int)fileInfo.size);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    result = fs_file_read(pFile, dataRead, sizeof(dataRead), &bytesRead);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to read from file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (bytesRead != sizeof(dataRead)) {
-        printf("%s: ERROR: Expecting %d bytes read, but got %d.\n", pTest->name, (int)sizeof(dataRead), (int)bytesRead);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    if (memcmp(dataRead, dataExpected, sizeof(dataExpected)) != 0) {
-        printf("%s: ERROR: Data read from file does not match expected data.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
 
 
     /* At this point the file should contain 8 bytes of data. Now we'll re-open it and test the different seek origins. */
@@ -1983,38 +1834,8 @@ int fs_test_mounts_write(fs_test* pTest)
 static fs_result fs_test_mounts_read_file(fs_test* pTest, const char* pFilePath, const void* pExpectedData, size_t expectedDataSize)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
-    fs_result result;
-    fs_file* pFile;
-    char pActualData[16];
-    size_t bytesRead;
-
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_READ, &pFile);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to open %s for reading.\n", pTest->name, pFilePath);
-        return FS_ERROR;
-    }
-
-    /*
-    We want to write out some data so we can correctly identify the data later when testing reads. The
-    actual writing of data should have been tested earlier so no need to verify that.
-    */
-    result = fs_file_read(pFile, pActualData, expectedDataSize, &bytesRead);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to read from %s.\n", pTest->name, pFilePath);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    /* Compare the data to ensure we read the correct file. */
-    if (bytesRead != expectedDataSize || memcmp(pActualData, pExpectedData, expectedDataSize) != 0) {
-        printf("%s: Data mismatch for %s.\n", pTest->name, pFilePath);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    return FS_SUCCESS;
+    
+    return fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, pExpectedData, expectedDataSize);
 }
 
 int fs_test_mounts_read(fs_test* pTest)
@@ -2577,36 +2398,11 @@ int fs_test_archives_transparent(fs_test* pTest)
     */
     {
         char pExpectedDataA[] = { 1, 2, 3, 4 };
-        char pActualDataA[4];
-        size_t bytesRead;
-
-        result = fs_file_open(pTestState->pFS, "a", FS_READ | FS_TRANSPARENT, &pFile);
+        
+        result = fs_test_open_and_read_file(pTest, pTestState->pFS, "a", FS_READ | FS_TRANSPARENT, pExpectedDataA, sizeof(pExpectedDataA));
         if (result != FS_SUCCESS) {
-            printf("%s: Failed to open file 'a' with transparent mode.\n", pTest->name);
-            return FS_ERROR;
+            return result;
         }
-
-        result = fs_file_read(pFile, pActualDataA, sizeof(pActualDataA), &bytesRead);
-        if (result != FS_SUCCESS) {
-            printf("%s: Failed to read file 'a' with transparent mode.\n", pTest->name);
-            fs_file_close(pFile);
-            return FS_ERROR;
-        }
-
-        if (bytesRead != 4) {
-            /* Probably means we read from the archive instead of the normal file system. */
-            printf("%s: Read unexpected number of bytes from file 'a' with transparent mode. Expected 4, got %d.\n", pTest->name, (int)bytesRead);
-            fs_file_close(pFile);
-            return FS_ERROR;
-        }
-
-        if (memcmp(pActualDataA, pExpectedDataA, sizeof(pExpectedDataA)) != 0) {
-            printf("%s: Data mismatch when reading file 'a' with transparent mode.\n", pTest->name);
-            fs_file_close(pFile);
-            return FS_ERROR;
-        }
-
-        fs_file_close(pFile);
     }
 
     return FS_SUCCESS;
