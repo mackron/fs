@@ -2703,12 +2703,207 @@ fs_next()
 */
 FS_API void fs_free_iterator(fs_iterator* pIterator);
 
+
+/*
+The same as `fs_open_archive()`, but with the ability to explicitly specify the backend to use.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pBackend : (in)
+    A pointer to the backend to use for opening the archive. Must not be NULL.
+
+pBackendConfig : (in, optional)
+    A pointer to backend-specific configuration data. Can be NULL if the backend does not require
+    any configuration.
+
+pArchivePath : (in)
+    The path to the archive to open. Must not be NULL.
+
+archivePathLen : (in)
+    The length of the archive path. Can be set to `FS_NULL_TERMINATED` if the path is null-terminated.
+
+openMode : (in)
+    The mode to open the archive with.
+
+ppArchive : (out)
+    A pointer to a pointer which will receive the opened archive file system object. Must not be
+    NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_open_archive()
+fs_close_archive()
+*/
 FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
+
+/*
+Helper function for initializing a file system object for an archive, such as a ZIP file.
+
+To uninitialize the archive, you must use `fs_close_archive()`. Do not use `fs_uninit()` to
+uninitialize an archive. The reason for this is that archives opened in this way are garbage
+collected, and there are reference counting implications.
+
+Note that opening the archive in write mode (`FS_WRITE`) does not automatically mean you will be
+able to write to it. None of the stock backends support writing to archives at this time.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pArchivePath : (in)
+    The path to the archive to open. Must not be NULL.
+
+openMode : (in)
+    The open mode flags to open the archive with. See `fs_file_open()` for a description of the
+    available flags.
+
+ppArchive : (out)
+    A pointer to a pointer which will receive the opened archive file system object. Must not be
+    NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_close_archive()
+fs_open_archive_ex()
+*/
 FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive);
+
+
+/*
+Closes an archive that was previously opened with `fs_open_archive()`.
+
+You must use this function to close an archive opened with `fs_open_archive()`. Do not use
+`fs_uninit()` to uninitialize an archive.
+
+Note that when an archive is closed, it does not necessarily mean that the underlying file is
+closed immediately. This is because archives are reference counted and garbage collected. You can
+force garbage collection of unused archives with `fs_gc_archives()`.
+
+
+Parameters
+----------
+pArchive : (in)
+    A pointer to the archive file system object to close. Must not be NULL.
+
+
+See Also
+--------
+fs_open_archive()
+fs_open_archive_ex()
+*/
 FS_API void fs_close_archive(fs* pArchive);
+
+
+/*
+Garbage collects unused archives.
+
+This function will close any opened archives that are no longer in use depending on the specified
+policy.
+
+You should rarely need to call this function directly. Archives will automatically be garbage collected
+when the `fs` object is uninitialized with `fs_uninit()`.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+policy : (in)
+    The garbage collection policy to use. Set this to FS_GC_POLICY_THRESHOLD to only collect archives
+    if the number of opened archives exceeds the threshold set with `fs_set_archive_gc_threshold()`
+    which defaults to 10. Set this to FS_GC_POLICY_ALL to collect all unused archives regardless of the
+    threshold.
+
+
+See Also
+--------
+fs_open_archive()
+fs_close_archive()
+fs_set_archive_gc_threshold()
+*/
 FS_API void fs_gc_archives(fs* pFS, int policy);
+
+/*
+Sets the threshold for garbage collecting unused archives.
+
+When an archive is no longer in use (its reference count drops to zero), it will not be closed
+immediately. Instead, it will be kept open in case it is needed again soon. The threshold is what
+determines how many unused archives will be kept open before they are garbage collected. The
+default threshold is 10.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+threshold : (in)
+    The threshold for garbage collecting unused archives.
+
+
+See Also
+--------
+fs_gc_archives()
+*/
 FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
+
+/*
+Retrieves the threshold for garbage collecting unused archives.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+
+Return Value
+------------
+Returns the threshold for garbage collecting unused archives.
+*/
 FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
+
+/*
+A helper function for checking if a path looks like it could be an archive.
+
+This only checks the path string itself. It does not actually attempt to open and validate the
+archive itself.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pPath : (in)
+    The path to check. Must not be NULL.
+
+pathLen : (in)
+    The length of the path string. Can be set to `FS_NULL_TERMINATED` if the path is null-terminated.
+
+Return Value
+------------
+Returns FS_TRUE if the path looks like an archive, FS_FALSE otherwise.
+*/
 FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);    /* Does not validate that it's an actual valid archive. */
 
 FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options);
