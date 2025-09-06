@@ -3087,328 +3087,6 @@ FS_API fs_uint32 fs_refcount(fs* pFS)
 }
 
 
-static void fs_on_refcount_changed_internal(void* pUserData, fs* pFS, fs_uint32 newRefCount, fs_uint32 oldRefCount)
-{
-    fs* pOwnerFS;
-
-    (void)pUserData;
-    (void)pFS;
-    (void)newRefCount;
-    (void)oldRefCount;
-
-    pOwnerFS = (fs*)pUserData;
-    FS_ASSERT(pOwnerFS != NULL);
-
-    if (newRefCount == 1) {
-        /* In this case there are no more files referencing this archive. We'll want to do some garbage collection. */
-        fs_gc_archives(pOwnerFS, FS_GC_POLICY_THRESHOLD);
-    }
-}
-
-static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
-{
-    fs_result result;
-    fs* pArchive;
-    fs_config archiveConfig;
-    fs_file* pArchiveFile;
-    char pArchivePathNTStack[1024];
-    char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
-    char* pArchivePathNT;
-    fs_opened_archive* pOpenedArchive;
-
-    /*
-    The first thing to do is check if the archive has already been opened. If so, we just increment
-    the reference count and return the already-loaded fs object.
-    */
-    pOpenedArchive = fs_find_opened_archive(pFS, pArchivePath, archivePathLen);
-    if (pOpenedArchive != NULL) {
-        pArchive = pOpenedArchive->pArchive;
-    } else {
-        /*
-        Getting here means the archive is not cached. We'll need to open it. Unfortunately our path is
-        not null terminated so we'll need to do that now. We'll try to avoid a heap allocation if we
-        can.
-        */
-        if (archivePathLen == FS_NULL_TERMINATED) {
-            pArchivePathNT = (char*)pArchivePath;   /* <-- Safe cast. We won't be modifying this. */
-        } else {
-            if (archivePathLen >= sizeof(pArchivePathNTStack)) {
-                pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
-                if (pArchivePathNTHeap == NULL) {
-                    return FS_OUT_OF_MEMORY;
-                }
-
-                pArchivePathNT = pArchivePathNTHeap;
-            } else {
-                pArchivePathNT = pArchivePathNTStack;
-            }
-
-            FS_COPY_MEMORY(pArchivePathNT, pArchivePath, archivePathLen);
-            pArchivePathNT[archivePathLen] = '\0';
-        }
-
-        result = fs_file_open(pFS, pArchivePathNT, openMode, &pArchiveFile);
-        if (result != FS_SUCCESS) {
-            fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
-        archiveConfig = fs_config_init(pBackend, pBackendConfig, fs_file_get_stream(pArchiveFile));
-        archiveConfig.pAllocationCallbacks = fs_get_allocation_callbacks(pFS);
-        archiveConfig.onRefCountChanged = fs_on_refcount_changed_internal;
-        archiveConfig.pRefCountChangedUserData = pFS;   /* The user data is always the fs object that owns this archive. */
-
-        result = fs_init(&archiveConfig, &pArchive);
-        fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
-
-        if (result != FS_SUCCESS) { /* <-- This is the result of fs_init().*/
-            fs_file_close(pArchiveFile);
-            return result;
-        }
-
-        /*
-        We need to support the ability to open archives within archives. To do this, the archive fs
-        object needs to inherit the registered archive types. Fortunately this is easy because we do
-        this as one single allocation which means we can just reference it directly. The API has a
-        restriction that archive type registration cannot be modified after a file has been opened.
-        */
-        pArchive->pArchiveTypes         = pFS->pArchiveTypes;
-        pArchive->archiveTypesAllocSize = pFS->archiveTypesAllocSize;
-        pArchive->isOwnerOfArchiveTypes = FS_FALSE;
-
-        /* Add the new archive to the cache. */
-        result = fs_add_opened_archive(pFS, pArchive, pArchivePath, archivePathLen);
-        if (result != FS_SUCCESS) {
-            fs_uninit(pArchive);
-            fs_file_close(pArchiveFile);
-            return result;
-        }
-    }
-
-    FS_ASSERT(pArchive != NULL);
-
-    *ppArchive = ((openMode & FS_NO_INCREMENT_REFCOUNT) == 0) ? fs_ref(pArchive) : pArchive;
-    return FS_SUCCESS;
-}
-
-FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
-{
-    fs_result result;
-
-    if (ppArchive == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    *ppArchive = NULL;
-
-    if (pFS == NULL || pBackend == NULL || pArchivePath == NULL || archivePathLen == 0) {
-        return FS_INVALID_ARGS;
-    }
-
-    /*
-    It'd be nice to be able to resolve the path here to eliminate any "." and ".." segments thereby
-    making the path always consistent for a given archive. However, I cannot think of a way to do
-    this robustly without having a backend-specific function like a `resolve()` or whatnot. The
-    problem is that the path might be absolute, or it might be relative, and to get it right,
-    parcticularly when dealing with different operating systems' ways of specifying an absolute
-    path, you really need to have the support of the backend. I might add support for this later.
-    */
-
-    fs_mtx_lock(&pFS->archiveLock);
-    {
-        result = fs_open_archive_nolock(pFS, pBackend, pBackendConfig, pArchivePath, archivePathLen, openMode, ppArchive);
-    }
-    fs_mtx_unlock(&pFS->archiveLock);
-
-    return result;
-}
-
-FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive)
-{
-    fs_result backendIteratorResult;
-    fs_registered_backend_iterator iBackend;
-    fs_result result;
-
-    if (ppArchive == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    *ppArchive = NULL;  /* Safety. */
-
-    if (pFS == NULL || pArchivePath == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    /*
-    There can be multiple backends registered to the same extension. We just iterate over each one in order
-    and use the first that works.
-    */
-    result = FS_NO_BACKEND;
-    for (backendIteratorResult = fs_first_registered_backend(pFS, &iBackend); backendIteratorResult == FS_SUCCESS; backendIteratorResult = fs_next_registered_backend(&iBackend)) {
-        if (fs_path_extension_equal(pArchivePath, FS_NULL_TERMINATED, iBackend.pExtension, iBackend.extensionLen)) {
-            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePath, FS_NULL_TERMINATED, openMode, ppArchive);
-            if (result == FS_SUCCESS) {
-                return FS_SUCCESS;
-            }
-        }
-    }
-
-    /* Failed to open from any archive backend. */
-    return result;
-}
-
-FS_API void fs_close_archive(fs* pArchive)
-{
-    fs_uint32 newRefCount;
-
-    if (pArchive == NULL) {
-        return;
-    }
-
-    /* In fs_open_archive() we incremented the reference count. Now we need to decrement it. */
-    newRefCount = fs_unref(pArchive);
-
-    /*
-    If the reference count of the archive is 1 it means we don't currently have any files opened. We should
-    look at garbage collecting.
-    */
-    if (newRefCount == 1) {
-        /*
-        This is a bit hacky and should probably change. When we initialized the archive in fs_open_archive() we set the user
-        data of the onRefCountChanged callback to be the fs object that owns this archive. We'll just use that to fire the
-        garbage collection process.
-        */
-        fs* pArchiveOwnerFS = (fs*)pArchive->pRefCountChangedUserData;
-        FS_ASSERT(pArchiveOwnerFS != NULL);
-
-        fs_gc(pArchiveOwnerFS, FS_GC_POLICY_FULL, pArchive);
-    }
-}
-
-static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
-{
-    size_t unreferencedCount = 0;
-    size_t collectionCount = 0;
-    size_t cursor = 0;
-
-    FS_ASSERT(pFS != NULL);
-
-    /*
-    If we're doing a full garbage collection we need to recursively run the garbage collection process
-    on opened archives. For specific GC, we only recursively collect the target archive.
-    */
-    if ((policy & FS_GC_POLICY_FULL) != 0) {
-        /* For full GC, recursively collect all opened archives. */
-        if (pSpecificArchive != NULL) {
-            fs_gc_archives(pSpecificArchive, FS_GC_POLICY_FULL);
-        } else {
-            cursor = 0;
-            while (cursor < pFS->openedArchivesSize) {
-                fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
-                FS_ASSERT(pOpenedArchive != NULL);
-
-                fs_gc_archives(pOpenedArchive->pArchive, policy);
-                cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
-            }
-        }
-    }
-
-    /* Count unreferenced archives. */
-    cursor = 0;
-    while (cursor < pFS->openedArchivesSize) {
-        fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
-
-        if (fs_refcount(pOpenedArchive->pArchive) == 1) {
-            unreferencedCount += 1;
-        }
-
-        /* If this is a specific GC, check if this is the target archive. */
-        if (pSpecificArchive != NULL && pSpecificArchive == pOpenedArchive->pArchive) {
-            if (fs_refcount(pSpecificArchive) == 1) {
-                break;
-            } else {
-                /* Archive is still referenced, so we can't collect it. */
-                return;
-            }
-        }
-
-        cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
-    }
-
-    /* Determine how many archives to collect. */
-    if ((policy & FS_GC_POLICY_THRESHOLD) != 0) {
-        if (unreferencedCount > fs_get_archive_gc_threshold(pFS)) {
-            collectionCount = unreferencedCount - fs_get_archive_gc_threshold(pFS);
-        } else {
-            collectionCount = 0;    /* We're below the threshold. Don't collect anything. */
-        }
-    } else if ((policy & FS_GC_POLICY_FULL) != 0) {
-        collectionCount = unreferencedCount;
-    } else {
-        FS_ASSERT(!"Invalid GC policy.");
-    }
-
-    /* Collect archives. */
-    cursor = 0;
-    while (collectionCount > 0 && cursor < pFS->openedArchivesSize) {
-        fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
-
-        if (fs_refcount(pOpenedArchive->pArchive) == 1 && (pSpecificArchive == NULL || pSpecificArchive == pOpenedArchive->pArchive)) {
-            fs_file* pArchiveFile = (fs_file*)pOpenedArchive->pArchive->pStream;
-            FS_ASSERT(pArchiveFile != NULL);
-
-            fs_uninit(pOpenedArchive->pArchive);
-            fs_file_close(pArchiveFile);
-            fs_remove_opened_archive(pFS, pOpenedArchive);
-
-            collectionCount -= 1;
-            /* Note that we're not advancing the cursor here because we just removed this entry. */
-        } else {
-            cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
-        }
-    }
-}
-
-static void fs_gc(fs* pFS, int policy, fs* pSpecificArchive)
-{
-    if (pFS == NULL) {
-        return;
-    }
-
-    if (policy == 0 || ((policy & FS_GC_POLICY_THRESHOLD) != 0 && (policy & FS_GC_POLICY_FULL) != 0)) {
-        return; /* Invalid policy. Must specify FS_GC_POLICY_THRESHOLD or FS_GC_POLICY_FULL, but not both. */
-    }
-
-    fs_mtx_lock(&pFS->archiveLock);
-    {
-        fs_gc_nolock(pFS, policy, pSpecificArchive);
-    }
-    fs_mtx_unlock(&pFS->archiveLock);
-}
-
-FS_API void fs_gc_archives(fs* pFS, int policy)
-{
-    fs_gc(pFS, policy, NULL);
-}
-
-FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold)
-{
-    if (pFS == NULL) {
-        return;
-    }
-
-    pFS->archiveGCThreshold = threshold;
-}
-
-FS_API size_t fs_get_archive_gc_threshold(fs* pFS)
-{
-    if (pFS == NULL) {
-        return 0;
-    }
-
-    return pFS->archiveGCThreshold;
-}
-
 
 static fs_result fs_find_registered_archive_type_by_path(fs* pFS, const char* pPath, size_t pathLen, const fs_backend** ppBackend, const void** ppBackendConfig)
 {
@@ -4817,6 +4495,330 @@ FS_API void fs_free_iterator(fs_iterator* pIterator)
     }
 
     fs_free(pIterator, fs_get_allocation_callbacks(pIterator->pFS));
+}
+
+
+
+static void fs_on_refcount_changed_internal(void* pUserData, fs* pFS, fs_uint32 newRefCount, fs_uint32 oldRefCount)
+{
+    fs* pOwnerFS;
+
+    (void)pUserData;
+    (void)pFS;
+    (void)newRefCount;
+    (void)oldRefCount;
+
+    pOwnerFS = (fs*)pUserData;
+    FS_ASSERT(pOwnerFS != NULL);
+
+    if (newRefCount == 1) {
+        /* In this case there are no more files referencing this archive. We'll want to do some garbage collection. */
+        fs_gc_archives(pOwnerFS, FS_GC_POLICY_THRESHOLD);
+    }
+}
+
+static fs_result fs_open_archive_nolock(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
+{
+    fs_result result;
+    fs* pArchive;
+    fs_config archiveConfig;
+    fs_file* pArchiveFile;
+    char pArchivePathNTStack[1024];
+    char* pArchivePathNTHeap = NULL;    /* <-- Must be initialized to null. */
+    char* pArchivePathNT;
+    fs_opened_archive* pOpenedArchive;
+
+    /*
+    The first thing to do is check if the archive has already been opened. If so, we just increment
+    the reference count and return the already-loaded fs object.
+    */
+    pOpenedArchive = fs_find_opened_archive(pFS, pArchivePath, archivePathLen);
+    if (pOpenedArchive != NULL) {
+        pArchive = pOpenedArchive->pArchive;
+    } else {
+        /*
+        Getting here means the archive is not cached. We'll need to open it. Unfortunately our path is
+        not null terminated so we'll need to do that now. We'll try to avoid a heap allocation if we
+        can.
+        */
+        if (archivePathLen == FS_NULL_TERMINATED) {
+            pArchivePathNT = (char*)pArchivePath;   /* <-- Safe cast. We won't be modifying this. */
+        } else {
+            if (archivePathLen >= sizeof(pArchivePathNTStack)) {
+                pArchivePathNTHeap = (char*)fs_malloc(archivePathLen + 1, fs_get_allocation_callbacks(pFS));
+                if (pArchivePathNTHeap == NULL) {
+                    return FS_OUT_OF_MEMORY;
+                }
+
+                pArchivePathNT = pArchivePathNTHeap;
+            } else {
+                pArchivePathNT = pArchivePathNTStack;
+            }
+
+            FS_COPY_MEMORY(pArchivePathNT, pArchivePath, archivePathLen);
+            pArchivePathNT[archivePathLen] = '\0';
+        }
+
+        result = fs_file_open(pFS, pArchivePathNT, openMode, &pArchiveFile);
+        if (result != FS_SUCCESS) {
+            fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
+            return result;
+        }
+
+        archiveConfig = fs_config_init(pBackend, pBackendConfig, fs_file_get_stream(pArchiveFile));
+        archiveConfig.pAllocationCallbacks = fs_get_allocation_callbacks(pFS);
+        archiveConfig.onRefCountChanged = fs_on_refcount_changed_internal;
+        archiveConfig.pRefCountChangedUserData = pFS;   /* The user data is always the fs object that owns this archive. */
+
+        result = fs_init(&archiveConfig, &pArchive);
+        fs_free(pArchivePathNTHeap, fs_get_allocation_callbacks(pFS));
+
+        if (result != FS_SUCCESS) { /* <-- This is the result of fs_init().*/
+            fs_file_close(pArchiveFile);
+            return result;
+        }
+
+        /*
+        We need to support the ability to open archives within archives. To do this, the archive fs
+        object needs to inherit the registered archive types. Fortunately this is easy because we do
+        this as one single allocation which means we can just reference it directly. The API has a
+        restriction that archive type registration cannot be modified after a file has been opened.
+        */
+        pArchive->pArchiveTypes         = pFS->pArchiveTypes;
+        pArchive->archiveTypesAllocSize = pFS->archiveTypesAllocSize;
+        pArchive->isOwnerOfArchiveTypes = FS_FALSE;
+
+        /* Add the new archive to the cache. */
+        result = fs_add_opened_archive(pFS, pArchive, pArchivePath, archivePathLen);
+        if (result != FS_SUCCESS) {
+            fs_uninit(pArchive);
+            fs_file_close(pArchiveFile);
+            return result;
+        }
+    }
+
+    FS_ASSERT(pArchive != NULL);
+
+    *ppArchive = ((openMode & FS_NO_INCREMENT_REFCOUNT) == 0) ? fs_ref(pArchive) : pArchive;
+    return FS_SUCCESS;
+}
+
+FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive)
+{
+    fs_result result;
+
+    if (ppArchive == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    *ppArchive = NULL;
+
+    if (pFS == NULL || pBackend == NULL || pArchivePath == NULL || archivePathLen == 0) {
+        return FS_INVALID_ARGS;
+    }
+
+    /*
+    It'd be nice to be able to resolve the path here to eliminate any "." and ".." segments thereby
+    making the path always consistent for a given archive. However, I cannot think of a way to do
+    this robustly without having a backend-specific function like a `resolve()` or whatnot. The
+    problem is that the path might be absolute, or it might be relative, and to get it right,
+    parcticularly when dealing with different operating systems' ways of specifying an absolute
+    path, you really need to have the support of the backend. I might add support for this later.
+    */
+
+    fs_mtx_lock(&pFS->archiveLock);
+    {
+        result = fs_open_archive_nolock(pFS, pBackend, pBackendConfig, pArchivePath, archivePathLen, openMode, ppArchive);
+    }
+    fs_mtx_unlock(&pFS->archiveLock);
+
+    return result;
+}
+
+FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive)
+{
+    fs_result backendIteratorResult;
+    fs_registered_backend_iterator iBackend;
+    fs_result result;
+
+    if (ppArchive == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    *ppArchive = NULL;  /* Safety. */
+
+    if (pFS == NULL || pArchivePath == NULL) {
+        return FS_INVALID_ARGS;
+    }
+
+    /*
+    There can be multiple backends registered to the same extension. We just iterate over each one in order
+    and use the first that works.
+    */
+    result = FS_NO_BACKEND;
+    for (backendIteratorResult = fs_first_registered_backend(pFS, &iBackend); backendIteratorResult == FS_SUCCESS; backendIteratorResult = fs_next_registered_backend(&iBackend)) {
+        if (fs_path_extension_equal(pArchivePath, FS_NULL_TERMINATED, iBackend.pExtension, iBackend.extensionLen)) {
+            result = fs_open_archive_ex(pFS, iBackend.pBackend, iBackend.pBackendConfig, pArchivePath, FS_NULL_TERMINATED, openMode, ppArchive);
+            if (result == FS_SUCCESS) {
+                return FS_SUCCESS;
+            }
+        }
+    }
+
+    /* Failed to open from any archive backend. */
+    return result;
+}
+
+FS_API void fs_close_archive(fs* pArchive)
+{
+    fs_uint32 newRefCount;
+
+    if (pArchive == NULL) {
+        return;
+    }
+
+    /* In fs_open_archive() we incremented the reference count. Now we need to decrement it. */
+    newRefCount = fs_unref(pArchive);
+
+    /*
+    If the reference count of the archive is 1 it means we don't currently have any files opened. We should
+    look at garbage collecting.
+    */
+    if (newRefCount == 1) {
+        /*
+        This is a bit hacky and should probably change. When we initialized the archive in fs_open_archive() we set the user
+        data of the onRefCountChanged callback to be the fs object that owns this archive. We'll just use that to fire the
+        garbage collection process.
+        */
+        fs* pArchiveOwnerFS = (fs*)pArchive->pRefCountChangedUserData;
+        FS_ASSERT(pArchiveOwnerFS != NULL);
+
+        fs_gc(pArchiveOwnerFS, FS_GC_POLICY_FULL, pArchive);
+    }
+}
+
+static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
+{
+    size_t unreferencedCount = 0;
+    size_t collectionCount = 0;
+    size_t cursor = 0;
+
+    FS_ASSERT(pFS != NULL);
+
+    /*
+    If we're doing a full garbage collection we need to recursively run the garbage collection process
+    on opened archives. For specific GC, we only recursively collect the target archive.
+    */
+    if ((policy & FS_GC_POLICY_FULL) != 0) {
+        /* For full GC, recursively collect all opened archives. */
+        if (pSpecificArchive != NULL) {
+            fs_gc_archives(pSpecificArchive, FS_GC_POLICY_FULL);
+        } else {
+            cursor = 0;
+            while (cursor < pFS->openedArchivesSize) {
+                fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
+                FS_ASSERT(pOpenedArchive != NULL);
+
+                fs_gc_archives(pOpenedArchive->pArchive, policy);
+                cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+            }
+        }
+    }
+
+    /* Count unreferenced archives. */
+    cursor = 0;
+    while (cursor < pFS->openedArchivesSize) {
+        fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
+
+        if (fs_refcount(pOpenedArchive->pArchive) == 1) {
+            unreferencedCount += 1;
+        }
+
+        /* If this is a specific GC, check if this is the target archive. */
+        if (pSpecificArchive != NULL && pSpecificArchive == pOpenedArchive->pArchive) {
+            if (fs_refcount(pSpecificArchive) == 1) {
+                break;
+            } else {
+                /* Archive is still referenced, so we can't collect it. */
+                return;
+            }
+        }
+
+        cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+    }
+
+    /* Determine how many archives to collect. */
+    if ((policy & FS_GC_POLICY_THRESHOLD) != 0) {
+        if (unreferencedCount > fs_get_archive_gc_threshold(pFS)) {
+            collectionCount = unreferencedCount - fs_get_archive_gc_threshold(pFS);
+        } else {
+            collectionCount = 0;    /* We're below the threshold. Don't collect anything. */
+        }
+    } else if ((policy & FS_GC_POLICY_FULL) != 0) {
+        collectionCount = unreferencedCount;
+    } else {
+        FS_ASSERT(!"Invalid GC policy.");
+    }
+
+    /* Collect archives. */
+    cursor = 0;
+    while (collectionCount > 0 && cursor < pFS->openedArchivesSize) {
+        fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
+
+        if (fs_refcount(pOpenedArchive->pArchive) == 1 && (pSpecificArchive == NULL || pSpecificArchive == pOpenedArchive->pArchive)) {
+            fs_file* pArchiveFile = (fs_file*)pOpenedArchive->pArchive->pStream;
+            FS_ASSERT(pArchiveFile != NULL);
+
+            fs_uninit(pOpenedArchive->pArchive);
+            fs_file_close(pArchiveFile);
+            fs_remove_opened_archive(pFS, pOpenedArchive);
+
+            collectionCount -= 1;
+            /* Note that we're not advancing the cursor here because we just removed this entry. */
+        } else {
+            cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+        }
+    }
+}
+
+static void fs_gc(fs* pFS, int policy, fs* pSpecificArchive)
+{
+    if (pFS == NULL) {
+        return;
+    }
+
+    if (policy == 0 || ((policy & FS_GC_POLICY_THRESHOLD) != 0 && (policy & FS_GC_POLICY_FULL) != 0)) {
+        return; /* Invalid policy. Must specify FS_GC_POLICY_THRESHOLD or FS_GC_POLICY_FULL, but not both. */
+    }
+
+    fs_mtx_lock(&pFS->archiveLock);
+    {
+        fs_gc_nolock(pFS, policy, pSpecificArchive);
+    }
+    fs_mtx_unlock(&pFS->archiveLock);
+}
+
+FS_API void fs_gc_archives(fs* pFS, int policy)
+{
+    fs_gc(pFS, policy, NULL);
+}
+
+FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold)
+{
+    if (pFS == NULL) {
+        return;
+    }
+
+    pFS->archiveGCThreshold = threshold;
+}
+
+FS_API size_t fs_get_archive_gc_threshold(fs* pFS)
+{
+    if (pFS == NULL) {
+        return 0;
+    }
+
+    return pFS->archiveGCThreshold;
 }
 
 

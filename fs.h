@@ -1825,13 +1825,6 @@ fs_unref()
 */
 FS_API fs_uint32 fs_refcount(fs* pFS);
 
-FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
-FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive);
-FS_API void fs_close_archive(fs* pArchive);
-FS_API void fs_gc_archives(fs* pFS, int policy);
-FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
-FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
-FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);    /* Does not validate that it's an actual valid archive. */
 
 FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile);
 FS_API void fs_file_close(fs_file* pFile);
@@ -1854,6 +1847,14 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
 FS_API fs_iterator* fs_first(fs* pFS, const char* pDirectoryPath, int mode);
 FS_API fs_iterator* fs_next(fs_iterator* pIterator);
 FS_API void fs_free_iterator(fs_iterator* pIterator);
+
+FS_API fs_result fs_open_archive_ex(fs* pFS, const fs_backend* pBackend, const void* pBackendConfig, const char* pArchivePath, size_t archivePathLen, int openMode, fs** ppArchive);
+FS_API fs_result fs_open_archive(fs* pFS, const char* pArchivePath, int openMode, fs** ppArchive);
+FS_API void fs_close_archive(fs* pArchive);
+FS_API void fs_gc_archives(fs* pFS, int policy);
+FS_API void fs_set_archive_gc_threshold(fs* pFS, size_t threshold);
+FS_API size_t fs_get_archive_gc_threshold(fs* pFS);
+FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);    /* Does not validate that it's an actual valid archive. */
 
 FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options);
 FS_API fs_result fs_unmount(fs* pFS, const char* pActualPath, int options);
