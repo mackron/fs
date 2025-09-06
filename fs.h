@@ -1826,7 +1826,233 @@ fs_unref()
 FS_API fs_uint32 fs_refcount(fs* pFS);
 
 
+/*
+Opens a file.
+
+If the file path is prefixed with the virtual path of a mount point, this function will first try
+opening the file from that mount. If that fails, it will fall back to the native file system and
+treat the path as a real path. If the FS_ONLY_MOUNTS flag is specified in the openMode parameter,
+the last step of falling back to the native file system will be skipped.
+
+By default, opening a file will transparently look inside archives of known types (registered at
+initialization time of the `fs` object). This can slow, and if you would rather not have this
+behavior, consider using the `FS_OPAQUE` option (see below).
+
+This function opens a file for reading and/or writing. The openMode parameter specifies how the
+file should be opened. It can be a combination of the following flags:
+
+FS_READ
+    Open the file for reading. If used with `FS_WRITE`, the file will be opened in read/write mode.
+    When opening in read-only mode, the file must exist.
+
+FS_WRITE
+    Open the file for writing. If used with `FS_READ`, the file will be opened in read/write mode.
+    When opening in write-only mode, the file will be created if it does not exist. By default, the
+    file will be opened in overwrite mode. To change this, combine this with either one of
+    the `FS_TRUNCATE` or `FS_APPEND` flags.
+
+FS_TRUNCATE
+    Only valid when used with `FS_WRITE`. If the file already exists, it will be truncated to zero
+    length when opened. If the file does not exist, it will be created. Not compatible with
+    `FS_APPEND`.
+
+FS_APPEND
+    Only valid when used with `FS_WRITE`. All writes will occur at the end of the file, regardless
+    of the current cursor position. If the file does not exist, it will be created. Not compatible
+    with `FS_TRUNCATE`.
+
+FS_EXCLUSIVE
+    Only valid when used with `FS_WRITE`. The file will be created, but if it already exists, the
+    open will fail with FS_ALREADY_EXISTS.
+
+FS_TRANSPARENT
+    This is the default behavior. When used, files inside archives can be opened transparently. For
+    example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the
+    "archive.zip" part need not be specified). This assumes the `fs` object has been initialized
+    with support for the relevant archive types.
+
+    Transparent mode is the slowest mode since it requires searching through the file system for
+    archives, and then open those archives, and then searching through the archive for the file. If
+    this is prohibitive, consider using `FS_OPAQUE` (fastest) or `FS_VERBOSE` modes instead.
+    Furthermore, you can consider having a rule in your application that instead of opening files
+    inside archives from a transparent path, that you instead mount the archive, and then open all
+    files with `FS_OPAQUE`, but with a virtual path that points to the archive. For example:
+
+        fs_mount(pFS, "somefolder/archive.zip", "assets", FS_READ);
+        fs_file_open(pFS, "assets/file.txt", FS_READ | FS_OPAQUE, &pFile);
+
+    Here the archive is mounted to the virtual path "assets". Because the path "assets/file.txt"
+    is prefixed with "assets", the file system knows to look inside the mounted archive without
+    having to search for it.
+
+FS_OPAQUE
+    When used, archives will be treated as opaque, meaning attempting to open a file from an
+    unmounted archive will fail. For example, "somefolder/archive.zip/file.txt" will fail because
+    it is inside an archive. This is the fastest mode, but you will not be able to open files from
+    inside archives unless it is sourced from a mount.
+
+FS_VERBOSE
+    When used, files inside archives can be opened, but the name of the archive must be specified
+    explicitly in the path, such as "somefolder/archive.zip/file.txt". This is faster than
+    `FS_TRANSPARENT` mode since it does not require searching for archives.
+
+FS_NO_CREATE_DIRS
+    When used, directories will not be created automatically when opening files for writing. If
+    the necessary parent directories do not exist, the open will fail with FS_DOES_NOT_EXIST.
+
+FS_IGNORE_MOUNTS
+    When used, mounted directories and archives will be ignored when opening files. The path will
+    be treated as a real path.
+
+FS_ONLY_MOUNTS
+    When used, only mounted directories and archives will be considered when opening files. When a
+    file is opened, it will first search through mounts, and if the file is not found in any of
+    those it will fall back to the native file system and try treating the path as a real path.
+    When this flag is set, that last step of falling back to the native file system is skipped.
+
+FS_NO_SPECIAL_DIRS
+    When used, the presence of special directories like "." and ".." in the path will result in an
+    error. When using this option, you need not specify FS_NO_ABOVE_ROOT_NAVIGATION since it is
+    implied.
+
+FS_NO_ABOVE_ROOT_NAVIGATION
+    When used, navigating above the mount point with leading ".." segments will result in an error.
+    This option is implied when using FS_NO_SPECIAL_DIRS.
+
+
+Close the file with `fs_file_close()` when no longer needed. The file will not be closed
+automatically when the `fs` object is uninitialized.
+
+
+Parameters
+----------
+pFS : (in, optional)
+    A pointer to the file system object. Can be NULL to use the native file system.
+
+pFilePath : (in)
+    The path to the file to open. Must not be NULL.
+
+openMode : (in)
+    The mode to open the file with. A combination of the flags described above.
+
+ppFile : (out)
+    A pointer to a pointer which will receive the opened file object. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
+file does not exist when opening for reading. Returns FS_ALREADY_EXISTS if the file already exists
+when opening with FS_EXCLUSIVE. Returns FS_IS_DIRECTORY if the path refers to a directory.
+
+
+Example 1 - Basic Usage
+-----------------------
+The example below shows how to open a file for reading from the regular file system. Error checking
+has been omitted for clarity.
+
+```c
+fs_result result;
+fs_file* pFile;
+
+result = fs_file_open(pFS, "somefolder/somefile.txt", FS_READ, &pFile);
+if (result != FS_SUCCESS) {
+    // Handle error.
+}
+
+// Use the file...
+
+// Close the file when no longer needed.
+fs_file_close(pFile);
+```
+
+Example 2 - Opening from a Mount
+--------------------------------
+The example below shows how to mount a directory and then open a file from it. Error checking has
+been omitted for clarity.
+
+```c
+// "assets" is the virtual path. FS_READ indicates this is a mount for use when opening a file in
+// read-only mode (write mounts would use FS_WRITE).
+fs_mount(pFS, "some_actual_path", "assets", FS_READ);
+
+...
+
+// The file path is prefixed with the virtual path "assets" so the file system will look inside the
+// mounted directory first. Since the "assets" virtual path points to "some_actual_path", the file
+// that will actually be opened is "some_actual_path/file.txt".
+fs_file_open(pFS, "assets/file.txt", FS_READ, &pFile);
+```
+
+Example 3 - Opening from an Archive
+-----------------------------------
+The example below shows how to open a file from within a ZIP archive. This assumes the `fs` object
+was initialized with support for ZIP archives (see fs_init() documentation for more information).
+
+```c
+// Opening the file directly from the archive by specifying the archive name in the path.
+fs_file_open(pFS, "somefolder/archive.zip/somefile.txt", FS_READ, &pFile);
+
+// Same as above. The "archive.zip" part is not needed because transparent mode is used by default.
+fs_file_open(pFS, "somefolder/somefile.txt", FS_READ, &pFile);
+
+// Opening a file in verbose mode. The archive name must be specified in the path.
+fs_file_open(pFS, "somefolder/archive.zip/somefile.txt", FS_READ | FS_VERBOSE, &pFile); // This is a valid path in verbose mode.
+
+// This will fail because the archive name is not specified in the path.
+fs_file_open(pFS, "somefolder/somefile.txt", FS_READ | FS_VERBOSE, &pFile); // This will fail because verbose mode requires explicit archive names.
+
+// This will fail because opaque mode treats archives as opaque.
+fs_file_open(pFS, "somefolder/archive.zip/somefile.txt", FS_READ | FS_OPAQUE, &pFile);
+```
+
+Example 4 - Opening from a Mounted Archive
+------------------------------------------
+It is OK to use opaque mode when opening files from a mounted archive. This is the only way to open
+files from an archive when using opaque mode.
+
+```c
+// Mount the archive to the virtual path "assets".
+fs_mount(pFS, "somefolder/archive.zip", "assets", FS_READ);
+
+// Now you can open files from the archive in opaque mode. Note how the path is prefixed with the
+// virtual path "assets" which is how the mapping back to "somefolder/archive.zip" is made.
+fs_file_open(pFS, "assets/somefile.txt", FS_READ | FS_OPAQUE, &pFile);
+```
+
+
+See Also
+--------
+fs_file_close()
+fs_file_read()
+fs_file_write()
+fs_file_seek()
+fs_file_tell()
+fs_file_flush()
+fs_file_truncate()
+fs_file_get_info()
+fs_file_duplicate()
+*/
 FS_API fs_result fs_file_open(fs* pFS, const char* pFilePath, int openMode, fs_file** ppFile);
+
+
+/*
+Closes a file.
+
+You must close any opened files with this function when they are no longer needed. The owner `fs`
+object will not close files automatically when it is uninitialized with `fs_uninit()`.
+
+
+Parameters
+----------
+pFile : (in)
+    A pointer to the file to close. Must not be NULL.
+
+
+See Also
+--------
+fs_file_open()
+*/
 FS_API void fs_file_close(fs_file* pFile);
 FS_API fs_result fs_file_read(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead); /* Returns 0 on success, FS_AT_END on end of file, or an errno result code on error. Will only return FS_AT_END if *pBytesRead is 0. */
 FS_API fs_result fs_file_write(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
