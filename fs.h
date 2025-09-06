@@ -97,6 +97,10 @@ You can also open a file in append mode with `FS_APPEND`:
 fs_file_open(pFS, "file.txt", FS_WRITE | FS_APPEND, &pFile);
 ```
 
+When using `FS_APPEND` mode, the file will always append to the end of the file and can never
+overwrite existing content. This follows POSIX semantics. In this mode, it is not possible to
+create sparse files.
+
 To open a file in write mode, but fail if the file already exists, you can use `FS_EXCLUSIVE`:
 
 ```c
@@ -117,6 +121,12 @@ fs_file_seek(pFile, 0, FS_SEEK_END);
 fs_int64 cursorPos;
 fs_file_tell(pFile, &cursorPos);
 ```
+
+When seeking, you can seek beyond the end of the file. Attempting to read from beyond the end of
+the file will return `FS_AT_END`. Attempting to write beyond the end of the file will create a
+hole if supported by the file system, or fill the space with data (the filled data can be left
+undefined). When seeking from the end of the file with a negative offset, it will seek backwards
+from the end. Seeking to before the start of the file is not allowed and will return an error.
 
 Retrieving information about a file is done with `fs_file_info()`:
 
@@ -140,13 +150,21 @@ fs_file_duplicate(pFile, &pFileDup);
 ```
 
 Note that this will only duplicate the file handle. It does not make a copy of the file on the file
-system itself. The duplicated file handle will be entirely independent of the original handle.
+system itself. The duplicated file handle will be entirely independent of the original handle,
+including having its own separate read/write cursor position. The initial position of the cursor of
+the new file handle is undefined and you should explicitly seek to the appropriate location.
+
+Important: `fs_file_duplicate()` can fail or work incorrectly if you use relative paths for mounts
+and something changes the working directory. The reason being that it reopens the file based on the
+original path to do the duplication.
 
 To delete a file, use `fs_remove()`:
 
 ```c
 fs_remove(pFS, "file.txt");
 ```
+
+Note that files are deleted permanently. There is no recycle bin or trash functionality.
 
 Files can be renamed and moved with `fs_rename()`:
 
@@ -425,6 +443,11 @@ opening a file with this kind of mount point, you would need to specify the lead
 fs_file_open(pFS, "/gamedata/file.txt", FS_READ, &pFile);   // Note how the path starts with "/".
 ```
 
+Important: When using mount points that start with "/", if the file cannot be opened from the mount,
+it will fall back to trying the actual absolute path. To prevent this and ensure files are only
+loaded from the mount point, use the `FS_IGNORE_MOUNTS` flag when opening files. Alternatively,
+simply avoid using "/" prefixed mounts and instead use `FS_NO_ABOVE_ROOT_NAVIGATION` for security.
+
 
 You can also mount an archive to a virtual path:
 
@@ -479,6 +502,15 @@ When opening a file, if you pass in NULL for the `pFS` parameter it will open th
 using the standard file system. That is, it'll work exactly as if you were using stdio `fopen()`,
 and you will not have access to mount points. Keep in mind that there is no notion of a "current
 directory" in this library so you'll be stuck with the initial working directory.
+
+You can also skip mount points when opening a file by using the `FS_IGNORE_MOUNTS` flag:
+
+```c
+fs_file_open(pFS, "/absolute/path/to/file.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+```
+
+This can be useful when you want to access a file directly without going through the mount system,
+such as when working with temporary files.
 
 
 
@@ -608,7 +640,24 @@ The following points apply regarding thread safety.
 
 
 
-3. Backends
+3. Platform Considerations
+============================
+
+3.1. Windows
+--------------
+On Windows, Unicode support is determined by the `UNICODE` preprocessor define. When `UNICODE` is
+defined, the library will use the wide character versions of Windows APIs. When not defined, it
+will use the ANSI versions.
+
+3.2. POSIX
+------------
+On POSIX platforms, `ftruncate()` is unavailable with `-std=c89` unless `_XOPEN_SOURCE` is defined
+to >= 500. This may affect the availability of file truncation functionality when using strict C89
+compilation.
+
+
+
+4. Backends
 ===========
 You can implement custom backends to support different file systems and archive formats. A stdio
 backend is the default backend and is built into the library. A backend implements the functions
@@ -678,8 +727,9 @@ destination are in different directories. If the destination already exists, it 
 overwritten. This function is optional and can be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
 
 The `mkdir` function is used to create a directory. This is not recursive. If the directory already
-exists, the backend should return `FS_ALREADY_EXISTS`. This function is optional and can be left as
-`NULL` or return `FS_NOT_IMPLEMENTED`.
+exists, the backend should return `FS_ALREADY_EXISTS`. If a parent directory does not exist, the
+backend should return `FS_DOES_NOT_EXIST`. This function is optional and can be left as `NULL` or
+return `FS_NOT_IMPLEMENTED`.
 
 The `info` function is used to get information about a file. If the backend does not have the
 notion of the last modified or access time, it can set those values to 0. Set `directory` to 1 (or
@@ -751,7 +801,7 @@ But when you have two different file handles, they must be able to be used on tw
 at the same time.
 
 
-4. Streams
+5. Streams
 ==========
 Streams are the data delivery mechanism for archive backends. You can implement custom streams, but
 this should be uncommon because `fs_file` itself is a stream, and a memory stream is included in
