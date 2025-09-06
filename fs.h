@@ -1294,6 +1294,155 @@ struct fs_backend
     void         (* free_iterator   )(fs_iterator* pIterator);  /* <-- Free the `fs_iterator` object here since `first` and `next` were the ones who allocated it. Also do any uninitialization routines. */
 };
 
+/*
+Initializes a file system object.
+
+This is the main object that you will use to open files. There are different types of file system
+backends, such as the standard file system, ZIP archives, etc. which you can configure via the
+config.
+
+The config is used to select which backend to use and to register archive types against known
+file extensions. If you just want to use the regular file system and don't care about archives,
+you can just pass in NULL for the config.
+
+By registering archive types, you'll be able to open files from within them straight from a file
+path without without needing to do any manual management. For example, if you register ZIP archives
+to the ".zip" extension, you can open a file from a path like this:
+
+    somefolder/archive.zip/somefile.txt
+
+These can also be handled transparently, so the above path can be opened with this:
+
+    somefolder/somefile.txt
+
+Note that the `archive.zip` part is not needed. If you want this functionality, you must register
+the archive types with the config.
+
+Most of the time you will use a `fs` object that represents the normal file system, which is the
+default backend if you don't pass in a config, but sometimes you may want to have a `fs` object
+that represents an archive, such as a ZIP archive. To do this, you need to provide a stream that
+reads the actual data of the archive. Most of the time you will just use the stream provided by
+a `fs_file` object you opened earlier from the regular file system, but if you would rather source
+your data from elsewhere, like a memory buffer, you can pass in your own stream. You also need to
+specify the backend to use, such as `FS_ZIP` in the case of ZIP archives. See examples below for
+more information.
+
+
+Parameters
+----------
+pConfig : (in, optional)
+    A pointer to a configuration struct. Can be NULL, in which case the regular file system will be
+    used, and archives will not be supported unless explicitly mounted later with `fs_mount_fs()`.
+
+ppFS : (out)
+    A pointer to a pointer which will receive the initialized file system object. The object must
+    be uninitialized with `fs_uninit()` when no longer needed.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+Thread Safety
+-------------
+Safe, so long as the config is not modified during initialization.
+
+
+Example 1 - Basic Usage
+-----------------------
+The example below shows how to initialize a `fs` object which uses the regular file system and does
+not support archives. This is the most basic usage of the `fs` object.
+
+```c
+#include "fs.h"
+
+...
+
+fs* pFS;
+fs_result result = fs_init(NULL, &pFS);
+if (result != FS_SUCCESS) {
+    // Handle error.
+}
+
+...
+
+fs_uninit(pFS);
+}
+```
+
+
+Example 2 - Supporting Archives
+-------------------------------
+The example below shows how to initialize a `fs` object which uses the regular file system and
+supports ZIP archives. Error checking has been omitted for clarity.
+
+```c
+#include "fs.h"
+#include "extras/backends/zip/fs_zip.h"  // For FS_ZIP backend.
+
+...
+
+fs* pFS;
+fs_config fsConfig;
+
+// Archive types are supported by mapping a backend (`FS_ZIP` in this case) to a file extension.
+fs_archive_type pArchiveTypes[] =
+{
+    {FS_ZIP, "zip"}
+};
+
+// The archive types are registered via the config.
+fsConfig = fs_config_init_default();
+fsConfig.pArchiveTypes    = pArchiveTypes;
+fsConfig.archiveTypeCount = sizeof(pArchiveTypes) / sizeof(pArchiveTypes[0]);
+
+// Once the config is ready, initialize the fs object.
+fs_init(&fsConfig, &pFS);
+
+// Now you can open files from within ZIP archives from a file path.
+fs_file* pFileInArchive;
+fs_file_open(pFS, "somefolder/archive.zip/somefile.txt", FS_READ, &pFileInArchive);
+```
+
+
+Example 3 - Archive Backends
+----------------------------
+This example shows how you can open an archive file directly, and then create a new `fs` object
+which uses the archive as its backend. This is useful if, for example, you want to use a ZIP file
+as a virtual file system.
+
+```c
+#include "fs.h"
+#include "extras/backends/zip/fs_zip.h"  // For FS_ZIP backend.
+
+...
+
+fs* pFS;                // Main file system object.
+fs* pArchiveFS;         // File system object for the archive.
+fs_config archiveConfig;
+fs_file* pArchiveFile;  // The actual archive file.
+
+// Open the archive file itself first, usually from the regular file system.
+fs_file_open(pFS, "somefolder/archive.zip", FS_READ, &pArchiveFile);
+
+...
+
+// Setup the config for the archive `fs` object such that it uses the ZIP backend (FS_ZIP), and
+// reads from the stream of the actual archive file (pArchiveFile) which was opened earlier.
+archiveConfig = fs_config_init(FS_ZIP, NULL, fs_file_get_stream(pArchiveFile));
+
+// With the config ready we can now initialize the `fs` object for the archive.
+fs_init(&archiveConfig, &pArchiveFS);
+
+...
+
+// Now that we have a `fs` object representing the archive, we can open files from within it like
+// normal.
+fs_file* pFileInArchive;
+fs_file_open(pArchiveFS, "fileinsidearchive.txt", FS_READ, &pFileInArchive);
+```
+*/
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
 FS_API void fs_uninit(fs* pFS);
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
