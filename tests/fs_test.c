@@ -768,10 +768,8 @@ int fs_test_system_write_new(fs_test* pTest)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    fs_file* pFile;
     char pFilePath[256];
     const char data[4] = {1, 2, 3, 4};
-    size_t bytesWritten;
 
     if (pTestState->pFS == NULL) {
         printf("%s: File system not initialized. Aborting test.\n", pTest->name);
@@ -780,24 +778,9 @@ int fs_test_system_write_new(fs_test* pTest)
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_IGNORE_MOUNTS, &pFile);
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_IGNORE_MOUNTS, data, sizeof(data));
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to create new file.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    result = fs_file_write(pFile, data, sizeof(data), &bytesWritten);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to write to new file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    if (bytesWritten != sizeof(data)) {
-        printf("%s: ERROR: Expecting %d bytes written, but got %d.\n", pTest->name, (int)sizeof(data), (int)bytesWritten);
-        return FS_ERROR;
+        return result;
     }
 
 
@@ -816,26 +799,15 @@ static int fs_test_system_write_overwrite_internal(fs_test* pTest, char newData[
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
     fs_result result;
-    fs_file* pFile;
     char pFilePath[256];
     size_t newDataSize = 4;
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, pFilePath, FS_WRITE | FS_IGNORE_MOUNTS, newData, newDataSize);
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to open file for overwriting.\n", pTest->name);
-        return FS_ERROR;
+        return result;
     }
-
-    result = fs_file_write(pFile, newData, newDataSize, NULL);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to write to file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
 
     /* Now we need to open the file and verify. */
     result = fs_test_open_and_read_file(pTest, pTestState->pFS, pFilePath, FS_READ, newData, newDataSize);
@@ -894,24 +866,9 @@ int fs_test_system_write_append(fs_test* pTest)
 
     fs_path_append(pFilePath, sizeof(pFilePath), pTestState->pTempDir, (size_t)-1, "a", (size_t)-1);
 
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, pFilePath, FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, dataToAppend, sizeof(dataToAppend));
     if (result != FS_SUCCESS) {
-        printf("%s: Failed to create new file.\n", pTest->name);
-        return FS_ERROR;
-    }
-
-    result = fs_file_write(pFile, dataToAppend, sizeof(dataToAppend), &bytesWritten);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to write to new file.\n", pTest->name);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    if (bytesWritten != sizeof(dataToAppend)) {
-        printf("%s: ERROR: Expecting %d bytes written, but got %d.\n", pTest->name, (int)sizeof(dataToAppend), (int)bytesWritten);
-        return FS_ERROR;
+        return result;
     }
 
 
@@ -1713,29 +1670,8 @@ int fs_test_mounts(fs_test* pTest)
 static fs_result fs_test_mounts_write_file(fs_test* pTest, const char* pFilePath, const void* pData, size_t dataSize)
 {
     fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
-    fs_result result;
-    fs_file* pFile;
-
-    result = fs_file_open(pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_NO_CREATE_DIRS, &pFile);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to open %s for writing.\n", pTest->name, pFilePath);
-        return FS_ERROR;
-    }
-
-    /*
-    We want to write out some data so we can correctly identify the data later when testing reads. The
-    actual writing of data should have been tested earlier so no need to verify that.
-    */
-    result = fs_file_write(pFile, pData, dataSize, NULL);
-    if (result != FS_SUCCESS) {
-        printf("%s: Failed to write to %s.\n", pTest->name, pFilePath);
-        fs_file_close(pFile);
-        return FS_ERROR;
-    }
-
-    fs_file_close(pFile);
-
-    return FS_SUCCESS;
+    
+    return fs_test_open_and_write_file(pTest, pTestState->pFS, pFilePath, FS_WRITE | FS_TRUNCATE | FS_NO_CREATE_DIRS, pData, dataSize);
 }
 
 int fs_test_mounts_write(fs_test* pTest)
