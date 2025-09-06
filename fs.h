@@ -1442,9 +1442,60 @@ fs_init(&archiveConfig, &pArchiveFS);
 fs_file* pFileInArchive;
 fs_file_open(pArchiveFS, "fileinsidearchive.txt", FS_READ, &pFileInArchive);
 ```
+
+
+See Also
+--------
+fs_uninit()
 */
 FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS);
+
+
+/*
+Uninitializes a file system object.
+
+This does not do any file closing for you. You must close any opened files yourself before calling
+this function.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object to uninitialize. Must not be NULL.
+
+
+See Also
+--------
+fs_init()
+*/
 FS_API void fs_uninit(fs* pFS);
+
+
+/*
+Performs a control operation on the file system.
+
+This is backend-specific. Check the documentation for the backend you are using to see what
+operations are supported.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+op : (in)
+    The operation to perform. This is backend-specific.
+
+pArg : (in, optional)
+    An optional pointer to an argument struct. This is backend-specific. Can be NULL if the
+    operation does not require any arguments.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise. May return FS_NOT_IMPLEMENTED if
+the operation is not supported by the backend.
+*/
 FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options);                         /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
 FS_API fs_result fs_rename(fs* pFS, const char* pOldPath, const char* pNewPath, int options);    /* Will consider write mounts unless FS_IGNORE_MOUNTS is specified. */
