@@ -1165,39 +1165,145 @@ typedef enum fs_sysdir_type
     FS_SYSDIR_CACHE
 } fs_sysdir_type;
 
-FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);    /* Returns the length of the string, or 0 on failure. If the return value is >= to dstCap it means the output buffer was too small. Use the returned value to know how big to make the buffer. Set pDst to NULL to calculate the required length. */
+/*
+Get the path of a known system directory.
+
+The returned path will be null-terminated. If the output buffer is too small, the required size
+will be returned, not including the null terminator.
+
+
+Parameters
+----------
+type : (in)
+    The type of system directory to query. See `fs_sysdir_type` for recognized values.
+
+pDst : (out, optional)
+    A pointer to a buffer that will receive the path. If NULL, the function will return the
+    required length of the buffer, not including the null terminator.
+
+dstCap : (in)
+    The capacity of the output buffer, in bytes. This is ignored if `pDst` is NULL.
+
+
+Return Value
+------------
+Returns the length of the string, not including the null terminator. Returns 0 on failure. If the
+return value is >= to `dstCap` it means the output buffer was too small. Use the returned value to
+know how big to make the buffer.
+
+
+Example 1 - Querying the Home Directory
+---------------------------------------
+```c
+size_t len = fs_sysdir(FS_SYSDIR_HOME, NULL, 0);
+if (len == 0) {
+    // Failed to query the length of the home directory path.
+}
+
+char* pPath = (char*)malloc(len + 1);  // +1 for null terminator.
+if (pPath == NULL) {
+    // Out of memory.
+}
+
+len = fs_sysdir(FS_SYSDIR_HOME, pPath, len + 1);
+if (len == 0) {
+    // Failed to get the home directory path.
+}
+
+printf("Home directory: %s\n", pPath);
+free(pPath);
+```
+
+
+See Also
+--------
+fs_sysdir_type
+fs_mktmp()
+*/
+FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap);
 /* END fs_sysdir.h */
 
 
 /* BEG fs_mktmp.h */
-FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. Use FS_MKTMP_BASE_DIR to query the system base temp folder. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
+/*
+Create a temporary file or directory.
+
+This function creates a temporary file or directory with a unique name based on the provided
+prefix. The full path to the created file or directory is returned in `pTmpPath`.
+
+Use the option flag `FS_MKTMP_FILE` to create a temporary file, or `FS_MKTMP_DIR` to create a
+temporary directory.
+
+
+Parameters
+----------
+pPrefix : (in)
+    A prefix for the temporary file or directory name. This should not include the system's base
+    temp directory path. Do not include paths like "/tmp" in the prefix. The output path will
+    include the system's base temp directory and the prefix.
+
+    The prefix can include subdirectories, such as "myapp/subdir". In this case the library will
+    create the directory hierarchy for you, unless you pass in `FS_NO_CREATE_DIRS`. Note that not
+    all platforms treat the name portion of the prefix the same. In particular, Windows will only
+    use up to the first 3 characters of the name portion of the prefix.
+
+pTmpPath : (out)
+    A pointer to a buffer that will receive the full path of the created temporary file or
+    directory. This will be null-terminated.
+
+tmpPathCap : (in)
+    The capacity of the output buffer, in bytes.
+
+options : (in)
+    Options for creating the temporary file or directory. Can be a combination of the following:
+        FS_MKTMP_FILE
+            Creates a temporary file. Cannot be used with FS_MKTMP_DIR.
+
+        FS_MKTMP_DIR
+            Creates a temporary directory. Cannot be used with FS_MKTMP_FILE.
+
+        FS_NO_CREATE_DIRS
+            Do not create parent directories if they do not exist. If this flag is not set,
+            parent directories will be created as needed.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other error code on failure. Will return `FS_PATH_TOO_LONG` if
+the output buffer is too small.
+*/
+FS_API fs_result fs_mktmp(const char* pPrefix, char* pTmpPath, size_t tmpPathCap, int options);  /* Returns FS_PATH_TOO_LONG if the output buffer is too small. Use FS_MKTMP_FILE to create a file and FS_MKTMP_DIR to create a directory. pPrefix should not include the name of the system's base temp directory. Do not include paths like "/tmp" in the prefix. The output path will include the system's base temp directory and the prefix. */
 /* END fs_mktmp.h */
 
 
 /* BEG fs.h */
-/* Open mode flags. */
-#define FS_READ                     0x0001
-#define FS_WRITE                    0x0002  /* Will open in overwrite mode by default. */
-#define FS_TRUNCATE                 0x0004  /* Only valid with write mode. Will truncate the file upon opening. */
-#define FS_APPEND                   0x0008  /* Only valid with write mode. Will append to the file if it exists rather than truncating. */
-#define FS_EXCLUSIVE                0x0010  /* Only valid with write mode. Will fail if the file already exists. */
+/**************************************************************************************************
 
-#define FS_TRANSPARENT              0x0000  /* Default. Opens a file such that archives of a known type are handled transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. */
-#define FS_OPAQUE                   0x0020  /* When used, files inside archives cannot be opened automatically. For example, "somefolder/archive.zip/file.txt" will fail. Mounted archives work fine. */
-#define FS_VERBOSE                  0x0040  /* When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt" */
+Open Mode Flags
 
-#define FS_NO_CREATE_DIRS           0x0080  /* When used, directories will not be created automatically when opening files for writing. */
-#define FS_IGNORE_MOUNTS            0x0100  /* When used, mounted directories and archives will be ignored when opening and iterating files. */
-#define FS_ONLY_MOUNTS              0x0200  /* When used, only mounted directories and archives will be considered when opening and iterating files. */
-#define FS_NO_SPECIAL_DIRS          0x0400  /* When used, the presence of special directories like "." and ".." will be result in an error when opening files. */
-#define FS_NO_ABOVE_ROOT_NAVIGATION 0x0800  /* When used, navigating above the mount point with leading ".." segments will result in an error. Can be also be used with fs_path_normalize(). */
+**************************************************************************************************/
+#define FS_READ                     0x0001  /* Used by: fs_file_open(), fs_info(), fs_first(), fs_open_archive*(), fs_mount*() */
+#define FS_WRITE                    0x0002  /* Used by: fs_file_open(), fs_info(), fs_first(), fs_open_archive*(), fs_mount*() */
+#define FS_TRUNCATE                 0x0004  /* Used by: fs_file_open() */
+#define FS_APPEND                   0x0008  /* Used by: fs_file_open() */
+#define FS_EXCLUSIVE                0x0010  /* Used by: fs_file_open() */
 
-#define FS_LOWEST_PRIORITY          0x1000  /* Only used with mounting. When set will create the mount with a lower priority to existing mounts. */
+#define FS_TRANSPARENT              0x0000  /* Used by: fs_file_open(), fs_info(), fs_first() */
+#define FS_OPAQUE                   0x0020  /* Used by: fs_file_open(), fs_info(), fs_first() */
+#define FS_VERBOSE                  0x0040  /* Used by: fs_file_open(), fs_info(), fs_first() */
 
-#define FS_MKTMP_DIR                0x2000  /* Only used with fs_mktmp(). Create a temporary directory. */
-#define FS_MKTMP_FILE               0x4000  /* Only used with fs_mktmp(). Create a temporary file. */
+#define FS_NO_CREATE_DIRS           0x0080  /* Used by: fs_file_open(), fs_info(), fs_mount(), fs_mkdir(), fs_mktmp() */
+#define FS_IGNORE_MOUNTS            0x0100  /* Used by: fs_file_open(), fs_info(), fs_first() */
+#define FS_ONLY_MOUNTS              0x0200  /* Used by: fs_file_open(), fs_info(), fs_first() */
+#define FS_NO_SPECIAL_DIRS          0x0400  /* Used by: fs_file_open(), fs_info(), fs_first() */
+#define FS_NO_ABOVE_ROOT_NAVIGATION 0x0800  /* Used by: fs_file_open(), fs_info(), fs_first() */
 
-#define FS_NO_INCREMENT_REFCOUNT    0x8000  /* Internal use only. Used with fs_open_archive_ex() internally. */
+#define FS_LOWEST_PRIORITY          0x1000  /* Used by: fs_mount*() */
+
+#define FS_MKTMP_DIR                0x2000  /* Used by: fs_mktmp() */
+#define FS_MKTMP_FILE               0x4000  /* Used by: fs_mktmp() */
+
+#define FS_NO_INCREMENT_REFCOUNT    0x8000  /* Do not use. Internal use only. Used with fs_open_archive_ex() internally. */
 
 
 /* Garbage collection policies.*/
