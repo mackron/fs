@@ -215,21 +215,31 @@ void fs_test_print_summary(fs_test* pTest)
 
 
 /* BEG common */
-fs_result fs_create_new_file(fs* pFS, const char* pPath, const void* pData, size_t dataSize)
+fs_result fs_test_open_and_write_file(fs_test* pTest, fs* pFS, const char* pPath, int openMode, const void* pData, size_t dataSize)
 {
     fs_result result;
     fs_file* pFile;
 
-    result = fs_file_open(pFS, pPath, FS_WRITE, &pFile);
+    result = fs_file_open(pFS, pPath, openMode, &pFile);
     if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file \"%s\" for writing.\n", pTest->name, pPath);
         return result;
     }
 
     if (pData != NULL && dataSize > 0) {
-        result = fs_file_write(pFile, pData, dataSize, NULL);
+        size_t bytesWritten;
+
+        result = fs_file_write(pFile, pData, dataSize, &bytesWritten);
         if (result != FS_SUCCESS) {
+            printf("%s: Failed to write to file \"%s\".\n", pTest->name, pPath);
             fs_file_close(pFile);
             return result;
+        }
+
+        if (bytesWritten != dataSize) {
+            printf("%s: Wrote %d bytes to file \"%s\", expected to write %d bytes.\n", pTest->name, (int)bytesWritten, pPath, (int)dataSize);
+            fs_file_close(pFile);
+            return FS_ERROR;
         }
     }
 
@@ -2126,13 +2136,13 @@ int fs_test_mounts_iteration(fs_test* pTest)
         return FS_ERROR;
     }
 
-    result = fs_create_new_file(pTestState->pFS, "iteration/file1", NULL, 0);
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, "iteration/file1", FS_WRITE, NULL, 0);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create file.\n", pTest->name);
         return FS_ERROR;
     }
 
-    result = fs_create_new_file(pTestState->pFS, "iteration/file2", NULL, 0);
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, "iteration/file2", FS_WRITE, NULL, 0);
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create file.\n", pTest->name);
         return FS_ERROR;
@@ -2288,7 +2298,7 @@ int fs_test_archives(fs_test* pTest)
     }
 
     /* Output our test archives into the root folder for later use. */
-    result = fs_create_new_file(pTestState->pFS, "test1.zip", fs_test_file_test1_zip, sizeof(fs_test_file_test1_zip));
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, "test1.zip", FS_WRITE, fs_test_file_test1_zip, sizeof(fs_test_file_test1_zip));
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create test1.zip.\n", pTest->name);
         return FS_ERROR;
@@ -2298,7 +2308,7 @@ int fs_test_archives(fs_test* pTest)
     We want some files side-by-side with the archive, with the same name as those inside the archive itself. This is for
     testing that the correct file is loaded in transparent mode (tested later).
     */
-    result = fs_create_new_file(pTestState->pFS, "a", dataA, sizeof(dataA));
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, "a", FS_WRITE, dataA, sizeof(dataA));
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create file 'a'.\n", pTest->name);
         return FS_ERROR;
@@ -2752,7 +2762,7 @@ int fs_test_archives_recursive(fs_test* pTest)
     fs_result result;
 
     /* We need to write out our recursive archive. */
-    result = fs_create_new_file(pTestState->pFS, "test2.zip", fs_test_file_test2_zip, sizeof(fs_test_file_test2_zip));
+    result = fs_test_open_and_write_file(pTest, pTestState->pFS, "test2.zip", FS_WRITE, fs_test_file_test2_zip, sizeof(fs_test_file_test2_zip));
     if (result != FS_SUCCESS) {
         printf("%s: Failed to create test2.zip.\n", pTest->name);
         return FS_ERROR;
