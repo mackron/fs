@@ -713,7 +713,7 @@ not ever close or otherwise take ownership of the stream - that will be handled 
 The `uninit` function is where you should do any cleanup. Do not close the stream here.
 
 The `ioctl` function is optional. You can use this to implement custom IO control commands. Return
-`FS_INVALID_COMMAND` if the command is not recognized. The format of the `pArg` parameter is
+`FS_INVALID_OPERATION` if the command is not recognized. The format of the `pArg` parameter is
 command specific. If the backend does not need to implement this function, it can be left as `NULL`
 or return `FS_NOT_IMPLEMENTED`.
 
