@@ -84,6 +84,20 @@ if (result != FS_SUCCESS) {
 result = fs_file_write(pFile, pBuffer, bytesToWrite, &bytesWritten);
 ```
 
+Formatted writing is also supported:
+
+```c
+result = fs_file_writef(pFile, "Hello %s!\n", "World");
+if (result != FS_SUCCESS) {
+    // Failed to write file.
+}
+
+va_list args;
+va_start(args, format);
+result = fs_file_writefv(pFile, "Hello %s!\n", args);
+va_end(args);
+```
+
 The `FS_WRITE` option will default to overwrite mode. You can use `FS_TRUNCATE` if you want to
 truncate the file instead of overwriting it.
 
