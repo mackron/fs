@@ -806,7 +806,7 @@ at the same time.
 Streams are the data delivery mechanism for archive backends. You can implement custom streams, but
 this should be uncommon because `fs_file` itself is a stream, and a memory stream is included in
 the library called `fs_memory_stream`. Between these two the majority of use cases should be
-covered.
+covered. You can retrieve the stream associated with a `fs_file` using `fs_file_get_stream()`.
 
 A stream is initialized using a specialized initialization function depending on the stream type.
 For `fs_file`, simply opening the file is enough. For `fs_memory_stream`, you need to call
