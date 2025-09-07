@@ -5279,7 +5279,7 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
     fs_result result;
     fs_file* pFile;
 
-    if (pFilePath == NULL || ppData == NULL || pDataSize == NULL) {
+    if (pFilePath == NULL || ppData == NULL || (pDataSize == NULL && format != FS_FORMAT_TEXT)) {
         return FS_INVALID_ARGS;
     }
 
