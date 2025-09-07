@@ -3288,7 +3288,7 @@ in fixed sized chunks.
 */
 FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize);
 FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format format, void** ppData, size_t* pDataSize);
-FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pData, size_t dataSize);
+FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, const void* pData, size_t dataSize);
 
 
 /* BEG fs_backend_posix.h */

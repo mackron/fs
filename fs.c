@@ -5295,7 +5295,7 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
     return result;
 }
 
-FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, void* pData, size_t dataSize)
+FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, const void* pData, size_t dataSize)
 {
     fs_result result;
     fs_file* pFile;
