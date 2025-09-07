@@ -2909,12 +2909,284 @@ Returns FS_TRUE if the path looks like an archive, FS_FALSE otherwise.
 */
 FS_API fs_bool32 fs_path_looks_like_archive(fs* pFS, const char* pPath, size_t pathLen);    /* Does not validate that it's an actual valid archive. */
 
+
+/*
+Mounts a real directory or archive to a virtual path.
+
+You must specify the actual path to the directory or archive on the file system referred to by
+`pFS`. The virtual path can be NULL, in which case it will be treated as an empty string.
+
+The virtual path is the path prefix that will be used when opening files. For example, if you mount
+the actual path "somefolder" to the virtual path "assets", then when you open a file with the path
+"assets/somefile.txt", it will actually open "somefolder/somefile.txt".
+
+There are two groups of mounts - read-only and write. Read-only mounts are used when opening a file
+in read-only mode (i.e. without the `FS_WRITE` flag). Write mounts are used when opening a file in
+write mode (i.e. with the `FS_WRITE` flag). To control this, set the appropriate flag in the
+`options` parameter.
+
+The following flags are supported in the `options` parameter:
+
+    FS_READ
+        This is a read-only mount. It will be used when opening files without the `FS_WRITE` flag.
+
+    FS_WRITE
+        This is a write mount. It will be used when opening files with the `FS_WRITE
+
+    FS_LOWEST_PRIORITY
+        By default, mounts are searched in the reverse order that they were added. This means that
+        the most recently added mount has the highest priority. When this flag is specified, the
+        mount will have the lowest priority instead.
+
+For a read-only mount, you can have multiple mounts with the same virtual path in which case they
+will be searched in order or priority when opening a file.
+
+For write mounts, you can have multiple mounts with the same virtual path, but when opening a file
+for writing, only the first matching mount will be used. You can have multiple write mounts where
+the virtual path is a sub-path of another write mount. For example, you could have one write
+mount with the virtual path "assets" and another with the virtual path "assets/images". When
+opening a file for writing, if the path starts with "assets/images", that mount will be used
+because it is a more specific match. Otherwise, if the path starts with "assets" but not
+"assets/images", the other mount will be used.
+
+You can specify both `FS_READ` and `FS_WRITE` in the `options` parameter to create one read-only
+mount, and one write mount in a single call. This is equivalent to calling `fs_mount()` twice -
+once with `FS_READ`, and again with `FS_WRITE`.
+
+Unmounting a directory or archive is done with `fs_unmount()`. You must specify the actual path
+when unmounting.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pActualPath : (in)
+    The actual path to the directory or archive to mount. Must not be NULL.
+
+pVirtualPath : (in, optional)
+    The virtual path to mount the directory or archive to. Can be NULL in which case it will be
+    treated as an empty string.
+
+options : (in)
+    Options for the mount. A combination of the flags described above.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already exists,
+`FS_SUCCESS` will be returned.
+
+
+Example 1 - Basic Usage
+-----------------------
+```c
+// Mount two directories to the same virtual path.
+fs_mount(pFS, "some/actual/path", "assets", FS_READ);   // Lowest priority.
+fs_mount(pFS, "some/other/path",  "assets", FS_READ);
+
+// Mount a directory for writing.
+fs_mount(pFS, "some/write/path",      "assets",        FS_WRITE);
+fs_mount(pFS, "some/more/write/path", "assets/images", FS_WRITE); // More specific write mount.
+
+// Mount a read-only mount, and a write mount in a single call.
+fs_mount(pFS, "some/actual/path", "assets", FS_READ | FS_WRITE);
+```
+
+
+Example 2 - Mounting an Archive
+-------------------------------
+```c
+// Mount a ZIP archive to the virtual path "assets".
+fs_mount(pFS, "some/actual/path/archive.zip", "assets", FS_READ);
+```
+
+
+See Also
+--------
+fs_unmount()
+fs_mount_sysdir()
+fs_mount_fs()
+*/
 FS_API fs_result fs_mount(fs* pFS, const char* pActualPath, const char* pVirtualPath, int options);
+
+/*
+Unmounts a directory or archive that was previously mounted with `fs_mount()`.
+
+You must specify the actual path to the directory or archive that was used when mounting. The
+virtual path is not needed.
+
+The only options that matter here are `FS_READ` and `FS_WRITE`. If you want to unmount a read-only
+mount, you must specify `FS_READ`. If you want to unmount a write mount, you must specify
+`FS_WRITE`. If you want to unmount both a read-only mount, and a write mount in a single call, you
+can specify both flags. Using both flags is the same as calling `fs_unmount()` twice - once for the
+read-only mount, and once for the write mount.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pActualPath : (in)
+    The actual path to the directory or archive to unmount. Must not be NULL.
+
+options : (in)
+    Either `FS_READ`, `FS_WRITE`, or both to unmount the corresponding mounts.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
+found, `FS_SUCCESS` will be returned (it will just be a no-op).
+*/
 FS_API fs_result fs_unmount(fs* pFS, const char* pActualPath, int options);
+
+/*
+A helper function for mounting a standard system directory to a virtual path.
+
+When calling this function you specify the type of system directory you want to mount. The actual
+path of the system directory will often be generic, like "/home/yourname/" which is not useful for
+a real program. For this reason, this function forces you to specify a sub-directory that will be
+used with the system directory. This would often be something like the name of your application,
+such as "myapp". It can also include sub-directories, such as "mycompany/myapp".
+
+Otherwise, this function behaves exactly like `fs_mount()`.
+
+Unmount the directory with `fs_unmount_sysdir()`. You must specify the same type and sub-directory
+that was used when mounting.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+type : (in)
+    The type of system directory to mount.
+
+pSubDir : (in)
+    The sub-directory to use with the system directory. Must not be NULL nor an empty string.
+
+pVirtualPath : (in, optional)
+    The virtual path to mount the system directory to. Can be NULL in which case it will be treated
+    as an empty string.
+
+options : (in)
+    Options for the mount. A combination of the flags described in `fs_mount()`.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already
+exists, `FS_SUCCESS` will be returned.
+
+
+See Also
+--------
+fs_mount()
+fs_unmount_sysdir()
+*/
 FS_API fs_result fs_mount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, const char* pVirtualPath, int options);
+
+/*
+Unmounts a system directory that was previously mounted with `fs_mount_sysdir()`.
+
+This is the same as `fs_unmount()`, but follows the "type" and sub-directory semantics of
+`fs_mount_sysdir()`.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+type : (in)
+    The type of system directory to unmount.
+
+pSubDir : (in)
+    The sub-directory that was used with the system directory when mounting. Must not be NULL nor
+    an empty string.
+
+options : (in)
+    Either `FS_READ`, `FS_WRITE`, or both to unmount the corresponding mounts.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
+found, `FS_SUCCESS` will be returned (it will just be a no-op).
+*/
 FS_API fs_result fs_unmount_sysdir(fs* pFS, fs_sysdir_type type, const char* pSubDir, int options);
+
+/*
+Mounts another `fs` object to a virtual path.
+
+This is the same as `fs_mount()`, but instead of specifying an actual path to a directory or
+archive, you specify another `fs` object.
+
+Use `fs_unmount_fs()` to unmount the file system.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pOtherFS : (in)
+    A pointer to the other file system object to mount. Must not be NULL.
+
+pVirtualPath : (in, optional)
+    The virtual path to mount the other file system to. Can be NULL in which case it will be treated
+    as an empty string.
+
+options : (in)
+    Options for the mount. A combination of the flags described in `fs_mount()`.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already
+exists, `FS_SUCCESS` will be returned.
+
+
+See Also
+--------
+fs_mount()
+fs_unmount_fs()
+*/
 FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, int options);
-FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options);   /* Must be matched up with fs_mount_fs(). */
+
+/*
+Unmounts a file system that was previously mounted with `fs_mount_fs()`.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pOtherFS : (in)
+    A pointer to the other file system object to unmount. Must not be NULL.
+
+options : (in)
+    Options for the unmount. A combination of the flags described in `fs_unmount()`.
+
+
+Return Value
+------------
+Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
+found, `FS_SUCCESS` will be returned (it will just be a no-op).
+
+
+See Also
+--------
+fs_unmount()
+fs_mount_fs()
+*/
+FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options);
+
 
 /*
 Helper functions for reading the entire contents of a file, starting from the current cursor position. Free
