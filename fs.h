@@ -673,9 +673,9 @@ compilation.
 
 4. Backends
 ===========
-You can implement custom backends to support different file systems and archive formats. A stdio
-backend is the default backend and is built into the library. A backend implements the functions
-in the `fs_backend` structure.
+You can implement custom backends to support different file systems and archive formats. A POSIX
+or Win32 backend is the default backend depending on the platform, and is built into the library.
+A backend implements the functions in the `fs_backend` structure.
 
 A ZIP backend is included in the "extras" folder of this library's repository. Refer to this for
 a complete example for how to implement a backend (not including write support, but I'm sure
@@ -714,99 +714,170 @@ This pattern will be a central part of how backends are implemented. If you don'
 backend-specific data, you can just return 0 from `alloc_size()` and simply not reference the
 backend data pointer.
 
-The main library will allocate the `fs` object, including any additional space specified by the
-`alloc_size` function. Once this is done, it'll call the `init` function to initialize the backend.
-This function will take a pointer to the `fs` object, the backend-specific configuration data, and
-a stream object. The stream is used to provide the backend with the raw data of an archive, which
-will be required for archive backends like ZIP. If your backend requires this, you should check
-for if the stream is null, and if so, return an error. See section "4. Streams" for more details
-on how to use streams. You need not take a copy of the stream pointer for use outside of `init()`.
-Instead you can just use `fs_get_stream()` to get the stream object when you need it. You should
-not ever close or otherwise take ownership of the stream - that will be handled at a higher level.
 
-The `uninit` function is where you should do any cleanup. Do not close the stream here.
+4.1. Backend Functions
+----------------------
+alloc_size
+    This function should return the size of the backend-specific data to associate with the `fs`
+    object. If no additional data is required, return 0.
+    
+    The main library will allocate the `fs` object, including any additional space specified by the
+    `alloc_size` function.
 
-The `ioctl` function is optional. You can use this to implement custom IO control commands. Return
-`FS_INVALID_OPERATION` if the command is not recognized. The format of the `pArg` parameter is
-command specific. If the backend does not need to implement this function, it can be left as `NULL`
-or return `FS_NOT_IMPLEMENTED`.
+init
+    This function is called after `alloc_size()` and after the `fs` object has been allocated. This
+    is where you should initialize the backend.
 
-The `remove` function is used to delete a file or directory. This is not recursive. If the path is
-a directory, the backend should return an error if it is not empty. Backends do not need to
-implement this function in which case they can leave the callback pointer as `NULL`, or have it
-return `FS_NOT_IMPLEMENTED`.
+    This function will take a pointer to the `fs` object, the backend-specific configuration data,
+    and a stream object. The stream is used to provide the backend with the raw data of an archive,
+    which will be required for archive backends like ZIP. If your backend requires this, you should
+    check for if the stream is null, and if so, return an error. See section "5. Streams" for more
+    details on how to use streams. You need not take a copy of the stream pointer for use outside
+    of `init`. Instead you can just use `fs_get_stream()` to get the stream object when you need it.
+    You should not ever close or otherwise take ownership of the stream - that will be handled
+    at a higher level.
 
-The `rename` function is used to rename a file. This will act as a move if the source and
-destination are in different directories. If the destination already exists, it should be
-overwritten. This function is optional and can be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
+uninit
+    This is where you should do any cleanup. Do not close the stream here.
 
-The `mkdir` function is used to create a directory. This is not recursive. If the directory already
-exists, the backend should return `FS_ALREADY_EXISTS`. If a parent directory does not exist, the
-backend should return `FS_DOES_NOT_EXIST`. This function is optional and can be left as `NULL` or
-return `FS_NOT_IMPLEMENTED`.
+ioctl
+    This function is optional. You can use this to implement custom IO control commands. Return
+    `FS_INVALID_OPERATION` if the command is not recognized. The format of the `pArg` parameter is
+    command specific. If the backend does not need to implement this function, it can be left as
+    `NULL` or return `FS_NOT_IMPLEMENTED`.
 
-The `info` function is used to get information about a file. If the backend does not have the
-notion of the last modified or access time, it can set those values to 0. Set `directory` to 1 (or
-FS_TRUE) if it's a directory. Likewise, set `symlink` to 1 if it's a symbolic link. It is important
-that this function return the info of the exact file that would be opened with `file_open()`. This
-function is mandatory.
+remove
+    This function is used to delete a file or directory. This is not recursive. If the path is
+    a directory, the backend should return an error if it is not empty. Backends do not need to
+    implement this function in which case they can leave the callback pointer as `NULL`, or have
+    it return `FS_NOT_IMPLEMENTED`.
 
-Like when initializing a `fs` object, the library needs to know how much backend-specific data to
-allocate for the `fs_file` object. This is done with the `file_alloc_size` function. This function
-is basically the same as `alloc_size` for the `fs` object, but for `fs_file`. If the backend does
-not need any additional data, it can return 0. The backend can access this data via
-`fs_file_get_backend_data()`.
+rename
+    This function is used to rename a file. This will act as a move if the source and destination
+    are in different directories. If the destination already exists, it should be overwritten. This
+    function is optional and can be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
 
-The `file_open` function is where the backend should open the file. If the `fs` object that owns
-the file was initialized with a stream, i.e. it's an archive, the stream will be non-null. You
-should store this pointer for later use in `file_read`, etc. Do *not* make a duplicate of the
-stream with `fs_stream_duplicate()`. Instead just take a copy of the pointer. The `openMode`
-parameter will be a combination of `FS_READ`, `FS_WRITE`, `FS_TRUNCATE`, `FS_APPEND` and
-`FS_EXCLUSIVE`. When opening in write mode (`FS_WRITE`), it should default to truncate mode. You
-should ignore the `FS_OPAQUE`, `FS_VERBOSE` and `FS_TRANSPARENT` flags. If the file does not exist,
-the backend should return `FS_DOES_NOT_EXIST`. If the file is a directory, it should return
-`FS_IS_DIRECTORY`.
+mkdir
+    This function is used to create a directory. This is not recursive. If the directory already
+    exists, the backend should return `FS_ALREADY_EXISTS`. If a parent directory does not exist,
+    the backend should return `FS_DOES_NOT_EXIST`. This function is optional and can be left as
+    `NULL` or return `FS_NOT_IMPLEMENTED`.
 
-The file should be closed with `file_close`. This is where the backend should release any resources
-associated with the file. Do not uninitialize the stream here - it'll be cleaned up at a higher
-level.
+info
+    This function is used to get information about a file. If the backend does not have the notion
+    of the last modified or access time, it can set those values to 0. Set `directory` to 1 (or
+    `FS_TRUE`) if it's a directory. Likewise, set `symlink` to 1 if it's a symbolic link. It is
+    important that this function return the info of the exact file that would be opened with
+    `file_open()`. This function is mandatory.
 
-The `file_read` function is used to read data from the file. The backend should return `FS_AT_END`
-when the end of the file is reached, but only if the number of bytes read is 0.
+file_alloc_size
+    Like when initializing a `fs` object, the library needs to know how much backend-specific data
+    to allocate for the `fs_file` object. This is done with the `file_alloc_size` function. This
+    function is basically the same as `alloc_size` for the `fs` object, but for `fs_file`. If the
+    backend does not need any additional data, it can return 0. The backend can access this data
+    via `fs_file_get_backend_data()`.
 
-The `file_write` function is used to write data to the file. If the file is opened in append mode,
-the backend should seek to the end of the file before writing. This is optional and need only be
-specified if the backend supports writing.
+file_open
+    The `file_open` function is where the backend should open the file.
+    
+    If the `fs` object that owns the file was initialized with a stream, the stream will be
+    non-null. If your backends requires a stream, you should check that the stream is null, and if
+    so, return an error. The reason you need to check for this is that the application itself may
+    erroneously attempt to initialize a `fs` object for your backend without a stream, and since
+    the library cannot know whether or not a backend requires a stream, it cannot check this on
+    your behalf.
 
-The `file_seek` function is used to seek the cursor. The backend should return `FS_BAD_SEEK` if the
-seek is out of bounds.
+    If the backend requires a stream, it should take a copy of only the pointer and store it for
+    later use. Do *not* make a duplicate of the stream with `fs_stream_duplicate()`.
 
-The `file_tell` function is used to get the current cursor position. There is only one cursor, even
-when the file is opened in read and write mode.
+    Backends need only handle the following open mode flags:
 
-The `file_flush` function is used to flush any buffered data to the file. This is optional and can
-be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
+        FS_READ
+        FS_WRITE
+        FS_TRUNCATE
+        FS_APPEND
+        FS_EXCLUSIVE
 
-The `file_truncate` function is used to truncate a file to the current cursor position. This is
-only useful for write mode, so is therefore optional and can be left as `NULL` or return
-`FS_NOT_IMPLEMENTED`.
+    All other flags are for use at a higher level and should be ignored.
 
-The `file_info` function is used to get information about an opened file. It returns the same
-information as `info` but for an opened file. This is mandatory.
+    When opening in write mode (`FS_WRITE`), the backend should default to overwrite mode. If
+    `FS_TRUNCATE` is specified, the file should be truncated to 0 length. If `FS_APPEND` is
+    specified, all writes should happen at the end of the file regardless of the position of the
+    write cursor. If `FS_EXCLUSIVE` is specified, opening should fail if the file already exists.
+    In all write modes,  the file should be created if it does not already exist.
 
-The `file_duplicate` function is used to duplicate a file. The destination file will be a new file
-and already allocated. The backend need only copy the necessary backend-specific data to the new
-file. The backend must ensure that the duplicated file is totally independent of the original file
-and has its own separate read/write pointers.
+    If any flags cannot be supported, the backend should return an error.
 
-The `first`, `next` and `free_iterator` functions are used to enumerate the contents of a directory.
-If the directory is empty, or an error occurs, `fs_first` should return `NULL`. The `next` function
-should return `NULL` when there are no more entries. When `next` returns `NULL`, the backend needs
-to free the iterator object. The `free_iterator` function is used to free the iterator object
-explicitly. The backend is responsible for any memory management of the name string. A typical way
-to deal with this is to allocate additional space for the name immediately after the `fs_iterator`
-allocation.
+    When opening in read mode, if the file does not exist, `FS_DOES_NOT_EXIST` should be returned.
+    Similarly, if the file is a directory, `FS_IS_DIRECTORY` should be returned.
 
+    Before calling into this function, the library will normalize all paths to use forward slashes.
+    Therefore, backends must support forward slashes ("/") as path separators.
+
+file_close
+    This function is where the file should be closed. This is where the backend should release any
+    resources associated with the file. Do not uninitialize the stream here - it'll be cleaned up
+    at a higher level.
+
+file_read
+    This is used to read data from the file. The backend should return `FS_AT_END` when the end of
+    the file is reached, but only if the number of bytes read is 0.
+
+file_write
+    This is used to write data to the file. If the file is opened in append mode, the backend
+    should always ensure writes are appended to the end, regardless of the position of the write
+    cursor. This is optional and need only be specified if the backend supports writing.
+
+file_seek
+    The `file_seek` function is used to seek the read/write cursor. The backend should allow
+    seeking beyond the end of the file. If the file is opened in write mode and data is written
+    beyond the end of the file, the file should be extended, and if possible made into a sparse
+    file. If sparse files are not supported, the backend should fill the gap with data, preferably
+    with zeros if possible.
+
+    Attempting to seek to before the start of the file should return `FS_BAD_SEEK`.
+
+file_tell
+    The `file_tell` function is used to get the current cursor position. There is only one cursor,
+    even when the file is opened in read and write mode.
+
+file_flush
+    The `file_flush` function is used to flush any buffered data to the file. This is optional and
+    can be left as `NULL` or return `FS_NOT_IMPLEMENTED`.
+
+file_truncate
+    The `file_truncate` function is used to truncate a file to the current cursor position. This is
+    only useful for write mode, so is therefore optional and can be left as `NULL` or return
+    `FS_NOT_IMPLEMENTED`.
+
+file_info
+    The `file_info` function is used to get information about an opened file. It returns the same
+    information as `info` but for an opened file. This is mandatory.
+
+file_duplicate
+    The `file_duplicate` function is used to duplicate a file. The destination file will be a new
+    file and already allocated. The backend need only copy the necessary backend-specific data to
+    the new file. The backend must ensure that the duplicated file is totally independent of the
+    original file and has its own independent read/write pointer. If the backend is unable to
+    support duplicated files having their own independent read/write pointer, it must return an
+    error.
+
+    If a backend cannot support duplication, it can leave this as `NULL` or return
+    `FS_NOT_IMPLEMENTED`. However, if this is not implemented, the backend will not be able to open
+    files within archives.
+
+first, next, free_iterator
+    The `first`, `next` and `free_iterator` functions are used to enumerate the contents of a
+    directory. If the directory is empty, or an error occurs, `fs_first` should return `NULL`. The
+    `next` function should return `NULL` when there are no more entries. When `next` returns
+    `NULL`, the backend needs to free the iterator object. The `free_iterator` function is used to
+    free the iterator object explicitly. The backend is responsible for any memory management of
+    the name string. A typical way to deal with this is to allocate additional space for the name
+    immediately after the `fs_iterator` allocation.
+
+
+4.2. Thread Safety
+------------------
 Backends are responsible for guaranteeing thread-safety of different files across different
 threads. This should typically be quite easy since most system backends, such as stdio, are already
 thread-safe, and archive backends are typically read-only which should make thread-safety trivial
