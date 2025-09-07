@@ -4367,6 +4367,12 @@ FS_API fs_iterator* fs_first_ex(fs* pFS, const char* pDirectoryPath, size_t dire
         directoryPathLen = strlen(pDirectoryPath);
     }
 
+    /* Make sure we never try using mounts if we are not using a fs object. */
+    if (pFS == NULL) {
+        mode |=  FS_IGNORE_MOUNTS;
+        mode &= ~FS_ONLY_MOUNTS;
+    }
+
     /*
     The first thing we need to do is gather files and directories from the backend. This needs to be done in the
     same order that we attempt to load files for reading:
