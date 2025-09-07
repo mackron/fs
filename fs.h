@@ -128,18 +128,18 @@ hole if supported by the file system, or fill the space with data (the filled da
 undefined). When seeking from the end of the file with a negative offset, it will seek backwards
 from the end. Seeking to before the start of the file is not allowed and will return an error.
 
-Retrieving information about a file is done with `fs_file_info()`:
+Retrieving information about a file is done with `fs_file_get_info()`:
 
 ```c
 fs_file_info info;
-fs_file_info(pFile, &info);
+fs_file_get_info(pFile, &info);
 ```
 
 If you want to get information about a file without opening it, you can use `fs_info()`:
 
 ```c
 fs_file_info info;
-fs_info(pFS, "file.txt", &info);
+fs_info(pFS, "file.txt", FS_READ, &info);   // FS_READ tells it to check read-only mounts (explained later)
 ```
 
 A file handle can be duplicated with `fs_file_duplicate()`:
@@ -445,7 +445,7 @@ fs_file_open(pFS, "/gamedata/file.txt", FS_READ, &pFile);   // Note how the path
 
 Important: When using mount points that start with "/", if the file cannot be opened from the mount,
 it will fall back to trying the actual absolute path. To prevent this and ensure files are only
-loaded from the mount point, use the `FS_IGNORE_MOUNTS` flag when opening files. Alternatively,
+loaded from the mount point, use the `FS_ONLY_MOUNTS` flag when opening files. Alternatively,
 simply avoid using "/" prefixed mounts and instead use `FS_NO_ABOVE_ROOT_NAVIGATION` for security.
 
 
