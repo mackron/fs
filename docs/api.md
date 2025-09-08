@@ -228,25 +228,23 @@ Get the path of a known system directory.
 The returned path will be null-terminated. If the output buffer is too small, the required size
 will be returned, not including the null terminator.
 
-# Parameters
+## Parameters
 
-[in] **type**
+[in] **type**  
 The type of system directory to query. See `fs_sysdir_type` for recognized values.
 
-[out, optional] **pDst**
+[out, optional] **pDst**  
 A pointer to a buffer that will receive the path. If NULL, the function will return the
 required length of the buffer, not including the null terminator.
 
-[in] **dstCap**
+[in] **dstCap**  
 The capacity of the output buffer, in bytes. This is ignored if `pDst` is NULL.
 
-# Return Value
+## Return Value
 
 Returns the length of the string, not including the null terminator. Returns 0 on failure. If the
 return value is >= to `dstCap` it means the output buffer was too small. Use the returned value to
 know how big to make the buffer.
-
-# Examples
 
 ## Example 1 - Querying the Home Directory
 
@@ -270,10 +268,10 @@ printf("Home directory: %s\n", pPath);
 free(pPath);
 ```
 
-# See Also
+## See Also
 
-fs_sysdir_type  
-fs_mktmp()  
+[fs_sysdir_type](#fs_sysdir_type)  
+[fs_mktmp()](#fs_mktmp())  
 
 ---
 
@@ -296,9 +294,9 @@ prefix. The full path to the created file or directory is returned in `pTmpPath`
 Use the option flag `FS_MKTMP_FILE` to create a temporary file, or `FS_MKTMP_DIR` to create a
 temporary directory.
 
-# Parameters
+## Parameters
 
-[in] **pPrefix**
+[in] **pPrefix**  
 A prefix for the temporary file or directory name. This should not include the system's base
 temp directory path. Do not include paths like "/tmp" in the prefix. The output path will
 include the system's base temp directory and the prefix.
@@ -308,24 +306,24 @@ create the directory hierarchy for you, unless you pass in `FS_NO_CREATE_DIRS`. 
 all platforms treat the name portion of the prefix the same. In particular, Windows will only
 use up to the first 3 characters of the name portion of the prefix.
 
-[out] **pTmpPath**
+[out] **pTmpPath**  
 A pointer to a buffer that will receive the full path of the created temporary file or
 directory. This will be null-terminated.
 
-[in] **tmpPathCap**
+[in] **tmpPathCap**  
 The capacity of the output buffer, in bytes.
 
-[in] **options**
+[in] **options**  
 Options for creating the temporary file or directory. Can be a combination of the following:
 
 | Option | Description |
-|--------|-------------|
+|:-------|:------------|
 | `FS_MKTMP_FILE` | Creates a temporary file. Cannot be used with FS_MKTMP_DIR. |
 | `FS_MKTMP_DIR` | Creates a temporary directory. Cannot be used with FS_MKTMP_FILE. |
 | `FS_NO_CREATE_DIRS` | Do not create parent directories if they do not exist. If this flag is not set, parent directories will be created as needed. |
 
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other error code on failure. Will return `FS_PATH_TOO_LONG` if
 the output buffer is too small.
@@ -410,21 +408,19 @@ If you want to use custom allocation callbacks, you can do so by passing in a po
 callbacks which use malloc/realloc/free will be used. If you pass in non-NULL, this function will
 make a copy of the struct, so you can free or modify the struct after this function returns.
 
-# Parameters
+## Parameters
 
-[in, optional] **pConfig**
+[in, optional] **pConfig**  
 A pointer to a configuration struct. Can be NULL, in which case the regular file system will be
 used, and archives will not be supported unless explicitly mounted later with `fs_mount_fs()`.
 
-[out] **ppFS**
+[out] **ppFS**  
 A pointer to a pointer which will receive the initialized file system object. The object must
 be uninitialized with `fs_uninit()` when no longer needed.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
-
-# Examples
 
 ## Example 1 - Basic Usage
 
@@ -517,9 +513,9 @@ fs_file* pFileInArchive;
 fs_file_open(pArchiveFS, "fileinsidearchive.txt", FS_READ, &pFileInArchive);
 ```
 
-# See Also
+## See Also
 
-fs_uninit()  
+[fs_uninit()](#fs_uninit())  
 
 ---
 
@@ -536,14 +532,14 @@ Uninitializes a file system object.
 This does not do any file closing for you. You must close any opened files yourself before calling
 this function.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object to uninitialize. Must not be NULL.
 
-# See Also
+## See Also
 
-fs_init()  
+[fs_init()](#fs_init())  
 
 ---
 
@@ -562,19 +558,19 @@ Performs a control operation on the file system.
 This is backend-specific. Check the documentation for the backend you are using to see what
 operations are supported.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **op**
+[in] **op**  
 The operation to perform. This is backend-specific.
 
-[in, optional] **pArg**
+[in, optional] **pArg**  
 An optional pointer to an argument struct. This is backend-specific. Can be NULL if the
 operation does not require any arguments.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. May return FS_NOT_IMPLEMENTED if
 the operation is not supported by the backend.
@@ -599,33 +595,33 @@ the path will be treated as a real path.
 
 See fs_file_open() for information about the options flags.
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. Can be NULL to use the native file system.
 
-[in] **pFilePath**
+[in] **pFilePath**  
 The path to the file or directory to remove. Must not be NULL.
 
-[in] **options**
+[in] **options**  
 Options for the operation. Can be 0 or a combination of the following flags:
 
 | Option |
-|--------|
+|:-------|
 | `FS_IGNORE_MOUNTS` |
 | `FS_NO_SPECIAL_DIRS` |
 | `FS_NO_ABOVE_ROOT_NAVIGATION` |
 
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
 file or directory does not exist. Returns FS_DIRECTORY_NOT_EMPTY if attempting to remove a
 non-empty directory.
 
-# See Also
+## See Also
 
-fs_file_open()  
+[fs_file_open()](#fs_file_open())  
 
 ---
 
@@ -650,36 +646,36 @@ This will fail with FS_DIFFERENT_DEVICE if the source and destination are on dif
 
 See fs_file_open() for information about the options flags.
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. Can be NULL to use the native file system.
 
-[in] **pOldPath**
+[in] **pOldPath**  
 The current path of the file or directory to rename/move. Must not be NULL.
 
-[in] **pNewPath**
+[in] **pNewPath**  
 The new path for the file or directory. Must not be NULL.
 
-[in] **options**
+[in] **options**  
 Options for the operation. Can be 0 or a combination of the following flags:
 
 | Option |
-|--------|
+|:-------|
 | `FS_IGNORE_MOUNTS` |
 | `FS_NO_SPECIAL_DIRS` |
 | `FS_NO_ABOVE_ROOT_NAVIGATION` |
 
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
 source file or directory does not exist. Returns FS_ALREADY_EXISTS if the destination path already
 exists.
 
-# See Also
+## See Also
 
-fs_file_open()  
+[fs_file_open()](#fs_file_open())  
 
 ---
 
@@ -702,32 +698,32 @@ treated as a real path.
 
 See fs_file_open() for information about the options flags.
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. Can be NULL to use the native file system.
 
-[in] **pPath**
+[in] **pPath**  
 The path of the directory to create. Must not be NULL.
 
-[in] **options**
+[in] **options**  
 Options for the operation. Can be 0 or a combination of the following flags:
 
 | Option |
-|--------|
+|:-------|
 | `FS_IGNORE_MOUNTS` |
 | `FS_NO_CREATE_DIRS` |
 
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_ALREADY_EXISTS if the
 directory already exists. Returns FS_DOES_NOT_EXIST if FS_NO_CREATE_DIRS is specified and a
 parent directory does not exist.
 
-# See Also
+## See Also
 
-fs_file_open()  
+[fs_file_open()](#fs_file_open())  
 
 ---
 
@@ -748,29 +744,29 @@ This function gets information about a file or directory such as its size, modif
 and whether it is a directory or symbolic link. The openMode parameter accepts the same flags as
 fs_file_open() but FS_READ, FS_WRITE, FS_TRUNCATE, FS_APPEND, and FS_EXCLUSIVE are ignored.
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. Can be NULL to use the native file system.
 
-[in] **pPath**
+[in] **pPath**  
 The path to the file or directory to get information about. Must not be NULL.
 
-[in] **openMode**
+[in] **openMode**  
 Open mode flags that may affect how the file is accessed. See fs_file_open() for details.
 
-[out] **pInfo**
+[out] **pInfo**  
 A pointer to a fs_file_info structure that will receive the file information. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
 file or directory does not exist.
 
-# See Also
+## See Also
 
-fs_file_get_info()  
-fs_file_open()  
+[fs_file_get_info()](#fs_file_get_info())  
+[fs_file_open()](#fs_file_open())  
 
 ---
 
@@ -787,12 +783,12 @@ Retrieves a pointer to the stream used by the file system object.
 This is only relevant if the file system will initialized with a stream (such as when opening an
 archive). If the file system was not initialized with a stream, this will return NULL.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the stream used by the file system object, or NULL if no stream was provided
 at initialization time.
@@ -812,12 +808,12 @@ Retrieves a pointer to the allocation callbacks used by the file system object.
 Note that this will *not* return the same pointer that was specified in the config at initialization
 time. This function returns a pointer to the internal copy of the struct.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the allocation callbacks used by the file system object. If `pFS` is NULL, this
 will return NULL.
@@ -838,19 +834,19 @@ associated with the file system object.
 You should never call this function unless you are implementing a custom backend. The size of the
 data can be retrieved with `fs_get_backend_data_size()`.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the backend-specific data associated with the file system object, or NULL if no
 backend data is available.
 
-# See Also
+## See Also
 
-fs_get_backend_data_size()  
+[fs_get_backend_data_size()](#fs_get_backend_data_size())  
 
 ---
 
@@ -868,19 +864,19 @@ associated with the file system object.
 You should never call this function unless you are implementing a custom backend. The data can be
 accessed with `fs_get_backend_data()`.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns the size of the backend-specific data associated with the file system object, or 0 if no
 backend data is available.
 
-# See Also
+## See Also
 
-fs_get_backend_data()  
+[fs_get_backend_data()](#fs_get_backend_data())  
 
 ---
 
@@ -897,19 +893,19 @@ Increments the reference count of the file system object.
 This function would be used to prevent garbage collection of opened archives. It should be rare to
 ever need to call this function directly.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns `pFS`.
 
-# See Also
+## See Also
 
-fs_unref()  
-fs_refcount()  
+[fs_unref()](#fs_unref())  
+[fs_refcount()](#fs_refcount())  
 
 ---
 
@@ -925,19 +921,19 @@ Decrements the reference count of the file system object.
 
 This does not uninitialize the object once the reference count hits zero.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns the new reference count.
 
-# See Also
+## See Also
 
-fs_ref()  
-fs_refcount()  
+[fs_ref()](#fs_ref())  
+[fs_refcount()](#fs_refcount())  
 
 ---
 
@@ -951,19 +947,19 @@ fs_uint32 fs_refcount(
 
 Retrieves the current reference count of the file system object.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns the current reference count of the file system object.
 
-# See Also
+## See Also
 
-fs_ref()  
-fs_unref()  
+[fs_ref()](#fs_ref())  
+[fs_unref()](#fs_unref())  
 
 ---
 
@@ -990,7 +986,7 @@ This function opens a file for reading and/or writing. The openMode parameter sp
 file should be opened. It can be a combination of the following flags:
 
 | Option | Description |
-|--------|-------------|
+|:-------|:------------|
 | `FS_READ` | Open the file for reading. If used with `FS_WRITE`, the file will be opened in read/write mode. When opening in read-only mode, the file must exist. |
 | `FS_WRITE` | Open the file for writing. If used with `FS_READ`, the file will be opened in read/write mode. When opening in write-only mode, the file will be created if it does not exist. By default, the file will be opened in overwrite mode. To change this, combine this with either one of the `FS_TRUNCATE` or `FS_APPEND` flags. |
 | `FS_TRUNCATE` | Only valid when used with `FS_WRITE`. If the file already exists, it will be truncated to zero length when opened. If the file does not exist, it will be created. Not compatible with `FS_APPEND`. |
@@ -1006,28 +1002,26 @@ file should be opened. It can be a combination of the following flags:
 | `FS_NO_ABOVE_ROOT_NAVIGATION` | When used, navigating above the mount point with leading ".." segments will result in an error. This option is implied when using FS_NO_SPECIAL_DIRS. Close the file with `fs_file_close()` when no longer needed. The file will not be closed automatically when the `fs` object is uninitialized. |
 
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. Can be NULL to use the native file system. Note that when
 this is NULL, archives and mounts will not be supported.
 
-[in] **pFilePath**
+[in] **pFilePath**  
 The path to the file to open. Must not be NULL.
 
-[in] **openMode**
+[in] **openMode**  
 The mode to open the file with. A combination of the flags described above.
 
-[out] **ppFile**
+[out] **ppFile**  
 A pointer to a pointer which will receive the opened file object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Returns FS_DOES_NOT_EXIST if the
 file does not exist when opening for reading. Returns FS_ALREADY_EXISTS if the file already exists
 when opening with FS_EXCLUSIVE. Returns FS_IS_DIRECTORY if the path refers to a directory.
-
-# Examples
 
 ## Example 1 - Basic Usage
 
@@ -1103,17 +1097,17 @@ fs_mount(pFS, "somefolder/archive.zip", "assets", FS_READ);
 fs_file_open(pFS, "assets/somefile.txt", FS_READ | FS_OPAQUE, &pFile);
 ```
 
-# See Also
+## See Also
 
-fs_file_close()  
-fs_file_read()  
-fs_file_write()  
-fs_file_seek()  
-fs_file_tell()  
-fs_file_flush()  
-fs_file_truncate()  
-fs_file_get_info()  
-fs_file_duplicate()  
+[fs_file_close()](#fs_file_close())  
+[fs_file_read()](#fs_file_read())  
+[fs_file_write()](#fs_file_write())  
+[fs_file_seek()](#fs_file_seek())  
+[fs_file_tell()](#fs_file_tell())  
+[fs_file_flush()](#fs_file_flush())  
+[fs_file_truncate()](#fs_file_truncate())  
+[fs_file_get_info()](#fs_file_get_info())  
+[fs_file_duplicate()](#fs_file_duplicate())  
 
 ---
 
@@ -1130,14 +1124,14 @@ Closes a file.
 You must close any opened files with this function when they are no longer needed. The owner `fs`
 object will not close files automatically when it is uninitialized with `fs_uninit()`.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to close. Must not be NULL.
 
-# See Also
+## See Also
 
-fs_file_open()  
+[fs_file_open()](#fs_file_open())  
 
 ---
 
@@ -1160,23 +1154,23 @@ The number of bytes actually read will be stored in the variable pointed to by `
 If the end of the file is reached before any bytes are read, this function will return `FS_AT_END`
 and `*pBytesRead` will be set to 0. `FS_AT_END` will only be returned if `*pBytesRead` is 0.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to read from. Must not be NULL.
 
-[out] **pDst**
+[out] **pDst**  
 A pointer to the buffer that will receive the read data. Must not be NULL.
 
-[in] **bytesToRead**
+[in] **bytesToRead**  
 The maximum number of bytes to read from the file.
 
-[out, optional] **pBytesRead**
+[out, optional] **pBytesRead**  
 A pointer to a variable that will receive the number of bytes actually read. Can be NULL if you
 do not care about this information. If NULL, the function will return an error if not all
 requested bytes could be read.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success, `FS_AT_END` on end of file, or an error code otherwise. Will only
 return `FS_AT_END` if `*pBytesRead` is 0.
@@ -1185,12 +1179,12 @@ If `pBytesRead` is NULL, the function will return an error if not all requested 
 read. Otherwise, if `pBytesRead` is not NULL, the function will return `FS_SUCCESS` even if fewer
 than `bytesToRead` bytes were read.
 
-# See Also
+## See Also
 
-fs_file_open()  
-fs_file_write()  
-fs_file_seek()  
-fs_file_tell()  
+[fs_file_open()](#fs_file_open())  
+[fs_file_write()](#fs_file_write())  
+[fs_file_seek()](#fs_file_seek())  
+[fs_file_tell()](#fs_file_tell())  
 
 ---
 
@@ -1210,23 +1204,23 @@ Writes data to a file.
 This function writes up to `bytesToWrite` bytes from the buffer pointed to by `pSrc` to the file.
 The number of bytes actually written will be stored in the variable pointed to by `pBytesWritten`.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to write to. Must not be NULL.
 
-[in] **pSrc**
+[in] **pSrc**  
 A pointer to the buffer containing the data to write. Must not be NULL.
 
-[in] **bytesToWrite**
+[in] **bytesToWrite**  
 The number of bytes to write to the file.
 
-[out, optional] **pBytesWritten**
+[out, optional] **pBytesWritten**  
 A pointer to a variable that will receive the number of bytes actually written. Can be NULL if
 you do not care about this information. If NULL, the function will return an error if not all
 requested bytes could be written.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success, or an error code otherwise.
 
@@ -1234,14 +1228,14 @@ If `pBytesWritten` is NULL, the function will return an error if not all request
 written. Otherwise, if `pBytesWritten` is not NULL, the function will return `FS_SUCCESS` even if
 fewer than `bytesToWrite` bytes were written.
 
-# See Also
+## See Also
 
-fs_file_open()  
-fs_file_read()  
-fs_file_seek()  
-fs_file_tell()  
-fs_file_flush()  
-fs_file_truncate()  
+[fs_file_open()](#fs_file_open())  
+[fs_file_read()](#fs_file_read())  
+[fs_file_seek()](#fs_file_seek())  
+[fs_file_tell()](#fs_file_tell())  
+[fs_file_flush()](#fs_file_flush())  
+[fs_file_truncate()](#fs_file_truncate())  
 
 ---
 
@@ -1257,24 +1251,24 @@ fs_result fs_file_writef(
 
 A helper for writing formatted data to a file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to write to. Must not be NULL.
 
-[in] **fmt**
+[in] **fmt**  
 A printf-style format string. Must not be NULL.
 
-****
+****  
 
-# Return Value
+## Return Value
 
 Same as `fs_file_write()`.
 
-# See Also
+## See Also
 
-fs_file_write()  
-fs_file_writefv()  
+[fs_file_write()](#fs_file_write())  
+[fs_file_writefv()](#fs_file_writefv())  
 
 ---
 
@@ -1290,25 +1284,25 @@ fs_result fs_file_writefv(
 
 A helper for writing formatted data to a file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to write to. Must not be NULL.
 
-[in] **fmt**
+[in] **fmt**  
 A printf-style format string. Must not be NULL.
 
-[in] **args**
+[in] **args**  
 Additional arguments as required by the format string.
 
-# Return Value
+## Return Value
 
 Same as `fs_file_write()`.
 
-# See Also
+## See Also
 
-fs_file_write()  
-fs_file_writef()  
+[fs_file_write()](#fs_file_write())  
+[fs_file_writef()](#fs_file_writef())  
 
 ---
 
@@ -1334,34 +1328,34 @@ in zero bytes being read, and `FS_AT_END` being returned by `fs_file_read()`.
 
 It is an error to try seeking to before the start of the file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to seek. Must not be NULL.
 
-[in] **offset**
+[in] **offset**  
 The offset to seek to, relative to the position specified by `origin`. A negative value seeks
 backwards.
 
-[in] **origin**
+[in] **origin**  
 The origin from which to seek. One of the following values:
 
 | Option | Description |
-|--------|-------------|
+|:-------|:------------|
 | `FS_SEEK_SET` | Seek from the start of the file. |
 | `FS_SEEK_CUR` | Seek from the current cursor position. |
 | `FS_SEEK_END` | Seek from the end of the file. |
 
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
-# See Also
+## See Also
 
-fs_file_tell()  
-fs_file_read()  
-fs_file_write()  
+[fs_file_tell()](#fs_file_tell())  
+[fs_file_read()](#fs_file_read())  
+[fs_file_write()](#fs_file_write())  
 
 ---
 
@@ -1376,23 +1370,23 @@ fs_result fs_file_tell(
 
 Retrieves the current position of the read/write cursor in a file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to query. Must not be NULL.
 
-[out] **pCursor**
+[out] **pCursor**  
 A pointer to a variable that will receive the current cursor position. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
-# See Also
+## See Also
 
-fs_file_seek()  
-fs_file_read()  
-fs_file_write()  
+[fs_file_seek()](#fs_file_seek())  
+[fs_file_read()](#fs_file_read())  
+[fs_file_write()](#fs_file_write())  
 
 ---
 
@@ -1406,12 +1400,12 @@ fs_result fs_file_flush(
 
 Flushes any buffered data to disk.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to flush. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
@@ -1430,12 +1424,12 @@ Truncates a file to the current cursor position.
 It is possible for a backend to not support truncation, in which case this function will return
 `FS_NOT_IMPLEMENTED`.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to truncate. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise. Will return `FS_NOT_IMPLEMENTED` if
 the backend does not support truncation.
@@ -1453,15 +1447,15 @@ fs_result fs_file_get_info(
 
 Retrieves information about an opened file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to query. Must not be NULL.
 
-[out] **pInfo**
+[out] **pInfo**  
 A pointer to a fs_file_info structure that will receive the file information. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
@@ -1486,15 +1480,15 @@ using it.
 Note that this does not duplicate the actual file on the file system itself. It just creates a
 new `fs_file` object that refers to the same file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to duplicate. Must not be NULL.
 
-[out] **ppDuplicate**
+[out] **ppDuplicate**  
 A pointer to a pointer which will receive the duplicated file handle. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
@@ -1513,19 +1507,19 @@ Retrieves the backend-specific data associated with a file.
 You should never call this function unless you are implementing a custom backend. The size of the
 data can be retrieved with `fs_file_get_backend_data_size()`.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to query. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the backend-specific data associated with the file, or NULL if there is no
 such data.
 
-# See Also
+## See Also
 
-fs_file_get_backend_data_size()  
+[fs_file_get_backend_data_size()](#fs_file_get_backend_data_size())  
 
 ---
 
@@ -1542,19 +1536,19 @@ Retrieves the size of the backend-specific data associated with a file.
 You should never call this function unless you are implementing a custom backend. The data can be
 accessed with `fs_file_get_backend_data()`.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file to query. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns the size of the backend-specific data associated with the file, or 0 if there is no such
 data.
 
-# See Also
+## See Also
 
-fs_file_get_backend_data()  
+[fs_file_get_backend_data()](#fs_file_get_backend_data())  
 
 ---
 
@@ -1568,18 +1562,18 @@ fs_stream* fs_file_get_stream(
 
 Files are streams. This function returns a pointer to the `fs_stream` interface of the file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file whose stream pointer is being retrieved. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the `fs_stream` interface of the file, or NULL if `pFile` is NULL.
 
-# See Also
+## See Also
 
-fs_file_get_fs()  
+[fs_file_get_fs()](#fs_file_get_fs())  
 
 ---
 
@@ -1593,18 +1587,18 @@ fs* fs_file_get_fs(
 
 Retrieves the file system that owns a file.
 
-# Parameters
+## Parameters
 
-[in] **pFile**
+[in] **pFile**  
 A pointer to the file whose file system pointer is being retrieved. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the `fs` interface of the file's file system, or NULL if `pFile` is NULL.
 
-# See Also
+## See Also
 
-fs_file_get_stream()  
+[fs_file_get_stream()](#fs_file_get_stream())  
 
 ---
 
@@ -1621,23 +1615,23 @@ fs_iterator* fs_first_ex(
 
 The same as `fs_first()`, but with the length of the directory path specified explicitly.
 
-# Parameters
+## Parameters
 
-[in, optional] **pFS**
+[in, optional] **pFS**  
 A pointer to the file system object. This can be NULL in which case the native file system will
 be used.
 
-[in] **pDirectoryPath**
+[in] **pDirectoryPath**  
 The path to the directory to iterate. Must not be NULL.
 
-[in] **directoryPathLen**
+[in] **directoryPathLen**  
 The length of the directory path. Can be set to `FS_NULL_TERMINATED` if the path is
 null-terminated.
 
-[in] **mode**
+[in] **mode**  
 Options for the iterator. See `fs_file_open()` for a description of the available flags.
 
-# Return Value
+## Return Value
 
 Same as `fs_first()`.
 
@@ -1679,15 +1673,15 @@ pDirectoryPath : (in)
 mode : (in)
     Options for the iterator. See `fs_file_open()` for a description of the available flags.
 
-# Return Value
+## Return Value
 
 Returns a pointer to an iterator object on success; NULL on failure or if the directory is empty.
 
-# See Also
+## See Also
 
-fs_next()  
-fs_free_iterator()  
-fs_first_ex()  
+[fs_next()](#fs_next())  
+[fs_free_iterator()](#fs_free_iterator())  
+[fs_first_ex()](#fs_first_ex())  
 
 ---
 
@@ -1708,12 +1702,12 @@ retrieve each following entry.
 If there are no more entries in the directory, this function will return NULL, and an explicit call
 to `fs_free_iterator()` is not needed.
 
-# Parameters
+## Parameters
 
-[in] **pIterator**
+[in] **pIterator**  
 A pointer to the iterator object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns a pointer to the next iterator object on success; NULL if there are no more entries. If
 NULL is returned, you need not call `fs_free_iterator()`. If you want to terminate iteration early,
@@ -1722,11 +1716,11 @@ you must call `fs_free_iterator()` to free the iterator.
 You cannot assume that the returned pointer is the same as the input pointer. It may need to be
 reallocated internally to hold the data of the next entry.
 
-# See Also
+## See Also
 
-fs_first()  
-fs_first_ex()  
-fs_free_iterator()  
+[fs_first()](#fs_first())  
+[fs_first_ex()](#fs_first_ex())  
+[fs_free_iterator()](#fs_free_iterator())  
 
 ---
 
@@ -1746,16 +1740,16 @@ terminate iteration early, you must call this function to free the iterator.
 
 It is safe to call this function with a NULL pointer, in which case it will do nothing.
 
-# Parameters
+## Parameters
 
-[in, optional] **pIterator**
+[in, optional] **pIterator**  
 A pointer to the iterator object. Can be NULL.
 
-# See Also
+## See Also
 
-fs_first()  
-fs_first_ex()  
-fs_next()  
+[fs_first()](#fs_first())  
+[fs_first_ex()](#fs_first_ex())  
+[fs_next()](#fs_next())  
 
 ---
 
@@ -1775,39 +1769,39 @@ fs_result fs_open_archive_ex(
 
 The same as `fs_open_archive()`, but with the ability to explicitly specify the backend to use.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pBackend**
+[in] **pBackend**  
 A pointer to the backend to use for opening the archive. Must not be NULL.
 
-[in, optional] **pBackendConfig**
+[in, optional] **pBackendConfig**  
 A pointer to backend-specific configuration data. Can be NULL if the backend does not require
 any configuration.
 
-[in] **pArchivePath**
+[in] **pArchivePath**  
 The path to the archive to open. Must not be NULL.
 
-[in] **archivePathLen**
+[in] **archivePathLen**  
 The length of the archive path. Can be set to `FS_NULL_TERMINATED` if the path is null-terminated.
 
-[in] **openMode**
+[in] **openMode**  
 The mode to open the archive with.
 
-[out] **ppArchive**
+[out] **ppArchive**  
 A pointer to a pointer which will receive the opened archive file system object. Must not be
 NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
-# See Also
+## See Also
 
-fs_open_archive()  
-fs_close_archive()  
+[fs_open_archive()](#fs_open_archive())  
+[fs_close_archive()](#fs_close_archive())  
 
 ---
 
@@ -1831,30 +1825,30 @@ collected, and there are reference counting implications.
 Note that opening the archive in write mode (`FS_WRITE`) does not automatically mean you will be
 able to write to it. None of the stock backends support writing to archives at this time.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pArchivePath**
+[in] **pArchivePath**  
 The path to the archive to open. Must not be NULL.
 
-[in] **openMode**
+[in] **openMode**  
 The open mode flags to open the archive with. See `fs_file_open()` for a description of the
 available flags.
 
-[out] **ppArchive**
+[out] **ppArchive**  
 A pointer to a pointer which will receive the opened archive file system object. Must not be
 NULL.
 
-# Return Value
+## Return Value
 
 Returns FS_SUCCESS on success; any other result code otherwise.
 
-# See Also
+## See Also
 
-fs_close_archive()  
-fs_open_archive_ex()  
+[fs_close_archive()](#fs_close_archive())  
+[fs_open_archive_ex()](#fs_open_archive_ex())  
 
 ---
 
@@ -1875,15 +1869,15 @@ Note that when an archive is closed, it does not necessarily mean that the under
 closed immediately. This is because archives are reference counted and garbage collected. You can
 force garbage collection of unused archives with `fs_gc_archives()`.
 
-# Parameters
+## Parameters
 
-[in] **pArchive**
+[in] **pArchive**  
 A pointer to the archive file system object to close. Must not be NULL.
 
-# See Also
+## See Also
 
-fs_open_archive()  
-fs_open_archive_ex()  
+[fs_open_archive()](#fs_open_archive())  
+[fs_open_archive_ex()](#fs_open_archive_ex())  
 
 ---
 
@@ -1904,22 +1898,22 @@ policy.
 You should rarely need to call this function directly. Archives will automatically be garbage collected
 when the `fs` object is uninitialized with `fs_uninit()`.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **policy**
+[in] **policy**  
 The garbage collection policy to use. Set this to FS_GC_POLICY_THRESHOLD to only collect archives
 if the number of opened archives exceeds the threshold set with `fs_set_archive_gc_threshold()`
 which defaults to 10. Set this to FS_GC_POLICY_ALL to collect all unused archives regardless of the
 threshold.
 
-# See Also
+## See Also
 
-fs_open_archive()  
-fs_close_archive()  
-fs_set_archive_gc_threshold()  
+[fs_open_archive()](#fs_open_archive())  
+[fs_close_archive()](#fs_close_archive())  
+[fs_set_archive_gc_threshold()](#fs_set_archive_gc_threshold())  
 
 ---
 
@@ -1939,17 +1933,17 @@ immediately. Instead, it will be kept open in case it is needed again soon. The 
 determines how many unused archives will be kept open before they are garbage collected. The
 default threshold is 10.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **threshold**
+[in] **threshold**  
 The threshold for garbage collecting unused archives.
 
-# See Also
+## See Also
 
-fs_gc_archives()  
+[fs_gc_archives()](#fs_gc_archives())  
 
 ---
 
@@ -1963,12 +1957,12 @@ size_t fs_get_archive_gc_threshold(
 
 Retrieves the threshold for garbage collecting unused archives.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-# Return Value
+## Return Value
 
 Returns the threshold for garbage collecting unused archives.
 
@@ -1989,18 +1983,18 @@ A helper function for checking if a path looks like it could be an archive.
 This only checks the path string itself. It does not actually attempt to open and validate the
 archive itself.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pPath**
+[in] **pPath**  
 The path to check. Must not be NULL.
 
-[in] **pathLen**
+[in] **pathLen**  
 The length of the path string. Can be set to `FS_NULL_TERMINATED` if the path is null-terminated.
 
-# Return Value
+## Return Value
 
 Returns FS_TRUE if the path looks like an archive, FS_FALSE otherwise.
 
@@ -2030,33 +2024,31 @@ write mode (i.e. with the `FS_WRITE` flag). To control this, set the appropriate
 The following flags are supported in the `options` parameter:
 
 | Option | Description |
-|--------|-------------|
+|:-------|:------------|
 | `FS_READ` | This is a read-only mount. It will be used when opening files without the `FS_WRITE` flag. |
 | `FS_WRITE` | This is a write mount. It will be used when opening files with the `FS_WRITE |
 | `FS_LOWEST_PRIORITY` | By default, mounts are searched in the reverse order that they were added. This means that the most recently added mount has the highest priority. When this flag is specified, the mount will have the lowest priority instead. For a read-only mount, you can have multiple mounts with the same virtual path in which case they will be searched in order or priority when opening a file. For write mounts, you can have multiple mounts with the same virtual path, but when opening a file for writing, only the first matching mount will be used. You can have multiple write mounts where the virtual path is a sub-path of another write mount. For example, you could have one write mount with the virtual path "assets" and another with the virtual path "assets/images". When opening a file for writing, if the path starts with "assets/images", that mount will be used because it is a more specific match. Otherwise, if the path starts with "assets" but not "assets/images", the other mount will be used. You can specify both `FS_READ` and `FS_WRITE` in the `options` parameter to create one read-only mount, and one write mount in a single call. This is equivalent to calling `fs_mount()` twice - once with `FS_READ`, and again with `FS_WRITE`. Unmounting a directory or archive is done with `fs_unmount()`. You must specify the actual path when unmounting. |
 
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pActualPath**
+[in] **pActualPath**  
 The actual path to the directory or archive to mount. Must not be NULL.
 
-[in, optional] **pVirtualPath**
+[in, optional] **pVirtualPath**  
 The virtual path to mount the directory or archive to. Can be NULL in which case it will be
 treated as an empty string.
 
-[in] **options**
+[in] **options**  
 Options for the mount. A combination of the flags described above.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already exists,
 `FS_SUCCESS` will be returned.
-
-# Examples
 
 ## Example 1 - Basic Usage
 
@@ -2080,11 +2072,11 @@ fs_mount(pFS, "some/actual/path", "assets", FS_READ | FS_WRITE);
 fs_mount(pFS, "some/actual/path/archive.zip", "assets", FS_READ);
 ```
 
-# See Also
+## See Also
 
-fs_unmount()  
-fs_mount_sysdir()  
-fs_mount_fs()  
+[fs_unmount()](#fs_unmount())  
+[fs_mount_sysdir()](#fs_mount_sysdir())  
+[fs_mount_fs()](#fs_mount_fs())  
 
 ---
 
@@ -2109,18 +2101,18 @@ mount, you must specify `FS_READ`. If you want to unmount a write mount, you mus
 can specify both flags. Using both flags is the same as calling `fs_unmount()` twice - once for the
 read-only mount, and once for the write mount.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pActualPath**
+[in] **pActualPath**  
 The actual path to the directory or archive to unmount. Must not be NULL.
 
-[in] **options**
+[in] **options**  
 Either `FS_READ`, `FS_WRITE`, or both to unmount the corresponding mounts.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
 found, `FS_SUCCESS` will be returned (it will just be a no-op).
@@ -2152,33 +2144,33 @@ Otherwise, this function behaves exactly like `fs_mount()`.
 Unmount the directory with `fs_unmount_sysdir()`. You must specify the same type and sub-directory
 that was used when mounting.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **type**
+[in] **type**  
 The type of system directory to mount.
 
-[in] **pSubDir**
+[in] **pSubDir**  
 The sub-directory to use with the system directory. Must not be NULL nor an empty string.
 
-[in, optional] **pVirtualPath**
+[in, optional] **pVirtualPath**  
 The virtual path to mount the system directory to. Can be NULL in which case it will be treated
 as an empty string.
 
-[in] **options**
+[in] **options**  
 Options for the mount. A combination of the flags described in `fs_mount()`.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already
 exists, `FS_SUCCESS` will be returned.
 
-# See Also
+## See Also
 
-fs_mount()  
-fs_unmount_sysdir()  
+[fs_mount()](#fs_mount())  
+[fs_unmount_sysdir()](#fs_unmount_sysdir())  
 
 ---
 
@@ -2198,22 +2190,22 @@ Unmounts a system directory that was previously mounted with `fs_mount_sysdir()`
 This is the same as `fs_unmount()`, but follows the "type" and sub-directory semantics of
 `fs_mount_sysdir()`.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **type**
+[in] **type**  
 The type of system directory to unmount.
 
-[in] **pSubDir**
+[in] **pSubDir**  
 The sub-directory that was used with the system directory when mounting. Must not be NULL nor
 an empty string.
 
-[in] **options**
+[in] **options**  
 Either `FS_READ`, `FS_WRITE`, or both to unmount the corresponding mounts.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
 found, `FS_SUCCESS` will be returned (it will just be a no-op).
@@ -2238,30 +2230,30 @@ archive, you specify another `fs` object.
 
 Use `fs_unmount_fs()` to unmount the file system.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pOtherFS**
+[in] **pOtherFS**  
 A pointer to the other file system object to mount. Must not be NULL.
 
-[in, optional] **pVirtualPath**
+[in, optional] **pVirtualPath**  
 The virtual path to mount the other file system to. Can be NULL in which case it will be treated
 as an empty string.
 
-[in] **options**
+[in] **options**  
 Options for the mount. A combination of the flags described in `fs_mount()`.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If an identical mount already
 exists, `FS_SUCCESS` will be returned.
 
-# See Also
+## See Also
 
-fs_mount()  
-fs_unmount_fs()  
+[fs_mount()](#fs_mount())  
+[fs_unmount_fs()](#fs_unmount_fs())  
 
 ---
 
@@ -2277,26 +2269,26 @@ fs_result fs_unmount_fs(
 
 Unmounts a file system that was previously mounted with `fs_mount_fs()`.
 
-# Parameters
+## Parameters
 
-[in] **pFS**
+[in] **pFS**  
 A pointer to the file system object. Must not be NULL.
 
-[in] **pOtherFS**
+[in] **pOtherFS**  
 A pointer to the other file system object to unmount. Must not be NULL.
 
-[in] **options**
+[in] **options**  
 Options for the unmount. A combination of the flags described in `fs_unmount()`.
 
-# Return Value
+## Return Value
 
 Returns `FS_SUCCESS` on success; any other result code otherwise. If no matching mount could be
 found, `FS_SUCCESS` will be returned (it will just be a no-op).
 
-# See Also
+## See Also
 
-fs_unmount()  
-fs_mount_fs()  
+[fs_unmount()](#fs_unmount())  
+[fs_mount_fs()](#fs_mount_fs())  
 
 ---
 

@@ -1498,7 +1498,7 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
         
         /* Parameters section - only show if there are documented parameters */
         if (pFunction->pFirstParam != NULL && hasDocumentedParams) {
-            fs_file_writef(pFile, "# Parameters\n\n");
+            fs_file_writef(pFile, "## Parameters\n\n");
             for (pParam = pFunction->pFirstParam; pParam != NULL; pParam = pParam->pNext) {
                 /* Parameter name with direction/flags */
                 if (pParam->isDocumented && strlen(pParam->direction) > 0) {
@@ -1508,9 +1508,9 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                     }
                     fs_file_writef(pFile, "] ");
                 }
-                fs_file_writef(pFile, "**%s**\n", pParam->name);
+                fs_file_writef(pFile, "**%s**  \n", pParam->name);
                 
-                /* Parameter description */
+                /* Parameter description on new line */
                 if (pParam->pDescription != NULL && strlen(pParam->pDescription) > 0) {
                     fs_file_writef(pFile, "%s\n\n", pParam->pDescription);
                 } else {
@@ -1519,19 +1519,18 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
             }
         } else if (pFunction->pFirstParam == NULL) {
             /* Show "None" only if function has no parameters at all */
-            fs_file_writef(pFile, "# Parameters\n\n");
+            fs_file_writef(pFile, "## Parameters\n\n");
             fs_file_writef(pFile, "None\n\n");
         }
         
         /* Return Value section - only show if there's content */
         if (pFunction->pReturnValue != NULL && strlen(pFunction->pReturnValue) > 0) {
-            fs_file_writef(pFile, "# Return Value\n\n");
+            fs_file_writef(pFile, "## Return Value\n\n");
             fs_file_writef(pFile, "%s\n\n", pFunction->pReturnValue);
         }
         
         /* Examples section - only show if there are examples */
         if (pFunction->pFirstExample != NULL) {
-            fs_file_writef(pFile, "# Examples\n\n");
             for (pExample = pFunction->pFirstExample; pExample != NULL; pExample = pExample->pNext) {
                 fs_file_writef(pFile, "## %s\n\n", pExample->title);
                 fs_file_writef(pFile, "%s\n\n", pExample->pContent);
@@ -1540,9 +1539,9 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
         
         /* See Also section - only show if there are see also entries */
         if (pFunction->pFirstSeeAlso != NULL) {
-            fs_file_writef(pFile, "# See Also\n\n");
+            fs_file_writef(pFile, "## See Also\n\n");
             for (pSeeAlso = pFunction->pFirstSeeAlso; pSeeAlso != NULL; pSeeAlso = pSeeAlso->pNext) {
-                fs_file_writef(pFile, "%s  \n", pSeeAlso->name);  /* Two spaces before \n creates a line break instead of paragraph break */
+                fs_file_writef(pFile, "[%s](#%s)  \n", pSeeAlso->name, pSeeAlso->name);  /* Two spaces before \n creates a line break instead of paragraph break */
             }
             fs_file_writef(pFile, "\n");
         }
@@ -1860,9 +1859,9 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
     
     /* Add table header */
     if (hasDescriptions) {
-        strcpy(pWrite, "\n| Option | Description |\n|--------|-------------|\n");
+        strcpy(pWrite, "\n| Option | Description |\n|:-------|:------------|\n");
     } else {
-        strcpy(pWrite, "\n| Option |\n|--------|\n");
+        strcpy(pWrite, "\n| Option |\n|:-------|\n");
     }
     pWrite += strlen(pWrite);
     
