@@ -5309,7 +5309,7 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, const vo
         return FS_INVALID_ARGS;
     }
 
-    result = fs_file_open(pFS, pFilePath, FS_WRITE, &pFile);
+    result = fs_file_open(pFS, pFilePath, FS_WRITE | FS_TRUNCATE, &pFile);
     if (result != FS_SUCCESS) {
         return result;
     }
