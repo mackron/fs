@@ -137,6 +137,17 @@ if(FS_BUILD_TOOLS)
         fspak
     )
     target_compile_options(fsu PRIVATE ${COMPILE_OPTIONS})
+
+    # fsdoc
+    add_executable(fsdoc tools/fsdoc.c)
+    
+    # Add a custom target to generate documentation
+    add_custom_target(docs
+        COMMAND fsdoc ${CMAKE_SOURCE_DIR}/fs.h
+        DEPENDS fsdoc
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating API documentation"
+    )
 endif()
 
 
