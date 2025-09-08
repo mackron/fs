@@ -1821,9 +1821,25 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
         }
         
         lineLen = (int)(pLineEnd - pLine);
-        if (lineLen > 0 && lineLen < (int)(sizeof(line) - 1)) {
+        if (lineLen == 0) {
+            /* Empty line (zero length) - this creates paragraph breaks */
+            if (*pLineEnd == '\n') {
+                *pWrite = '\n';
+                pWrite++;
+            }
+        } else if (lineLen > 0 && lineLen < (int)(sizeof(line) - 1)) {
             strncpy(line, pLine, lineLen);
             line[lineLen] = '\0';
+            
+            /* Check if this is an empty or whitespace-only line before trimming */
+            int isEmptyLine = 1;
+            for (int i = 0; i < lineLen; i++) {
+                if (pLine[i] != ' ' && pLine[i] != '\t' && pLine[i] != '\r') {
+                    isEmptyLine = 0;
+                    break;
+                }
+            }
+            
             fsdoc_trim_whitespace(line);
             
             if (strlen(line) > 0) {
@@ -1855,8 +1871,10 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                         pWrite++;
                     }
                 }
-            } else {
-                /* Empty line, copy it */
+            } else if (isEmptyLine) {
+                /* Empty line, copy it to preserve paragraph breaks */
+                strncpy(pWrite, pLine, pLineEnd - pLine);
+                pWrite += (pLineEnd - pLine);
                 if (*pLineEnd == '\n') {
                     *pWrite = '\n';
                     pWrite++;

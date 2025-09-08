@@ -975,15 +975,19 @@ fs_result fs_file_open(
 ```
 
 Opens a file.
+
 If the file path is prefixed with the virtual path of a mount point, this function will first try
 opening the file from that mount. If that fails, it will fall back to the native file system and
 treat the path as a real path. If the FS_ONLY_MOUNTS flag is specified in the openMode parameter,
 the last step of falling back to the native file system will be skipped.
+
 By default, opening a file will transparently look inside archives of known types (registered at
 initialization time of the `fs` object). This can slow, and if you would rather not have this
 behavior, consider using the `FS_OPAQUE` option (see below).
+
 This function opens a file for reading and/or writing. The openMode parameter specifies how the
 file should be opened. It can be a combination of the following flags:
+
 
 | Option | Description |
 |:-------|:------------|
@@ -2012,16 +2016,21 @@ fs_result fs_mount(
 ```
 
 Mounts a real directory or archive to a virtual path.
+
 You must specify the actual path to the directory or archive on the file system referred to by
 `pFS`. The virtual path can be NULL, in which case it will be treated as an empty string.
+
 The virtual path is the path prefix that will be used when opening files. For example, if you mount
 the actual path "somefolder" to the virtual path "assets", then when you open a file with the path
 "assets/somefile.txt", it will actually open "somefolder/somefile.txt".
+
 There are two groups of mounts - read-only and write. Read-only mounts are used when opening a file
 in read-only mode (i.e. without the `FS_WRITE` flag). Write mounts are used when opening a file in
 write mode (i.e. with the `FS_WRITE` flag). To control this, set the appropriate flag in the
 `options` parameter.
+
 The following flags are supported in the `options` parameter:
+
 
 | Option | Description |
 |:-------|:------------|
