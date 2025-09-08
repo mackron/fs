@@ -1541,7 +1541,17 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
         if (pFunction->pFirstSeeAlso != NULL) {
             fs_file_writef(pFile, "## See Also\n\n");
             for (pSeeAlso = pFunction->pFirstSeeAlso; pSeeAlso != NULL; pSeeAlso = pSeeAlso->pNext) {
-                fs_file_writef(pFile, "[%s](#%s)  \n", pSeeAlso->name, pSeeAlso->name);  /* Two spaces before \n creates a line break instead of paragraph break */
+                /* Create link target by removing "()" if present */
+                char linkTarget[256];
+                strncpy(linkTarget, pSeeAlso->name, sizeof(linkTarget) - 1);
+                linkTarget[sizeof(linkTarget) - 1] = '\0';
+                
+                char* pParens = strstr(linkTarget, "()");
+                if (pParens != NULL) {
+                    *pParens = '\0';  /* Remove "()" from link target */
+                }
+                
+                fs_file_writef(pFile, "[%s](#%s)  \n", pSeeAlso->name, linkTarget);  /* Two spaces before \n creates a line break instead of paragraph break */
             }
             fs_file_writef(pFile, "\n");
         }

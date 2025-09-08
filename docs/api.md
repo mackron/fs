@@ -271,7 +271,7 @@ free(pPath);
 ## See Also
 
 [fs_sysdir_type](#fs_sysdir_type)  
-[fs_mktmp()](#fs_mktmp())  
+[fs_mktmp()](#fs_mktmp)  
 
 ---
 
@@ -515,7 +515,7 @@ fs_file_open(pArchiveFS, "fileinsidearchive.txt", FS_READ, &pFileInArchive);
 
 ## See Also
 
-[fs_uninit()](#fs_uninit())  
+[fs_uninit()](#fs_uninit)  
 
 ---
 
@@ -539,7 +539,7 @@ A pointer to the file system object to uninitialize. Must not be NULL.
 
 ## See Also
 
-[fs_init()](#fs_init())  
+[fs_init()](#fs_init)  
 
 ---
 
@@ -621,7 +621,7 @@ non-empty directory.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
+[fs_file_open()](#fs_file_open)  
 
 ---
 
@@ -675,7 +675,7 @@ exists.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
+[fs_file_open()](#fs_file_open)  
 
 ---
 
@@ -723,7 +723,7 @@ parent directory does not exist.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
+[fs_file_open()](#fs_file_open)  
 
 ---
 
@@ -765,8 +765,8 @@ file or directory does not exist.
 
 ## See Also
 
-[fs_file_get_info()](#fs_file_get_info())  
-[fs_file_open()](#fs_file_open())  
+[fs_file_get_info()](#fs_file_get_info)  
+[fs_file_open()](#fs_file_open)  
 
 ---
 
@@ -846,7 +846,7 @@ backend data is available.
 
 ## See Also
 
-[fs_get_backend_data_size()](#fs_get_backend_data_size())  
+[fs_get_backend_data_size()](#fs_get_backend_data_size)  
 
 ---
 
@@ -876,7 +876,7 @@ backend data is available.
 
 ## See Also
 
-[fs_get_backend_data()](#fs_get_backend_data())  
+[fs_get_backend_data()](#fs_get_backend_data)  
 
 ---
 
@@ -904,8 +904,8 @@ Returns `pFS`.
 
 ## See Also
 
-[fs_unref()](#fs_unref())  
-[fs_refcount()](#fs_refcount())  
+[fs_unref()](#fs_unref)  
+[fs_refcount()](#fs_refcount)  
 
 ---
 
@@ -932,8 +932,8 @@ Returns the new reference count.
 
 ## See Also
 
-[fs_ref()](#fs_ref())  
-[fs_refcount()](#fs_refcount())  
+[fs_ref()](#fs_ref)  
+[fs_refcount()](#fs_refcount)  
 
 ---
 
@@ -958,8 +958,8 @@ Returns the current reference count of the file system object.
 
 ## See Also
 
-[fs_ref()](#fs_ref())  
-[fs_unref()](#fs_unref())  
+[fs_ref()](#fs_ref)  
+[fs_unref()](#fs_unref)  
 
 ---
 
@@ -1099,15 +1099,15 @@ fs_file_open(pFS, "assets/somefile.txt", FS_READ | FS_OPAQUE, &pFile);
 
 ## See Also
 
-[fs_file_close()](#fs_file_close())  
-[fs_file_read()](#fs_file_read())  
-[fs_file_write()](#fs_file_write())  
-[fs_file_seek()](#fs_file_seek())  
-[fs_file_tell()](#fs_file_tell())  
-[fs_file_flush()](#fs_file_flush())  
-[fs_file_truncate()](#fs_file_truncate())  
-[fs_file_get_info()](#fs_file_get_info())  
-[fs_file_duplicate()](#fs_file_duplicate())  
+[fs_file_close()](#fs_file_close)  
+[fs_file_read()](#fs_file_read)  
+[fs_file_write()](#fs_file_write)  
+[fs_file_seek()](#fs_file_seek)  
+[fs_file_tell()](#fs_file_tell)  
+[fs_file_flush()](#fs_file_flush)  
+[fs_file_truncate()](#fs_file_truncate)  
+[fs_file_get_info()](#fs_file_get_info)  
+[fs_file_duplicate()](#fs_file_duplicate)  
 
 ---
 
@@ -1131,7 +1131,7 @@ A pointer to the file to close. Must not be NULL.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
+[fs_file_open()](#fs_file_open)  
 
 ---
 
@@ -1181,10 +1181,10 @@ than `bytesToRead` bytes were read.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
-[fs_file_write()](#fs_file_write())  
-[fs_file_seek()](#fs_file_seek())  
-[fs_file_tell()](#fs_file_tell())  
+[fs_file_open()](#fs_file_open)  
+[fs_file_write()](#fs_file_write)  
+[fs_file_seek()](#fs_file_seek)  
+[fs_file_tell()](#fs_file_tell)  
 
 ---
 
@@ -1230,12 +1230,12 @@ fewer than `bytesToWrite` bytes were written.
 
 ## See Also
 
-[fs_file_open()](#fs_file_open())  
-[fs_file_read()](#fs_file_read())  
-[fs_file_seek()](#fs_file_seek())  
-[fs_file_tell()](#fs_file_tell())  
-[fs_file_flush()](#fs_file_flush())  
-[fs_file_truncate()](#fs_file_truncate())  
+[fs_file_open()](#fs_file_open)  
+[fs_file_read()](#fs_file_read)  
+[fs_file_seek()](#fs_file_seek)  
+[fs_file_tell()](#fs_file_tell)  
+[fs_file_flush()](#fs_file_flush)  
+[fs_file_truncate()](#fs_file_truncate)  
 
 ---
 
@@ -1267,8 +1267,8 @@ Same as `fs_file_write()`.
 
 ## See Also
 
-[fs_file_write()](#fs_file_write())  
-[fs_file_writefv()](#fs_file_writefv())  
+[fs_file_write()](#fs_file_write)  
+[fs_file_writefv()](#fs_file_writefv)  
 
 ---
 
@@ -1301,8 +1301,8 @@ Same as `fs_file_write()`.
 
 ## See Also
 
-[fs_file_write()](#fs_file_write())  
-[fs_file_writef()](#fs_file_writef())  
+[fs_file_write()](#fs_file_write)  
+[fs_file_writef()](#fs_file_writef)  
 
 ---
 
@@ -1353,9 +1353,9 @@ Returns FS_SUCCESS on success; any other result code otherwise.
 
 ## See Also
 
-[fs_file_tell()](#fs_file_tell())  
-[fs_file_read()](#fs_file_read())  
-[fs_file_write()](#fs_file_write())  
+[fs_file_tell()](#fs_file_tell)  
+[fs_file_read()](#fs_file_read)  
+[fs_file_write()](#fs_file_write)  
 
 ---
 
@@ -1384,9 +1384,9 @@ Returns FS_SUCCESS on success; any other result code otherwise.
 
 ## See Also
 
-[fs_file_seek()](#fs_file_seek())  
-[fs_file_read()](#fs_file_read())  
-[fs_file_write()](#fs_file_write())  
+[fs_file_seek()](#fs_file_seek)  
+[fs_file_read()](#fs_file_read)  
+[fs_file_write()](#fs_file_write)  
 
 ---
 
@@ -1519,7 +1519,7 @@ such data.
 
 ## See Also
 
-[fs_file_get_backend_data_size()](#fs_file_get_backend_data_size())  
+[fs_file_get_backend_data_size()](#fs_file_get_backend_data_size)  
 
 ---
 
@@ -1548,7 +1548,7 @@ data.
 
 ## See Also
 
-[fs_file_get_backend_data()](#fs_file_get_backend_data())  
+[fs_file_get_backend_data()](#fs_file_get_backend_data)  
 
 ---
 
@@ -1573,7 +1573,7 @@ Returns a pointer to the `fs_stream` interface of the file, or NULL if `pFile` i
 
 ## See Also
 
-[fs_file_get_fs()](#fs_file_get_fs())  
+[fs_file_get_fs()](#fs_file_get_fs)  
 
 ---
 
@@ -1598,7 +1598,7 @@ Returns a pointer to the `fs` interface of the file's file system, or NULL if `p
 
 ## See Also
 
-[fs_file_get_stream()](#fs_file_get_stream())  
+[fs_file_get_stream()](#fs_file_get_stream)  
 
 ---
 
@@ -1679,9 +1679,9 @@ Returns a pointer to an iterator object on success; NULL on failure or if the di
 
 ## See Also
 
-[fs_next()](#fs_next())  
-[fs_free_iterator()](#fs_free_iterator())  
-[fs_first_ex()](#fs_first_ex())  
+[fs_next()](#fs_next)  
+[fs_free_iterator()](#fs_free_iterator)  
+[fs_first_ex()](#fs_first_ex)  
 
 ---
 
@@ -1718,9 +1718,9 @@ reallocated internally to hold the data of the next entry.
 
 ## See Also
 
-[fs_first()](#fs_first())  
-[fs_first_ex()](#fs_first_ex())  
-[fs_free_iterator()](#fs_free_iterator())  
+[fs_first()](#fs_first)  
+[fs_first_ex()](#fs_first_ex)  
+[fs_free_iterator()](#fs_free_iterator)  
 
 ---
 
@@ -1747,9 +1747,9 @@ A pointer to the iterator object. Can be NULL.
 
 ## See Also
 
-[fs_first()](#fs_first())  
-[fs_first_ex()](#fs_first_ex())  
-[fs_next()](#fs_next())  
+[fs_first()](#fs_first)  
+[fs_first_ex()](#fs_first_ex)  
+[fs_next()](#fs_next)  
 
 ---
 
@@ -1800,8 +1800,8 @@ Returns FS_SUCCESS on success; any other result code otherwise.
 
 ## See Also
 
-[fs_open_archive()](#fs_open_archive())  
-[fs_close_archive()](#fs_close_archive())  
+[fs_open_archive()](#fs_open_archive)  
+[fs_close_archive()](#fs_close_archive)  
 
 ---
 
@@ -1847,8 +1847,8 @@ Returns FS_SUCCESS on success; any other result code otherwise.
 
 ## See Also
 
-[fs_close_archive()](#fs_close_archive())  
-[fs_open_archive_ex()](#fs_open_archive_ex())  
+[fs_close_archive()](#fs_close_archive)  
+[fs_open_archive_ex()](#fs_open_archive_ex)  
 
 ---
 
@@ -1876,8 +1876,8 @@ A pointer to the archive file system object to close. Must not be NULL.
 
 ## See Also
 
-[fs_open_archive()](#fs_open_archive())  
-[fs_open_archive_ex()](#fs_open_archive_ex())  
+[fs_open_archive()](#fs_open_archive)  
+[fs_open_archive_ex()](#fs_open_archive_ex)  
 
 ---
 
@@ -1911,9 +1911,9 @@ threshold.
 
 ## See Also
 
-[fs_open_archive()](#fs_open_archive())  
-[fs_close_archive()](#fs_close_archive())  
-[fs_set_archive_gc_threshold()](#fs_set_archive_gc_threshold())  
+[fs_open_archive()](#fs_open_archive)  
+[fs_close_archive()](#fs_close_archive)  
+[fs_set_archive_gc_threshold()](#fs_set_archive_gc_threshold)  
 
 ---
 
@@ -1943,7 +1943,7 @@ The threshold for garbage collecting unused archives.
 
 ## See Also
 
-[fs_gc_archives()](#fs_gc_archives())  
+[fs_gc_archives()](#fs_gc_archives)  
 
 ---
 
@@ -2074,9 +2074,9 @@ fs_mount(pFS, "some/actual/path/archive.zip", "assets", FS_READ);
 
 ## See Also
 
-[fs_unmount()](#fs_unmount())  
-[fs_mount_sysdir()](#fs_mount_sysdir())  
-[fs_mount_fs()](#fs_mount_fs())  
+[fs_unmount()](#fs_unmount)  
+[fs_mount_sysdir()](#fs_mount_sysdir)  
+[fs_mount_fs()](#fs_mount_fs)  
 
 ---
 
@@ -2169,8 +2169,8 @@ exists, `FS_SUCCESS` will be returned.
 
 ## See Also
 
-[fs_mount()](#fs_mount())  
-[fs_unmount_sysdir()](#fs_unmount_sysdir())  
+[fs_mount()](#fs_mount)  
+[fs_unmount_sysdir()](#fs_unmount_sysdir)  
 
 ---
 
@@ -2252,8 +2252,8 @@ exists, `FS_SUCCESS` will be returned.
 
 ## See Also
 
-[fs_mount()](#fs_mount())  
-[fs_unmount_fs()](#fs_unmount_fs())  
+[fs_mount()](#fs_mount)  
+[fs_unmount_fs()](#fs_unmount_fs)  
 
 ---
 
@@ -2287,8 +2287,8 @@ found, `FS_SUCCESS` will be returned (it will just be a no-op).
 
 ## See Also
 
-[fs_unmount()](#fs_unmount())  
-[fs_mount_fs()](#fs_mount_fs())  
+[fs_unmount()](#fs_unmount)  
+[fs_mount_fs()](#fs_mount_fs)  
 
 ---
 
