@@ -1559,7 +1559,6 @@ if (result != FS_SUCCESS) {
 ...
 
 fs_uninit(pFS);
-}
 ```
 
 
