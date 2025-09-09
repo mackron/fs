@@ -2004,12 +2004,12 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                             pWrite++;
                                         }
                                     }
-                                    strcpy(pWrite, "<pre><code>");
-                                    pWrite += 11;
+                                    strcpy(pWrite, "<br>    ");
+                                    pWrite += 8;
                                     in_code_block = 1;
                                 } else if (!is_code_line && in_code_block) {
-                                    strcpy(pWrite, "</code></pre>");
-                                    pWrite += 13;
+                                    strcpy(pWrite, "<br>");
+                                    pWrite += 4;
                                     in_code_block = 0;
                                     just_closed_code_block = 1;
                                 }
@@ -2038,8 +2038,8 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                         }
                                     }
                                 } else if (is_code_line && in_code_block && !first_desc_line) {
-                                    strcpy(pWrite, "\n");
-                                    pWrite++;
+                                    strcpy(pWrite, "<br>    ");
+                                    pWrite += 8;
                                 }
                                 
                                 /* Trim leading spaces from code lines */
@@ -2069,8 +2069,8 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                         
                         /* Close any open code block */
                         if (in_code_block) {
-                            strcpy(pWrite, "</code></pre>");
-                            pWrite += 13;
+                            strcpy(pWrite, "<br>");
+                            pWrite += 4;
                         }
                         
                         /* End the table row */
