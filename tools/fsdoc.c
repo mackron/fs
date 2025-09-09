@@ -2003,12 +2003,12 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                             pWrite++;
                                         }
                                     }
-                                    strcpy(pWrite, "<pre><code>");
-                                    pWrite += 11;
+                                    strcpy(pWrite, "```c\n");
+                                    pWrite += 5;
                                     in_code_block = 1;
                                 } else if (!is_code_line && in_code_block) {
-                                    strcpy(pWrite, "</code></pre>");
-                                    pWrite += 13;
+                                    strcpy(pWrite, "\n```");
+                                    pWrite += 4;
                                     in_code_block = 0;
                                 }
                                 
