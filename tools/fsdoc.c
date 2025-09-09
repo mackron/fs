@@ -1941,6 +1941,7 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                         int first_desc_line = 1;
                         int in_code_block = 0;
                         int paragraph_break_pending = 0;
+                        int just_closed_code_block = 0;
                         pCurrent = (*pLineEnd == '\n') ? pLineEnd + 1 : pLineEnd;
                         
                         while (*pCurrent != '\0') {
@@ -2003,18 +2004,24 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                             pWrite++;
                                         }
                                     }
-                                    strcpy(pWrite, "<br>    ");
-                                    pWrite += 8;
+                                    strcpy(pWrite, "<pre><code>");
+                                    pWrite += 11;
                                     in_code_block = 1;
                                 } else if (!is_code_line && in_code_block) {
-                                    strcpy(pWrite, "<br>");
-                                    pWrite += 4;
+                                    strcpy(pWrite, "</code></pre>");
+                                    pWrite += 13;
                                     in_code_block = 0;
+                                    just_closed_code_block = 1;
                                 }
                                 
                                 /* This is part of the description */
                                 if (!first_desc_line && !is_code_line && !in_code_block) {
-                                    if (paragraph_break_pending) {
+                                    if (just_closed_code_block) {
+                                        /* Just add a single line break after code block */
+                                        strcpy(pWrite, "<br>");
+                                        pWrite += 4;
+                                        just_closed_code_block = 0;
+                                    } else if (paragraph_break_pending) {
                                         strcpy(pWrite, "<br><br>");
                                         pWrite += 8;
                                         paragraph_break_pending = 0;
@@ -2031,8 +2038,8 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                         }
                                     }
                                 } else if (is_code_line && in_code_block && !first_desc_line) {
-                                    strcpy(pWrite, "<br>    ");
-                                    pWrite += 8;
+                                    strcpy(pWrite, "\n");
+                                    pWrite++;
                                 }
                                 
                                 /* Trim leading spaces from code lines */
@@ -2062,8 +2069,8 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                         
                         /* Close any open code block */
                         if (in_code_block) {
-                            strcpy(pWrite, "<br>");
-                            pWrite += 4;
+                            strcpy(pWrite, "</code></pre>");
+                            pWrite += 13;
                         }
                         
                         /* End the table row */
