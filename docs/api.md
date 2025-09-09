@@ -999,7 +999,7 @@ file should be opened. It can be a combination of the following flags:
 | `FS_TRANSPARENT` | This is the default behavior. When used, files inside archives can be opened transparently. For example, "somefolder/archive.zip/file.txt" can be opened with "somefolder/file.txt" (the "archive.zip" part need not be specified). This assumes the `fs` object has been initialized with support for the relevant archive types. Transparent mode is the slowest mode since it requires searching through the file system for archives, and then open those archives, and then searching through the archive for the file. If this is prohibitive, consider using `FS_OPAQUE` (fastest) or `FS_VERBOSE` modes instead. Furthermore, you can consider having a rule in your application that instead of opening files inside archives from a transparent path, that you instead mount the archive, and then open all files with `FS_OPAQUE`, but with a virtual path that points to the archive. For example: fs_mount(pFS, "somefolder/archive.zip", "assets", FS_READ); fs_file_open(pFS, "assets/file.txt", FS_READ | FS_OPAQUE, &pFile); Here the archive is mounted to the virtual path "assets". Because the path "assets/file.txt" is prefixed with "assets", the file system knows to look inside the mounted archive without having to search for it. |
 | `FS_OPAQUE` | When used, archives will be treated as opaque, meaning attempting to open a file from an unmounted archive will fail. For example, "somefolder/archive.zip/file.txt" will fail because it is inside an archive. This is the fastest mode, but you will not be able to open files from inside archives unless it is sourced from a mount. |
 | `FS_VERBOSE` | When used, files inside archives can be opened, but the name of the archive must be specified explicitly in the path, such as "somefolder/archive.zip/file.txt". This is faster than `FS_TRANSPARENT` mode since it does not require searching for archives. |
-| `FS_NO_CREATE_DIRS` | When used, directories will not be created automatically when opening files for writing. If the necessary parent directories do not exist, the open will fail with FS_DOES_NOT_EXIST. |
+| `FS_NO_CREATE_DIRS` | When opening a file in write mode, the default behavior is to create the directory structure automatically if required. When this options is used, directories will *not* be created automatically. If the necessary parent directories do not exist, the open will fail with FS_DOES_NOT_EXIST. |
 | `FS_IGNORE_MOUNTS` | When used, mounted directories and archives will be ignored when opening files. The path will be treated as a real path. |
 | `FS_ONLY_MOUNTS` | When used, only mounted directories and archives will be considered when opening files. When a file is opened, it will first search through mounts, and if the file is not found in any of those it will fall back to the native file system and try treating the path as a real path. When this flag is set, that last step of falling back to the native file system is skipped. |
 | `FS_NO_SPECIAL_DIRS` | When used, the presence of special directories like "." and ".." in the path will result in an error. When using this option, you need not specify FS_NO_ABOVE_ROOT_NAVIGATION since it is implied. |
@@ -1029,8 +1029,7 @@ when opening with FS_EXCLUSIVE. Returns FS_IS_DIRECTORY if the path refers to a 
 
 ## Example 1 - Basic Usage
 
-The example below shows how to open a file for reading from the regular file system. Error checking
-has been omitted for clarity.
+The example below shows how to open a file for reading from the regular file system.
 
 ```c
 fs_result result;

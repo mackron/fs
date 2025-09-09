@@ -2087,8 +2087,10 @@ FS_VERBOSE
     `FS_TRANSPARENT` mode since it does not require searching for archives.
 
 FS_NO_CREATE_DIRS
-    When used, directories will not be created automatically when opening files for writing. If
-    the necessary parent directories do not exist, the open will fail with FS_DOES_NOT_EXIST.
+    When opening a file in write mode, the default behavior is to create the directory structure
+    automatically if required. When this options is used, directories will *not* be created
+    automatically. If the necessary parent directories do not exist, the open will fail with
+    FS_DOES_NOT_EXIST.
 
 FS_IGNORE_MOUNTS
     When used, mounted directories and archives will be ignored when opening files. The path will
@@ -2139,8 +2141,7 @@ when opening with FS_EXCLUSIVE. Returns FS_IS_DIRECTORY if the path refers to a 
 
 Example 1 - Basic Usage
 -----------------------
-The example below shows how to open a file for reading from the regular file system. Error checking
-has been omitted for clarity.
+The example below shows how to open a file for reading from the regular file system.
 
 ```c
 fs_result result;
