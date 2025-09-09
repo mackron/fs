@@ -1931,6 +1931,8 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                         
                         /* Now collect the description from following lines */
                         int first_desc_line = 1;
+                        int in_code_block = 0;
+                        int paragraph_break_pending = 0;
                         pCurrent = (*pLineEnd == '\n') ? pLineEnd + 1 : pLineEnd;
                         
                         while (*pCurrent != '\0') {
@@ -1947,9 +1949,10 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                 fsdoc_trim_whitespace(line);
                                 
                                 if (strlen(line) == 0) {
-                                    /* Empty line, might be end of description */
+                                    /* Empty line indicates paragraph break */
+                                    paragraph_break_pending = 1;
                                     pCurrent = (*pDescEnd == '\n') ? pDescEnd + 1 : pDescEnd;
-                                    break;
+                                    continue;
                                 }
                                 
                                 /* Check if this is the next option */
@@ -1972,17 +1975,77 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                     break;
                                 }
                                 
+                                /* Check if this line looks like code (indented or starts with fs_) */
+                                int is_code_line = 0;
+                                if (line[0] == ' ' && line[1] == ' ' && line[2] == ' ' && line[3] == ' ') {
+                                    is_code_line = 1;
+                                } else if (strstr(line, "fs_") == line) {
+                                    is_code_line = 1;
+                                }
+                                
+                                /* Handle code blocks */
+                                if (is_code_line && !in_code_block) {
+                                    if (!first_desc_line) {
+                                        if (paragraph_break_pending) {
+                                            strcpy(pWrite, "<br><br>");
+                                            pWrite += 8;
+                                            paragraph_break_pending = 0;
+                                        } else {
+                                            strcpy(pWrite, " ");
+                                            pWrite++;
+                                        }
+                                    }
+                                    strcpy(pWrite, "<pre><code>");
+                                    pWrite += 11;
+                                    in_code_block = 1;
+                                } else if (!is_code_line && in_code_block) {
+                                    strcpy(pWrite, "</code></pre>");
+                                    pWrite += 13;
+                                    in_code_block = 0;
+                                }
+                                
                                 /* This is part of the description */
-                                if (!first_desc_line) {
-                                    strcpy(pWrite, " ");
+                                if (!first_desc_line && !is_code_line && !in_code_block) {
+                                    if (paragraph_break_pending) {
+                                        strcpy(pWrite, "<br><br>");
+                                        pWrite += 8;
+                                        paragraph_break_pending = 0;
+                                    } else {
+                                        /* Check if this line starts a new logical paragraph */
+                                        if (strstr(line, "Transparent mode is") == line ||
+                                            strstr(line, "Furthermore,") == line ||
+                                            strstr(line, "Here the archive") == line) {
+                                            strcpy(pWrite, "<br><br>");
+                                            pWrite += 8;
+                                        } else {
+                                            strcpy(pWrite, " ");
+                                            pWrite++;
+                                        }
+                                    }
+                                } else if (is_code_line && in_code_block && !first_desc_line) {
+                                    strcpy(pWrite, "\n");
                                     pWrite++;
                                 }
-                                strcpy(pWrite, line);
-                                pWrite += strlen(line);
+                                
+                                /* Trim leading spaces from code lines */
+                                const char* line_content = line;
+                                if (is_code_line && line[0] == ' ') {
+                                    while (*line_content == ' ') line_content++;
+                                }
+                                
+                                strcpy(pWrite, line_content);
+                                pWrite += strlen(line_content);
                                 first_desc_line = 0;
+                                paragraph_break_pending = 0;
                             }
                             
                             pCurrent = (*pDescEnd == '\n') ? pDescEnd + 1 : pDescEnd;
+                        }
+                        
+                        /* Close any open code block */
+                        if (in_code_block) {
+                            strcpy(pWrite, "</code></pre>");
+                            pWrite += 13;
                         }
                         
                         /* End the table row */
