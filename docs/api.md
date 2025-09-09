@@ -1250,7 +1250,7 @@ fewer than `bytesToWrite` bytes were written.
 fs_result fs_file_writef(
     [in] fs_file*    pFile,
     [in] const char* fmt,
-         ...         
+    [in] ...         
 );
 ```
 
@@ -1264,7 +1264,8 @@ A pointer to the file to write to. Must not be NULL.
 [in] **fmt**  
 A printf-style format string. Must not be NULL.
 
-****  
+[in] **...**  
+Additional arguments as required by the format string.
 
 ## Return Value
 

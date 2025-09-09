@@ -660,7 +660,9 @@ static void fsdoc_parse_parameters_docs(const char* pComment, fsdoc_function* pF
 
                         /* Find matching parameter in function and update it */
                         for (pParam = pFunction->pFirstParam; pParam != NULL; pParam = pParam->pNext) {
-                            if (strcmp(pParam->name, paramName) == 0) {
+                            /* Special case for variadic parameters: match "..." documented param with empty name but "..." type */
+                            if ((strcmp(pParam->name, paramName) == 0) ||
+                                (strcmp(paramName, "...") == 0 && strcmp(pParam->type, "...") == 0 && strlen(pParam->name) == 0)) {
                                 strcpy(pParam->direction, direction);
                                 strcpy(pParam->flags, flags);
                                 pParam->pDescription = pDescription;
@@ -1508,7 +1510,13 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                     }
                     fs_file_writef(pFile, "] ");
                 }
-                fs_file_writef(pFile, "**%s**  \n", pParam->name);
+                
+                /* Special case for variadic parameters */
+                if (strcmp(pParam->type, "...") == 0) {
+                    fs_file_writef(pFile, "**...**  \n");
+                } else {
+                    fs_file_writef(pFile, "**%s**  \n", pParam->name);
+                }
                 
                 /* Parameter description on new line */
                 if (pParam->pDescription != NULL && strlen(pParam->pDescription) > 0) {
