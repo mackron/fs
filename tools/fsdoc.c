@@ -2041,8 +2041,18 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
                                     while (*line_content == ' ') line_content++;
                                 }
                                 
-                                strcpy(pWrite, line_content);
-                                pWrite += strlen(line_content);
+                                /* Copy line content while escaping pipe symbols for table compatibility */
+                                const char* pSrc = line_content;
+                                while (*pSrc != '\0') {
+                                    if (*pSrc == '|') {
+                                        strcpy(pWrite, "\\|");
+                                        pWrite += 2;
+                                    } else {
+                                        *pWrite = *pSrc;
+                                        pWrite++;
+                                    }
+                                    pSrc++;
+                                }
                                 first_desc_line = 0;
                                 paragraph_break_pending = 0;
                             }
