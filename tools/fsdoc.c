@@ -45,6 +45,22 @@ typedef struct fsdoc_param
     struct fsdoc_param* pNext;
 } fsdoc_param;
 
+typedef struct fsdoc_enum_value
+{
+    char name[128];
+    char value[64];        /* The numeric value or expression */
+    char* pDescription;    /* Description from documentation */
+    struct fsdoc_enum_value* pNext;
+} fsdoc_enum_value;
+
+typedef struct fsdoc_enum
+{
+    char name[128];
+    char* pDescription;    /* Main description from documentation */
+    fsdoc_enum_value* pFirstValue;
+    struct fsdoc_enum* pNext;
+} fsdoc_enum;
+
 typedef struct fsdoc_function
 {
     char name[128];
@@ -61,6 +77,7 @@ typedef struct fsdoc_function
 typedef struct fsdoc_context
 {
     fsdoc_function* pFirstFunction;
+    fsdoc_enum* pFirstEnum;
     fs_file* pInputFile;
     char* pFileContent;
     size_t fileSize;
@@ -80,12 +97,15 @@ static void fsdoc_normalize_indentation(char* pStr);
 static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocation_callbacks* pAllocationCallbacks);
 static char* fsdoc_extract_comment_before_function(fsdoc_context* pContext, size_t functionPos);
 static int fsdoc_parse_function_declaration(const char* pDeclaration, fsdoc_function* pFunction);
+static int fsdoc_parse_enum_declaration(const char* pDeclaration, fsdoc_enum* pEnum);
 static void fsdoc_parse_see_also(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_examples(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_return_value(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_description(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_parameters_docs(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_free_function(fsdoc_function* pFunction);
+static void fsdoc_free_enum(fsdoc_enum* pEnum);
+static void fsdoc_free_enum_values(fsdoc_enum_value* pValue);
 static void fsdoc_free_params(fsdoc_param* pParam);
 static void fsdoc_free_see_also(fsdoc_see_also* pSeeAlso);
 static void fsdoc_free_examples(fsdoc_example* pExample);
@@ -207,6 +227,13 @@ static void fsdoc_uninit(fsdoc_context* pContext)
         pContext->pFirstFunction = pNext;
     }
 
+    /* Free enum list */
+    while (pContext->pFirstEnum != NULL) {
+        fsdoc_enum* pNext = pContext->pFirstEnum->pNext;
+        fsdoc_free_enum(pContext->pFirstEnum);
+        pContext->pFirstEnum = pNext;
+    }
+
     memset(pContext, 0, sizeof(*pContext));
 }
 
@@ -216,100 +243,190 @@ static int fsdoc_parse(fsdoc_context* pContext)
     char* pLine;
     char* pNextLine;
     fsdoc_function* pLastFunction;
+    fsdoc_enum* pLastEnum;
 
     if (pContext == NULL || pContext->pFileContent == NULL) {
         return 1;
     }
 
     pLastFunction = NULL;
+    pLastEnum = NULL;
     pCurrent = pContext->pFileContent;
 
     while (*pCurrent != '\0') {
-        /* Find the next line that starts with "FS_API" */
-        pLine = strstr(pCurrent, "FS_API");
-        if (pLine == NULL) {
+        /* Find the next FS_API function or typedef enum */
+        char* pFunctionLine = strstr(pCurrent, "FS_API");
+        char* pEnumLine = strstr(pCurrent, "typedef enum");
+        
+        /* Determine which comes first */
+        char* pNext = NULL;
+        int type = 0; /* 0 = none, 1 = function, 2 = enum */
+        
+        if (pFunctionLine != NULL) {
+            pNext = pFunctionLine;
+            type = 1;
+        }
+        
+        if (pEnumLine != NULL && (pNext == NULL || pEnumLine < pNext)) {
+            pNext = pEnumLine;
+            type = 2;
+        }
+        
+        if (pNext == NULL) {
             break;
         }
-
-        /* Make sure it's at the beginning of a line */
-        if (pLine != pContext->pFileContent && *(pLine - 1) != '\n') {
+        
+        pLine = pNext;
+        
+        /* Make sure it's at the beginning of a line (except for enums which might be indented) */
+        if (type == 1 && pLine != pContext->pFileContent && *(pLine - 1) != '\n') {
             pCurrent = pLine + 6;
             continue;
         }
+        
+        if (type == 1) {
+            /* Handle FS_API function */
+            pNextLine = strchr(pLine, ';');
+            if (pNextLine == NULL) {
+                pCurrent = pLine + 6;
+                continue;
+            }
+            pNextLine++;
 
-        /* Find the end of this declaration (semicolon) */
-        pNextLine = strchr(pLine, ';');
-        if (pNextLine == NULL) {
-            break;
-        }
-        pNextLine++;
+            /* Extract the function declaration */
+            size_t declarationLen = pNextLine - pLine;
+            char* pDeclaration = fs_malloc(declarationLen + 1, NULL);
+            if (pDeclaration == NULL) {
+                return 1;
+            }
 
-        /* Extract the function declaration */
-        size_t declarationLen = pNextLine - pLine;
-        char* pDeclaration = fs_malloc(declarationLen + 1, NULL);
-        if (pDeclaration == NULL) {
-            return 1;
-        }
+            strncpy(pDeclaration, pLine, declarationLen);
+            pDeclaration[declarationLen] = '\0';
 
-        strncpy(pDeclaration, pLine, declarationLen);
-        pDeclaration[declarationLen] = '\0';
+            /* Create a new function */
+            fsdoc_function* pFunction = fs_malloc(sizeof(fsdoc_function), NULL);
+            if (pFunction == NULL) {
+                fs_free(pDeclaration, NULL);
+                return 1;
+            }
 
-        /* Create a new function */
-        fsdoc_function* pFunction = fs_malloc(sizeof(fsdoc_function), NULL);
-        if (pFunction == NULL) {
-            fs_free(pDeclaration, NULL);
-            return 1;
-        }
+            memset(pFunction, 0, sizeof(*pFunction));
 
-        memset(pFunction, 0, sizeof(*pFunction));
-
-        /* Parse the function declaration */
-        if (fsdoc_parse_function_declaration(pDeclaration, pFunction) == 0) {
-            /* Extract any comment before this function */
-            char* pComment = fsdoc_extract_comment_before_function(pContext, pLine - pContext->pFileContent);
-            if (pComment != NULL) {
-                /* Allocate memory for the comment and copy it */
-                size_t commentLen = strlen(pComment);
-                pFunction->pComment = fs_malloc(commentLen + 1, NULL);
-                if (pFunction->pComment != NULL) {
-                    strcpy(pFunction->pComment, pComment);
+            /* Parse the function declaration */
+            if (fsdoc_parse_function_declaration(pDeclaration, pFunction) == 0) {
+                /* Extract any comment before this function */
+                char* pComment = fsdoc_extract_comment_before_function(pContext, pLine - pContext->pFileContent);
+                if (pComment != NULL) {
+                    /* Allocate memory for the comment and copy it */
+                    size_t commentLen = strlen(pComment);
+                    pFunction->pComment = fs_malloc(commentLen + 1, NULL);
+                    if (pFunction->pComment != NULL) {
+                        strcpy(pFunction->pComment, pComment);
+                    } else {
+                        pFunction->pComment = NULL;
+                    }
+                    
+                    /* Parse main description from the comment */
+                    fsdoc_parse_description(pComment, pFunction);
+                    
+                    /* Parse parameter documentation from the comment */
+                    fsdoc_parse_parameters_docs(pComment, pFunction);
+                    
+                    /* Parse See Also section from the comment */
+                    fsdoc_parse_see_also(pComment, pFunction);
+                    
+                    /* Parse Examples from the comment */
+                    fsdoc_parse_examples(pComment, pFunction);
+                    
+                    /* Parse Return Value from the comment */
+                    fsdoc_parse_return_value(pComment, pFunction);
+                    
+                    fs_free(pComment, NULL);
                 } else {
                     pFunction->pComment = NULL;
                 }
-                
-                /* Parse main description from the comment */
-                fsdoc_parse_description(pComment, pFunction);
-                
-                /* Parse parameter documentation from the comment */
-                fsdoc_parse_parameters_docs(pComment, pFunction);
-                
-                /* Parse See Also section from the comment */
-                fsdoc_parse_see_also(pComment, pFunction);
-                
-                /* Parse Examples from the comment */
-                fsdoc_parse_examples(pComment, pFunction);
-                
-                /* Parse Return Value from the comment */
-                fsdoc_parse_return_value(pComment, pFunction);
-                
-                fs_free(pComment, NULL);
+
+                /* Add to the list */
+                if (pLastFunction == NULL) {
+                    pContext->pFirstFunction = pFunction;
+                } else {
+                    pLastFunction->pNext = pFunction;
+                }
+                pLastFunction = pFunction;
             } else {
-                pFunction->pComment = NULL;
+                fsdoc_free_function(pFunction);
             }
 
-            /* Add to the list */
-            if (pLastFunction == NULL) {
-                pContext->pFirstFunction = pFunction;
-            } else {
-                pLastFunction->pNext = pFunction;
+            fs_free(pDeclaration, NULL);
+            pCurrent = pNextLine;
+            
+        } else if (type == 2) {
+            /* Handle enum - find the end of the enum (closing brace and typedef) */
+            char* pEnumEnd = pLine;
+            int braceCount = 0;
+            int foundOpenBrace = 0;
+            
+            while (*pEnumEnd != '\0') {
+                if (*pEnumEnd == '{') {
+                    foundOpenBrace = 1;
+                    braceCount++;
+                } else if (*pEnumEnd == '}') {
+                    braceCount--;
+                    if (foundOpenBrace && braceCount == 0) {
+                        /* Find the semicolon after the typedef name */
+                        pEnumEnd++;
+                        while (*pEnumEnd != '\0' && *pEnumEnd != ';') {
+                            pEnumEnd++;
+                        }
+                        if (*pEnumEnd == ';') {
+                            pEnumEnd++;
+                        }
+                        break;
+                    }
+                }
+                pEnumEnd++;
             }
-            pLastFunction = pFunction;
-        } else {
-            fsdoc_free_function(pFunction);
+            
+            if (braceCount != 0) {
+                pCurrent = pLine + 12;
+                continue;
+            }
+            
+            /* Extract the enum declaration */
+            size_t declarationLen = pEnumEnd - pLine;
+            char* pDeclaration = fs_malloc(declarationLen + 1, NULL);
+            if (pDeclaration == NULL) {
+                return 1;
+            }
+            
+            strncpy(pDeclaration, pLine, declarationLen);
+            pDeclaration[declarationLen] = '\0';
+            
+            /* Create a new enum */
+            fsdoc_enum* pEnum = fs_malloc(sizeof(fsdoc_enum), NULL);
+            if (pEnum == NULL) {
+                fs_free(pDeclaration, NULL);
+                return 1;
+            }
+            
+            memset(pEnum, 0, sizeof(*pEnum));
+            
+            /* Parse the enum declaration */
+            if (fsdoc_parse_enum_declaration(pDeclaration, pEnum) == 0) {
+                /* Add to the list */
+                if (pLastEnum == NULL) {
+                    pContext->pFirstEnum = pEnum;
+                } else {
+                    pLastEnum->pNext = pEnum;
+                }
+                pLastEnum = pEnum;
+            } else {
+                fsdoc_free_enum(pEnum);
+            }
+            
+            fs_free(pDeclaration, NULL);
+            pCurrent = pEnumEnd;
         }
-
-        fs_free(pDeclaration, NULL);
-        pCurrent = pNextLine;
     }
 
     return 0;
@@ -1204,6 +1321,143 @@ static int fsdoc_parse_function_declaration(const char* pDeclaration, fsdoc_func
     return 0;
 }
 
+static int fsdoc_parse_enum_declaration(const char* pDeclaration, fsdoc_enum* pEnum)
+{
+    const char* pEnumKeyword;
+    const char* pNameStart;
+    const char* pNameEnd;
+    const char* pBodyStart;
+    const char* pBodyEnd;
+    size_t nameLen;
+
+    if (pDeclaration == NULL || pEnum == NULL) {
+        return 1;
+    }
+
+    /* Find "typedef enum" */
+    pEnumKeyword = strstr(pDeclaration, "typedef enum");
+    if (pEnumKeyword == NULL) {
+        return 1;
+    }
+
+    /* Skip past "typedef enum" and any whitespace */
+    pNameStart = pEnumKeyword + 12; /* 12 = strlen("typedef enum") */
+    while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+        pNameStart++;
+    }
+
+    /* Check if there's a name before the opening brace */
+    if (*pNameStart == '{') {
+        /* Anonymous enum - name comes after the closing brace */
+        pBodyStart = pNameStart;
+    } else {
+        /* Named enum - find the opening brace */
+        pNameEnd = pNameStart;
+        while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != '{') {
+            pNameEnd++;
+        }
+        
+        /* For now, skip the tag name and look for the typedef name after the brace */
+        pBodyStart = strchr(pNameEnd, '{');
+    }
+    
+    if (pBodyStart == NULL) {
+        return 1;
+    }
+    
+    /* Find the closing brace */
+    pBodyEnd = strrchr(pDeclaration, '}');
+    if (pBodyEnd == NULL || pBodyEnd <= pBodyStart) {
+        return 1;
+    }
+    
+    /* Find the typedef name after the closing brace */
+    pNameStart = pBodyEnd + 1;
+    while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+        pNameStart++;
+    }
+    
+    pNameEnd = pNameStart;
+    while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != ';') {
+        pNameEnd++;
+    }
+    
+    nameLen = pNameEnd - pNameStart;
+    if (nameLen == 0 || nameLen >= sizeof(pEnum->name)) {
+        return 1;
+    }
+    
+    strncpy(pEnum->name, pNameStart, nameLen);
+    pEnum->name[nameLen] = '\0';
+
+    /* Parse enum values from the body */
+    const char* pCurrent = pBodyStart + 1; /* Skip opening brace */
+    fsdoc_enum_value* pLastValue = NULL;
+    
+    while (pCurrent < pBodyEnd) {
+        const char* pLineStart = pCurrent;
+        const char* pLineEnd = strchr(pLineStart, '\n');
+        if (pLineEnd == NULL || pLineEnd > pBodyEnd) {
+            pLineEnd = pBodyEnd;
+        }
+        
+        /* Extract the line */
+        size_t lineLen = pLineEnd - pLineStart;
+        if (lineLen > 0 && lineLen < 512) {
+            char line[512];
+            strncpy(line, pLineStart, lineLen);
+            line[lineLen] = '\0';
+            
+            /* Trim whitespace and remove comma */
+            fsdoc_trim_whitespace(line);
+            if (strlen(line) > 0 && line[strlen(line) - 1] == ',') {
+                line[strlen(line) - 1] = '\0';
+                fsdoc_trim_whitespace(line);
+            }
+            
+            /* Skip empty lines and comments */
+            if (strlen(line) > 0 && line[0] != '/' && line[0] != '*') {
+                fsdoc_enum_value* pValue = fs_malloc(sizeof(fsdoc_enum_value), NULL);
+                if (pValue != NULL) {
+                    memset(pValue, 0, sizeof(*pValue));
+                    
+                    /* Look for '=' to separate name from value */
+                    char* pEquals = strchr(line, '=');
+                    if (pEquals != NULL) {
+                        /* Split name and value */
+                        *pEquals = '\0';
+                        fsdoc_trim_whitespace(line);
+                        fsdoc_trim_whitespace(pEquals + 1);
+                        
+                        strncpy(pValue->name, line, sizeof(pValue->name) - 1);
+                        pValue->name[sizeof(pValue->name) - 1] = '\0';
+                        
+                        strncpy(pValue->value, pEquals + 1, sizeof(pValue->value) - 1);
+                        pValue->value[sizeof(pValue->value) - 1] = '\0';
+                    } else {
+                        /* Just the name */
+                        strncpy(pValue->name, line, sizeof(pValue->name) - 1);
+                        pValue->name[sizeof(pValue->name) - 1] = '\0';
+                        pValue->value[0] = '\0';
+                    }
+                    
+                    /* Add to the list */
+                    if (pLastValue == NULL) {
+                        pEnum->pFirstValue = pValue;
+                    } else {
+                        pLastValue->pNext = pValue;
+                    }
+                    pLastValue = pValue;
+                }
+            }
+        }
+        
+        pCurrent = (pLineEnd < pBodyEnd && *pLineEnd == '\n') ? pLineEnd + 1 : pBodyEnd;
+    }
+
+    return 0;
+}
+
 static void fsdoc_write_json_string(fs_file* pFile, const char* pStr)
 {
     const char* p;
@@ -1349,6 +1603,53 @@ static int fsdoc_output_json(fsdoc_context* pContext, const char* pOutputPath)
         fs_file_writef(pFile, "    }");
     }
 
+    fs_file_writef(pFile, "\n  ],\n");
+    
+    /* Output enums */
+    fs_file_writef(pFile, "  \"enums\": [\n");
+    
+    fsdoc_enum* pEnum;
+    int isFirstEnum = 1;
+    for (pEnum = pContext->pFirstEnum; pEnum != NULL; pEnum = pEnum->pNext) {
+        if (!isFirstEnum) {
+            fs_file_writef(pFile, ",\n");
+        }
+        isFirstEnum = 0;
+
+        fs_file_writef(pFile, "    {\n");
+        fs_file_writef(pFile, "      \"name\": ");
+        fsdoc_write_json_string(pFile, pEnum->name);
+        fs_file_writef(pFile, ",\n");
+        fs_file_writef(pFile, "      \"description\": ");
+        fsdoc_write_json_string(pFile, pEnum->pDescription ? pEnum->pDescription : "");
+        fs_file_writef(pFile, ",\n");
+        fs_file_writef(pFile, "      \"values\": [\n");
+        
+        fsdoc_enum_value* pValue;
+        int isFirstValue = 1;
+        for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+            if (!isFirstValue) {
+                fs_file_writef(pFile, ",\n");
+            }
+            isFirstValue = 0;
+            
+            fs_file_writef(pFile, "        {\n");
+            fs_file_writef(pFile, "          \"name\": ");
+            fsdoc_write_json_string(pFile, pValue->name);
+            fs_file_writef(pFile, ",\n");
+            fs_file_writef(pFile, "          \"value\": ");
+            fsdoc_write_json_string(pFile, pValue->value);
+            fs_file_writef(pFile, ",\n");
+            fs_file_writef(pFile, "          \"description\": ");
+            fsdoc_write_json_string(pFile, pValue->pDescription ? pValue->pDescription : "");
+            fs_file_writef(pFile, "\n");
+            fs_file_writef(pFile, "        }");
+        }
+        
+        fs_file_writef(pFile, "\n      ]\n");
+        fs_file_writef(pFile, "    }");
+    }
+    
     fs_file_writef(pFile, "\n  ]\n");
     fs_file_writef(pFile, "}\n");
 
@@ -1565,6 +1866,46 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
         }
         
         fs_file_writef(pFile, "---\n\n");
+    }
+
+    /* Output enums section */
+    if (pContext->pFirstEnum != NULL) {
+        fs_file_writef(pFile, "# Enums\n\n");
+        
+        fsdoc_enum* pEnum;
+        for (pEnum = pContext->pFirstEnum; pEnum != NULL; pEnum = pEnum->pNext) {
+            fs_file_writef(pFile, "## %s\n\n", pEnum->name);
+            
+            /* Description */
+            if (pEnum->pDescription != NULL && strlen(pEnum->pDescription) > 0) {
+                fs_file_writef(pFile, "%s\n\n", pEnum->pDescription);
+            }
+            
+            /* Values table */
+            if (pEnum->pFirstValue != NULL) {
+                fs_file_writef(pFile, "| Value | Description |\n");
+                fs_file_writef(pFile, "|-------|-------------|\n");
+                
+                fsdoc_enum_value* pValue;
+                for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+                    fs_file_writef(pFile, "| `%s`", pValue->name);
+                    if (strlen(pValue->value) > 0) {
+                        fs_file_writef(pFile, " = `%s`", pValue->value);
+                    }
+                    fs_file_writef(pFile, " | ");
+                    
+                    if (pValue->pDescription != NULL && strlen(pValue->pDescription) > 0) {
+                        fs_file_writef(pFile, "%s", pValue->pDescription);
+                    }
+                    
+                    fs_file_writef(pFile, " |\n");
+                }
+                
+                fs_file_writef(pFile, "\n");
+            }
+            
+            fs_file_writef(pFile, "---\n\n");
+        }
     }
 
     fs_file_close(pFile);
@@ -2241,4 +2582,36 @@ static void fsdoc_free_examples(fsdoc_example* pExample)
         fs_free(pCurrent, NULL);
         pCurrent = pNext;
     }
+}
+
+static void fsdoc_free_enum_values(fsdoc_enum_value* pValue)
+{
+    fsdoc_enum_value* pCurrent;
+    fsdoc_enum_value* pNext;
+
+    pCurrent = pValue;
+    while (pCurrent != NULL) {
+        pNext = pCurrent->pNext;
+        
+        if (pCurrent->pDescription != NULL) {
+            fs_free(pCurrent->pDescription, NULL);
+        }
+        
+        fs_free(pCurrent, NULL);
+        pCurrent = pNext;
+    }
+}
+
+static void fsdoc_free_enum(fsdoc_enum* pEnum)
+{
+    if (pEnum == NULL) {
+        return;
+    }
+
+    if (pEnum->pDescription != NULL) {
+        fs_free(pEnum->pDescription, NULL);
+    }
+
+    fsdoc_free_enum_values(pEnum->pFirstValue);
+    fs_free(pEnum, NULL);
 }
