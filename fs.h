@@ -1160,6 +1160,7 @@ The stream vtable can support both reading and writing, but it doesn't need to s
 the same time. If one is not supported, simply leave the relevant `read` or `write` callback as
 `NULL`, or have them return FS_NOT_IMPLEMENTED.
 */
+
 typedef enum fs_seek_origin
 {
     FS_SEEK_SET = 0,
@@ -1229,6 +1230,7 @@ appended to the end of the data.
 For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
 in fixed sized chunks.
 */
+
 typedef enum fs_format
 {
     FS_FORMAT_TEXT,
@@ -1443,6 +1445,42 @@ struct fs_iterator
     fs_file_info info;
 };
 
+
+/*
+Configuration structure for fs objects.
+
+Members
+-------
+pBackend
+    The backend to use. If NULL, the standard file system backend will be used.
+
+pBackendConfig
+    A pointer to a backend-specific configuration structure. This is passed directly to the
+    backend's init function. The documentation for your backend will tell you how to use this. Most
+    backends will allow you to set this to NULL.
+
+pStream
+    A stream to use for archive backends. This is required for any file-backed backend, such as ZIP
+    archives. If the backend does not need a stream, this can be NULL.
+
+pArchiveTypes
+    An array of archive types to register. This can be NULL if no archive types are to be
+    registered. Archive types are mapped to file extensions. See `fs_archive_type` for more
+    information.
+
+archiveTypeCount
+    The number of archive types in the `pArchiveTypes` array. Set this to 0 if `pArchiveTypes` is
+    NULL.
+
+onRefCountChanged
+    A callback that is fired when the reference count of a fs object changes.
+
+pRefCountChangedUserData
+    User data that is passed to the `onRefCountChanged` callback.
+
+pAllocationCallbacks
+    Custom allocation callbacks. If NULL, the standard malloc/realloc/free functions will be used.
+*/
 struct fs_config
 {
     const fs_backend* pBackend;
@@ -3417,6 +3455,7 @@ read and write from different locations from the same fs_memory_stream object, y
 seek before doing your read or write. You cannot read and write at the same time across
 multiple threads for the same fs_memory_stream object.
 */
+
 typedef struct fs_memory_stream fs_memory_stream;
 
 struct fs_memory_stream
