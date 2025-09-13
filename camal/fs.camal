@@ -19,7 +19,10 @@ construct_results_h :: function() string
     content["$"] = "\n\n";
     content["$"] = @(results_c("/\* BEG result_to_string.h \*/\R" : "\R/\* END result_to_string.h \*/"));
 
-    return rename_results_namespace(content);
+    content = rename_results_namespace(content);
+    content["fs_result_to_string"] = "fs_result_description";
+
+    return content;
 }
 
 construct_results_c :: function() string
@@ -30,8 +33,11 @@ construct_results_c :: function() string
     content["$"] = @(results_c("/\* BEG result_from_errno.c \*/\R"        : "\R/\* END result_from_errno.c \*/"));
     content["$"] = "\n\n";
     content["$"] = @(results_c("/\* BEG result_from_GetLastError.c \*/\R" : "\R/\* END result_from_GetLastError.c \*/"));
-    
-    return rename_results_namespace(content);
+
+    content = rename_results_namespace(content);
+    content["fs_result_to_string"] = "fs_result_description";
+
+    return content;
 }
 
 fs_h("/\* BEG fs_result.h \*/\R" : "\R/\* END fs_result.h \*/") = construct_results_h();

@@ -1125,7 +1125,7 @@ typedef enum
     FS_HAS_MORE_OUTPUT               = 102  /* Some stream has more output data to be read, but there's not enough room in the output buffer. */
 } fs_result;
 
-FS_API const char* fs_result_to_string(fs_result result);
+FS_API const char* fs_result_description(fs_result result);
 /* END fs_result.h */
 
 

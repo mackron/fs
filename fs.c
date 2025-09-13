@@ -370,7 +370,7 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 
 
 /* BEG fs_result.c */
-FS_API const char* fs_result_to_string(fs_result result)
+FS_API const char* fs_result_description(fs_result result)
 {
     switch (result)
     {
