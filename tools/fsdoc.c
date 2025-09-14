@@ -278,6 +278,40 @@ static void fsdoc_uninit(fsdoc_context* pContext)
     memset(pContext, 0, sizeof(*pContext));
 }
 
+static int fsdoc_is_inside_comment(const char* pFileContent, const char* pPosition)
+{
+    const char* pCurrent = pFileContent;
+    int insideBlockComment = 0;
+    
+    while (pCurrent < pPosition) {
+        if (!insideBlockComment) {
+            if (pCurrent[0] == '/' && pCurrent[1] == '*') {
+                insideBlockComment = 1;
+                pCurrent += 2;
+                continue;
+            } else if (pCurrent[0] == '/' && pCurrent[1] == '/') {
+                /* Line comment - skip to end of line */
+                while (pCurrent < pPosition && *pCurrent != '\n') {
+                    pCurrent++;
+                }
+                if (*pCurrent == '\n') {
+                    pCurrent++;
+                }
+                continue;
+            }
+        } else {
+            if (pCurrent[0] == '*' && pCurrent[1] == '/') {
+                insideBlockComment = 0;
+                pCurrent += 2;
+                continue;
+            }
+        }
+        pCurrent++;
+    }
+    
+    return insideBlockComment;
+}
+
 static int fsdoc_parse(fsdoc_context* pContext)
 {
     char* pCurrent;
@@ -358,6 +392,13 @@ static int fsdoc_parse(fsdoc_context* pContext)
         
         if (pNext == NULL) {
             break;
+        }
+        
+        /* Check if this item is inside a comment block */
+        if (fsdoc_is_inside_comment(pContext->pFileContent, pNext)) {
+            /* Skip this item and continue searching after it */
+            pCurrent = pNext + 1;
+            continue;
         }
         
         pLine = pNext;

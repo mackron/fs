@@ -2922,17 +2922,6 @@ enum fs_sysdir_type
 
 ---
 
-# struct my_fs_data
-
-```c
-struct my_fs_data
-{
-    int someData;
-};
-```
-
----
-
 # struct fs_allocation_callbacks
 
 ```c
