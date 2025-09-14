@@ -2775,41 +2775,41 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                 fs_file_writef(pFile, "%s\n\n", pEnum->pDescription);
             }
             
-            /* Values table */
+            /* Code block representation */
             if (pEnum->pFirstValue != NULL) {
-                /* First, check if any values have explicit assignments */
-                int hasExplicitValues = 0;
+                /* First pass: find the maximum name length for alignment */
+                size_t maxNameLen = 0;
                 fsdoc_enum_value* pValue;
                 for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+                    size_t nameLen = strlen(pValue->name);
+                    if (nameLen > maxNameLen) {
+                        maxNameLen = nameLen;
+                    }
+                }
+                
+                fs_file_writef(pFile, "```c\n");
+                fs_file_writef(pFile, "enum %s\n", pEnum->name);
+                fs_file_writef(pFile, "{\n");
+                
+                for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+                    fs_file_writef(pFile, "    %s", pValue->name);
                     if (strlen(pValue->value) > 0) {
-                        hasExplicitValues = 1;
-                        break;
-                    }
-                }
-                
-                if (hasExplicitValues) {
-                    /* Two-column table: Name and Value */
-                    fs_file_writef(pFile, "| Name | Value |\n");
-                    fs_file_writef(pFile, "|------|-------|\n");
-                    
-                    for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
-                        fs_file_writef(pFile, "| `%s` | ", pValue->name);
-                        if (strlen(pValue->value) > 0) {
-                            fs_file_writef(pFile, "`%s`", pValue->value);
+                        /* Calculate padding for alignment */
+                        size_t nameLen = strlen(pValue->name);
+                        size_t padding = maxNameLen - nameLen;
+                        
+                        /* Add padding spaces */
+                        for (size_t i = 0; i < padding; i++) {
+                            fs_file_writef(pFile, " ");
                         }
-                        fs_file_writef(pFile, " |\n");
+                        
+                        fs_file_writef(pFile, " = %s", pValue->value);
                     }
-                } else {
-                    /* Single-column table: Name only */
-                    fs_file_writef(pFile, "| Name |\n");
-                    fs_file_writef(pFile, "|------|\n");
-                    
-                    for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
-                        fs_file_writef(pFile, "| `%s` |\n", pValue->name);
-                    }
+                    fs_file_writef(pFile, ",\n");
                 }
                 
-                fs_file_writef(pFile, "\n");
+                fs_file_writef(pFile, "};\n");
+                fs_file_writef(pFile, "```\n\n");
             }
             
             fs_file_writef(pFile, "---\n\n");
