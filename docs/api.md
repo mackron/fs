@@ -2910,3 +2910,199 @@ int fs_snprintf(
 
 ---
 
+# struct my_fs_data
+
+```c
+struct my_fs_data
+{
+    int someData;
+};
+```
+
+---
+
+# struct fs_allocation_callbacks
+
+```c
+struct fs_allocation_callbacks
+{
+    void*                                          pUserData;
+    void* (*)(size_t sz, void* pUserData)          onMalloc;
+    void* (*)(void* p, size_t sz, void* pUserData) onRealloc;
+    void  (*)(void* p, void* pUserData)            onFree;
+};
+```
+
+---
+
+# struct fs_stream_vtable
+
+```c
+struct fs_stream_vtable
+{
+    fs_result (*)(fs_stream* pStream, void* pDst, size_t bytesToRead, size_t* pBytesRead)           read;
+    fs_result (*)(fs_stream* pStream, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten) write;
+    fs_result (*)(fs_stream* pStream, fs_int64 offset, fs_seek_origin origin)                       seek;
+    fs_result (*)(fs_stream* pStream, fs_int64* pCursor)                                            tell;
+    size_t    (*)(fs_stream* pStream)                                                               duplicate_alloc_size;
+    fs_result (*)(fs_stream* pStream, fs_stream* pDuplicatedStream)                                 duplicate;
+    void      (*)(fs_stream* pStream)                                                               uninit;
+};
+```
+
+---
+
+# struct fs_stream
+
+```c
+struct fs_stream
+{
+    const fs_stream_vtable* pVTable;
+};
+```
+
+---
+
+# struct fs_config
+
+```c
+struct fs_config
+{
+    const fs_backend*              pBackend;
+    const void*                    pBackendConfig;
+    fs_stream*                     pStream;
+    const fs_archive_type*         pArchiveTypes;
+    size_t                         archiveTypeCount;
+    fs_on_refcount_changed_proc    onRefCountChanged;
+    void*                          pRefCountChangedUserData;
+    const fs_allocation_callbacks* pAllocationCallbacks;
+};
+```
+
+---
+
+# struct fs
+
+*Opaque.*
+
+---
+
+# struct fs_file
+
+*Opaque.*
+
+---
+
+# struct fs_file_info
+
+```c
+struct fs_file_info
+{
+    fs_uint64 size;
+    fs_uint64 lastModifiedTime;
+    fs_uint64 lastAccessTime;
+    int       directory;
+    int       symlink;
+};
+```
+
+---
+
+# struct fs_iterator
+
+```c
+struct fs_iterator
+{
+    fs*          pFS;
+    const char*  pName;
+    size_t       nameLen;
+    fs_file_info info;
+};
+```
+
+---
+
+# struct fs_backend
+
+```c
+struct fs_backend
+{
+    size_t       (*)(const void* pBackendConfig)                                                       alloc_size;
+    fs_result    (*)(fs* pFS, const void* pBackendConfig, fs_stream* pStream)                          init;
+    void         (*)(fs* pFS)                                                                          uninit;
+    fs_result    (*)(fs* pFS, int op, void* pArg)                                                      ioctl;
+    fs_result    (*)(fs* pFS, const char* pFilePath)                                                   remove;
+    fs_result    (*)(fs* pFS, const char* pOldPath, const char* pNewPath)                              rename;
+    fs_result    (*)(fs* pFS, const char* pPath)                                                       mkdir;
+    fs_result    (*)(fs* pFS, const char* pPath, int openMode, fs_file_info* pInfo)                    info;
+    size_t       (*)(fs* pFS)                                                                          file_alloc_size;
+    fs_result    (*)(fs* pFS, fs_stream* pStream, const char* pFilePath, int openMode, fs_file* pFile) file_open;
+    void         (*)(fs_file* pFile)                                                                   file_close;
+    fs_result    (*)(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)               file_read;
+    fs_result    (*)(fs_file* pFile, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten)     file_write;
+    fs_result    (*)(fs_file* pFile, fs_int64 offset, fs_seek_origin origin)                           file_seek;
+    fs_result    (*)(fs_file* pFile, fs_int64* pCursor)                                                file_tell;
+    fs_result    (*)(fs_file* pFile)                                                                   file_flush;
+    fs_result    (*)(fs_file* pFile)                                                                   file_truncate;
+    fs_result    (*)(fs_file* pFile, fs_file_info* pInfo)                                              file_info;
+    fs_result    (*)(fs_file* pFile, fs_file* pDuplicate)                                              file_duplicate;
+    fs_iterator* (*)(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)                     first;
+    fs_iterator* (*)(fs_iterator* pIterator)                                                           next;
+    void         (*)(fs_iterator* pIterator)                                                           free_iterator;
+};
+```
+
+---
+
+# struct fs_archive_type
+
+```c
+struct fs_archive_type
+{
+    const fs_backend* pBackend;
+    const char*       pExtension;
+};
+```
+
+---
+
+# struct fs_path_iterator
+
+```c
+struct fs_path_iterator
+{
+    const char* pFullPath;
+    size_t      fullPathLength;
+    size_t      segmentOffset;
+    size_t      segmentLength;
+};
+```
+
+---
+
+# struct fs_memory_stream
+
+```c
+struct fs_memory_stream
+{
+    fs_stream               base;
+    void**                  ppData;
+    size_t*                 pDataSize;
+    struct
+    {
+        const void* pData;
+        size_t dataSize;
+    } readonly;
+    struct
+    {
+        void* pData;
+        size_t dataSize;
+        size_t dataCap;
+    } write;
+    size_t                  cursor;
+    fs_allocation_callbacks allocationCallbacks;
+};
+```
+
+---
+

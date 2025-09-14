@@ -61,6 +61,23 @@ typedef struct fsdoc_enum
     struct fsdoc_enum* pNext;
 } fsdoc_enum;
 
+typedef struct fsdoc_struct_member
+{
+    char name[128];
+    char type[256];        /* The type of the member */
+    char* pDescription;    /* Description from documentation */
+    struct fsdoc_struct_member* pNext;
+} fsdoc_struct_member;
+
+typedef struct fsdoc_struct
+{
+    char name[128];
+    char* pDescription;    /* Main description from documentation */
+    fsdoc_struct_member* pFirstMember;
+    int isOpaque;          /* 1 if this is a forward declaration with no definition */
+    struct fsdoc_struct* pNext;
+} fsdoc_struct;
+
 typedef struct fsdoc_function
 {
     char name[128];
@@ -74,10 +91,18 @@ typedef struct fsdoc_function
     struct fsdoc_function* pNext;
 } fsdoc_function;
 
+typedef struct fsdoc_full_struct_name
+{
+    char name[256];
+    struct fsdoc_full_struct_name* pNext;
+} fsdoc_full_struct_name;
+
 typedef struct fsdoc_context
 {
     fsdoc_function* pFirstFunction;
     fsdoc_enum* pFirstEnum;
+    fsdoc_struct* pFirstStruct;
+    fsdoc_full_struct_name* pFirstFullStructName;
     fs_file* pInputFile;
     char* pFileContent;
     size_t fileSize;
@@ -98,6 +123,7 @@ static char* fsdoc_convert_options_to_table(const char* pStr, const fs_allocatio
 static char* fsdoc_extract_comment_before_function(fsdoc_context* pContext, size_t functionPos);
 static int fsdoc_parse_function_declaration(const char* pDeclaration, fsdoc_function* pFunction);
 static int fsdoc_parse_enum_declaration(const char* pDeclaration, fsdoc_enum* pEnum);
+static int fsdoc_parse_struct_declaration(fsdoc_context* pContext, const char* pDeclaration, fsdoc_struct* pStruct);
 static void fsdoc_parse_see_also(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_examples(const char* pComment, fsdoc_function* pFunction);
 static void fsdoc_parse_return_value(const char* pComment, fsdoc_function* pFunction);
@@ -106,6 +132,11 @@ static void fsdoc_parse_parameters_docs(const char* pComment, fsdoc_function* pF
 static void fsdoc_free_function(fsdoc_function* pFunction);
 static void fsdoc_free_enum(fsdoc_enum* pEnum);
 static void fsdoc_free_enum_values(fsdoc_enum_value* pValue);
+static void fsdoc_free_struct(fsdoc_struct* pStruct);
+static void fsdoc_free_struct_members(fsdoc_struct_member* pMember);
+static void fsdoc_free_full_struct_names(fsdoc_full_struct_name* pName);
+static int fsdoc_scan_for_full_struct_definitions(fsdoc_context* pContext);
+static int fsdoc_is_struct_fully_defined(fsdoc_context* pContext, const char* pStructName);
 static void fsdoc_free_params(fsdoc_param* pParam);
 static void fsdoc_free_see_also(fsdoc_see_also* pSeeAlso);
 static void fsdoc_free_examples(fsdoc_example* pExample);
@@ -234,6 +265,16 @@ static void fsdoc_uninit(fsdoc_context* pContext)
         pContext->pFirstEnum = pNext;
     }
 
+    /* Free struct list */
+    while (pContext->pFirstStruct != NULL) {
+        fsdoc_struct* pNext = pContext->pFirstStruct->pNext;
+        fsdoc_free_struct(pContext->pFirstStruct);
+        pContext->pFirstStruct = pNext;
+    }
+
+    /* Free full struct names list */
+    fsdoc_free_full_struct_names(pContext->pFirstFullStructName);
+
     memset(pContext, 0, sizeof(*pContext));
 }
 
@@ -244,23 +285,56 @@ static int fsdoc_parse(fsdoc_context* pContext)
     char* pNextLine;
     fsdoc_function* pLastFunction;
     fsdoc_enum* pLastEnum;
+    fsdoc_struct* pLastStruct;
 
     if (pContext == NULL || pContext->pFileContent == NULL) {
         return 1;
     }
 
+    /* First pass: scan for all struct definitions with full implementations */
+    fsdoc_scan_for_full_struct_definitions(pContext);
+
     pLastFunction = NULL;
     pLastEnum = NULL;
+    pLastStruct = NULL;
     pCurrent = pContext->pFileContent;
 
     while (*pCurrent != '\0') {
-        /* Find the next FS_API function or typedef enum */
+        /* Find the next FS_API function, typedef enum, typedef struct, or standalone struct */
         char* pFunctionLine = strstr(pCurrent, "FS_API");
         char* pEnumLine = strstr(pCurrent, "typedef enum");
+        char* pStructLine = strstr(pCurrent, "typedef struct");
+        char* pPlainStructLine = strstr(pCurrent, "struct ");
+        
+        /* For plain struct, make sure it's at start of line and followed by name { */
+        if (pPlainStructLine != NULL) {
+            /* Check if it's at start of line (after newline or at beginning) */
+            if (pPlainStructLine != pContext->pFileContent && *(pPlainStructLine - 1) != '\n') {
+                /* Not at start of line, skip this one */
+                char* pNext = strstr(pPlainStructLine + 1, "struct ");
+                pPlainStructLine = pNext;
+            } else {
+                /* Check if it has a name and opening brace (not a typedef struct) */
+                char* pNameStart = pPlainStructLine + 7; /* strlen("struct ") */
+                while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+                    pNameStart++;
+                }
+                if (*pNameStart != '\0' && !FSDOC_IS_SPACE(*pNameStart)) {
+                    char* pBrace = strchr(pNameStart, '{');
+                    if (pBrace == NULL) {
+                        /* No brace found, skip this one */
+                        pPlainStructLine = NULL;
+                    }
+                } else {
+                    /* No name found, skip this one */
+                    pPlainStructLine = NULL;
+                }
+            }
+        }
         
         /* Determine which comes first */
         char* pNext = NULL;
-        int type = 0; /* 0 = none, 1 = function, 2 = enum */
+        int type = 0; /* 0 = none, 1 = function, 2 = enum, 3 = struct, 4 = plain struct */
         
         if (pFunctionLine != NULL) {
             pNext = pFunctionLine;
@@ -272,13 +346,23 @@ static int fsdoc_parse(fsdoc_context* pContext)
             type = 2;
         }
         
+        if (pStructLine != NULL && (pNext == NULL || pStructLine < pNext)) {
+            pNext = pStructLine;
+            type = 3;
+        }
+        
+        if (pPlainStructLine != NULL && (pNext == NULL || pPlainStructLine < pNext)) {
+            pNext = pPlainStructLine;
+            type = 4;
+        }
+        
         if (pNext == NULL) {
             break;
         }
         
         pLine = pNext;
         
-        /* Make sure it's at the beginning of a line (except for enums which might be indented) */
+        /* Make sure it's at the beginning of a line (except for enums/structs which might be indented) */
         if (type == 1 && pLine != pContext->pFileContent && *(pLine - 1) != '\n') {
             pCurrent = pLine + 6;
             continue;
@@ -426,6 +510,246 @@ static int fsdoc_parse(fsdoc_context* pContext)
             
             fs_free(pDeclaration, NULL);
             pCurrent = pEnumEnd;
+            
+        } else if (type == 3) {
+            /* Handle struct - find the end of the struct */
+            char* pStructEnd = pLine;
+            int braceCount = 0;
+            int foundOpenBrace = 0;
+            
+            /* Check if this is a forward declaration (no brace) */
+            char* pSemicolon = strchr(pLine, ';');
+            char* pOpenBrace = strchr(pLine, '{');
+            
+            if (pSemicolon != NULL && (pOpenBrace == NULL || pSemicolon < pOpenBrace)) {
+                /* Forward declaration - just go to semicolon */
+                pStructEnd = pSemicolon + 1;
+            } else {
+                /* Full struct definition - find matching closing brace */
+                while (*pStructEnd != '\0') {
+                    if (*pStructEnd == '{') {
+                        foundOpenBrace = 1;
+                        braceCount++;
+                    } else if (*pStructEnd == '}') {
+                        braceCount--;
+                        if (foundOpenBrace && braceCount == 0) {
+                            /* Find the semicolon after the typedef name */
+                            pStructEnd++;
+                            while (*pStructEnd != '\0' && *pStructEnd != ';') {
+                                pStructEnd++;
+                            }
+                            if (*pStructEnd == ';') {
+                                pStructEnd++;
+                            }
+                            break;
+                        }
+                    }
+                    pStructEnd++;
+                }
+                
+                if (foundOpenBrace && braceCount != 0) {
+                    pCurrent = pLine + 14; /* strlen("typedef struct") */
+                    continue;
+                }
+            }
+            
+            /* Extract the struct declaration */
+            size_t declarationLen = pStructEnd - pLine;
+            char* pDeclaration = fs_malloc(declarationLen + 1, NULL);
+            if (pDeclaration == NULL) {
+                return 1;
+            }
+            
+            strncpy(pDeclaration, pLine, declarationLen);
+            pDeclaration[declarationLen] = '\0';
+            
+            /* Check if this struct is inside a comment block */
+            int inCommentBlock = 0;
+            char* pCommentCheck = pLine - 1;
+            while (pCommentCheck >= pContext->pFileContent) {
+                if (pCommentCheck[0] == '/' && pCommentCheck + 1 < pLine && pCommentCheck[1] == '*') {
+                    inCommentBlock = 1;
+                    break;
+                }
+                if (pCommentCheck[0] == '*' && pCommentCheck + 1 < pLine && pCommentCheck[1] == '/') {
+                    break;
+                }
+                if (*pCommentCheck == '\n') {
+                    /* Look for comment markers at start of line */
+                    char* pLineStart = pCommentCheck + 1;
+                    while (pLineStart < pLine && (*pLineStart == ' ' || *pLineStart == '\t')) {
+                        pLineStart++;
+                    }
+                    if (pLineStart < pLine && *pLineStart == '*') {
+                        inCommentBlock = 1;
+                        break;
+                    }
+                    if (pLineStart < pLine && *pLineStart != '*' && *pLineStart != '\n') {
+                        break;
+                    }
+                }
+                pCommentCheck--;
+            }
+            
+            if (!inCommentBlock) {
+                /* Create a new struct */
+                fsdoc_struct* pStruct = fs_malloc(sizeof(fsdoc_struct), NULL);
+                if (pStruct == NULL) {
+                    fs_free(pDeclaration, NULL);
+                    return 1;
+                }
+                
+                memset(pStruct, 0, sizeof(*pStruct));
+                
+                /* Parse the struct declaration */
+                if (fsdoc_parse_struct_declaration(pContext, pDeclaration, pStruct) == 0) {
+                    /* Add to the list */
+                    if (pLastStruct == NULL) {
+                        pContext->pFirstStruct = pStruct;
+                    } else {
+                        pLastStruct->pNext = pStruct;
+                    }
+                    pLastStruct = pStruct;
+                } else {
+                    fsdoc_free_struct(pStruct);
+                }
+            }
+            
+            fs_free(pDeclaration, NULL);
+            pCurrent = pStructEnd;
+            
+        } else if (type == 4) {
+            /* Handle plain struct definition - struct name { ... }; */
+            char* pStructEnd = pLine;
+            int braceCount = 0;
+            int foundOpenBrace = 0;
+            
+            /* Find the matching closing brace */
+            while (*pStructEnd != '\0') {
+                if (*pStructEnd == '{') {
+                    foundOpenBrace = 1;
+                    braceCount++;
+                } else if (*pStructEnd == '}') {
+                    braceCount--;
+                    if (foundOpenBrace && braceCount == 0) {
+                        /* Find the semicolon after the closing brace */
+                        pStructEnd++;
+                        while (*pStructEnd != '\0' && *pStructEnd != ';') {
+                            pStructEnd++;
+                        }
+                        if (*pStructEnd == ';') {
+                            pStructEnd++;
+                        }
+                        break;
+                    }
+                }
+                pStructEnd++;
+            }
+            
+            if (!foundOpenBrace || braceCount != 0) {
+                pCurrent = pLine + 7; /* strlen("struct ") */
+                continue;
+            }
+            
+            /* Extract the struct declaration */
+            size_t declarationLen = pStructEnd - pLine;
+            char* pDeclaration = fs_malloc(declarationLen + 1, NULL);
+            if (pDeclaration == NULL) {
+                return 1;
+            }
+            
+            strncpy(pDeclaration, pLine, declarationLen);
+            pDeclaration[declarationLen] = '\0';
+            
+            /* Check if this struct is inside a comment block */
+            int inCommentBlock = 0;
+            char* pCommentCheck = pLine - 1;
+            while (pCommentCheck >= pContext->pFileContent) {
+                if (pCommentCheck[0] == '/' && pCommentCheck + 1 < pLine && pCommentCheck[1] == '*') {
+                    inCommentBlock = 1;
+                    break;
+                }
+                if (pCommentCheck[0] == '*' && pCommentCheck + 1 < pLine && pCommentCheck[1] == '/') {
+                    break;
+                }
+                if (*pCommentCheck == '\n') {
+                    /* Look for comment markers at start of line */
+                    char* pLineStart = pCommentCheck + 1;
+                    while (pLineStart < pLine && FSDOC_IS_SPACE(*pLineStart)) {
+                        pLineStart++;
+                    }
+                    if (pLineStart < pLine && *pLineStart == '*') {
+                        inCommentBlock = 1;
+                        break;
+                    }
+                    if (pLineStart < pLine && pLineStart + 1 < pLine && pLineStart[0] == '/' && pLineStart[1] == '/') {
+                        break; /* Single line comment, not a block */
+                    }
+                    break;
+                }
+                pCommentCheck--;
+            }
+            
+            if (!inCommentBlock) {
+                /* Extract struct name first */
+                char* pNameStart = pLine + 7; /* strlen("struct ") */
+                while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+                    pNameStart++;
+                }
+                char* pNameEnd = pNameStart;
+                while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != '{') {
+                    pNameEnd++;
+                }
+                
+                size_t nameLen = pNameEnd - pNameStart;
+                if (nameLen > 0 && nameLen < 256) {
+                    char structName[256];
+                    strncpy(structName, pNameStart, nameLen);
+                    structName[nameLen] = '\0';
+                    
+                    /* Check if we already have a struct with this name */
+                    fsdoc_struct* pExistingStruct = NULL;
+                    fsdoc_struct* pCurrent;
+                    for (pCurrent = pContext->pFirstStruct; pCurrent != NULL; pCurrent = pCurrent->pNext) {
+                        if (strcmp(pCurrent->name, structName) == 0) {
+                            pExistingStruct = pCurrent;
+                            break;
+                        }
+                    }
+                    
+                    if (pExistingStruct != NULL && pExistingStruct->pFirstMember == NULL) {
+                        /* We have an existing struct (likely from forward declaration) with no members.
+                           Parse the members from this full definition and add them to the existing struct. */
+                        size_t convertedLen = declarationLen + 50;
+                        char* pConvertedDeclaration = fs_malloc(convertedLen, NULL);
+                        if (pConvertedDeclaration != NULL) {
+                            /* Build converted declaration: typedef struct name { ... } name; */
+                            strcpy(pConvertedDeclaration, "typedef ");
+                            strncat(pConvertedDeclaration, pLine, pStructEnd - pLine);
+                            strcat(pConvertedDeclaration, " ");
+                            strcat(pConvertedDeclaration, structName);
+                            strcat(pConvertedDeclaration, ";");
+                            
+                            /* Parse just the members into a temporary struct */
+                            fsdoc_struct tempStruct;
+                            memset(&tempStruct, 0, sizeof(tempStruct));
+                            
+                            if (fsdoc_parse_struct_declaration(pContext, pConvertedDeclaration, &tempStruct) == 0) {
+                                /* Move the members from temp struct to existing struct */
+                                pExistingStruct->pFirstMember = tempStruct.pFirstMember;
+                                tempStruct.pFirstMember = NULL; /* Prevent double-free */
+                            }
+                            
+                            fs_free(pConvertedDeclaration, NULL);
+                        }
+                    }
+                    /* If no existing struct found, or existing struct already has members, skip this one
+                       since it would be a duplicate or conflict */
+                }
+            }
+            
+            fs_free(pDeclaration, NULL);
+            pCurrent = pStructEnd;
         }
     }
 
@@ -1473,6 +1797,513 @@ static int fsdoc_parse_enum_declaration(const char* pDeclaration, fsdoc_enum* pE
     return 0;
 }
 
+static int fsdoc_parse_struct_declaration(fsdoc_context* pContext, const char* pDeclaration, fsdoc_struct* pStruct)
+{
+    const char* pStructKeyword;
+    const char* pNameStart;
+    const char* pNameEnd;
+    const char* pBodyStart;
+    const char* pBodyEnd;
+    size_t nameLen;
+
+    if (pDeclaration == NULL || pStruct == NULL) {
+        return 1;
+    }
+
+    /* Find "typedef struct" */
+    pStructKeyword = strstr(pDeclaration, "typedef struct");
+    if (pStructKeyword == NULL) {
+        return 1;
+    }
+
+    /* Skip past "typedef struct" and any whitespace */
+    pNameStart = pStructKeyword + 14; /* 14 = strlen("typedef struct") */
+    while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+        pNameStart++;
+    }
+
+    /* Check if this is a forward declaration (just typedef struct name;) */
+    const char* pSemicolon = strchr(pNameStart, ';');
+    const char* pOpenBrace = strchr(pNameStart, '{');
+    
+    if (pSemicolon != NULL && (pOpenBrace == NULL || pSemicolon < pOpenBrace)) {
+        /* Forward declaration - extract name before semicolon */
+        pNameEnd = pNameStart;
+        while (pNameEnd < pSemicolon && !FSDOC_IS_SPACE(*pNameEnd)) {
+            pNameEnd++;
+        }
+        
+        nameLen = pNameEnd - pNameStart;
+        if (nameLen >= sizeof(pStruct->name)) {
+            return 1;
+        }
+        
+        strncpy(pStruct->name, pNameStart, nameLen);
+        pStruct->name[nameLen] = '\0';
+        
+        /* Check if this struct has a full definition elsewhere in the file */
+        pStruct->isOpaque = !fsdoc_is_struct_fully_defined(pContext, pStruct->name);
+        pStruct->pFirstMember = NULL;
+        
+        return 0;
+    }
+
+    /* Full struct definition */
+    pStruct->isOpaque = 0;
+    
+    /* Find the opening brace */
+    pBodyStart = strchr(pNameStart, '{');
+    if (pBodyStart == NULL) {
+        return 1;
+    }
+    
+    /* Find the matching closing brace */
+    pBodyEnd = pBodyStart + 1;
+    int braceCount = 1;
+    while (*pBodyEnd != '\0' && braceCount > 0) {
+        if (*pBodyEnd == '{') {
+            braceCount++;
+        } else if (*pBodyEnd == '}') {
+            braceCount--;
+        }
+        pBodyEnd++;
+    }
+    
+    if (braceCount != 0) {
+        return 1;
+    }
+    pBodyEnd--; /* Point to the closing brace */
+    
+    /* Find the struct name after the closing brace */
+    const char* pAfterBrace = pBodyEnd + 1;
+    while (*pAfterBrace != '\0' && FSDOC_IS_SPACE(*pAfterBrace)) {
+        pAfterBrace++;
+    }
+    
+    pNameStart = pAfterBrace;
+    pNameEnd = pNameStart;
+    while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != ';') {
+        pNameEnd++;
+    }
+    
+    nameLen = pNameEnd - pNameStart;
+    if (nameLen >= sizeof(pStruct->name)) {
+        return 1;
+    }
+    
+    strncpy(pStruct->name, pNameStart, nameLen);
+    pStruct->name[nameLen] = '\0';
+    
+    /* Parse struct members with nested struct detection */
+    const char* pCurrent = pBodyStart + 1; /* Skip opening brace */
+    fsdoc_struct_member* pLastMember = NULL;
+    
+    /* Simple state tracking for nested structs */
+    const char* pNestedStructStart = NULL;
+    int isInNestedStruct = 0;
+    int nestedBraceCount = 0;
+    
+    while (pCurrent < pBodyEnd) {
+        const char* pLineStart = pCurrent;
+        const char* pLineEnd = strchr(pLineStart, '\n');
+        if (pLineEnd == NULL || pLineEnd > pBodyEnd) {
+            pLineEnd = pBodyEnd;
+        }
+        
+        /* Extract the line */
+        size_t lineLen = pLineEnd - pLineStart;
+        if (lineLen > 0 && lineLen < 512) {
+            char line[512];
+            strncpy(line, pLineStart, lineLen);
+            line[lineLen] = '\0';
+            
+            /* Trim whitespace and remove inline comments first */
+            fsdoc_trim_whitespace(line);
+            
+            /* Remove inline comments */
+            char* pCommentStart = strstr(line, "/*");
+            if (pCommentStart != NULL) {
+                *pCommentStart = '\0';
+                fsdoc_trim_whitespace(line);
+            }
+            pCommentStart = strstr(line, "//");
+            if (pCommentStart != NULL) {
+                *pCommentStart = '\0';
+                fsdoc_trim_whitespace(line);
+            }
+            pCommentStart = strstr(line, "//");
+            if (pCommentStart != NULL) {
+                *pCommentStart = '\0';
+                fsdoc_trim_whitespace(line);
+            }
+            
+            /* Then remove semicolon */
+            if (strlen(line) > 0 && line[strlen(line) - 1] == ';') {
+                line[strlen(line) - 1] = '\0';
+                fsdoc_trim_whitespace(line);
+            }
+            
+            /* Handle nested struct state machine */
+            if (!isInNestedStruct && strcmp(line, "struct") == 0) {
+                /* Start of potential nested struct */
+                isInNestedStruct = 1;
+                pNestedStructStart = pLineStart;
+                nestedBraceCount = 0;
+            } else if (isInNestedStruct && strcmp(line, "{") == 0) {
+                /* Opening brace of nested struct */
+                nestedBraceCount = 1;
+            } else if (isInNestedStruct && nestedBraceCount > 0) {
+                /* Inside nested struct - check for closing brace with member name */
+                if (line[0] == '}' && strlen(line) > 1) {
+                    /* Found "} memberName" pattern */
+                    char* pAfterBrace = line + 1;
+                    while (*pAfterBrace != '\0' && FSDOC_IS_SPACE(*pAfterBrace)) {
+                        pAfterBrace++;
+                    }
+                    
+                    if (strlen(pAfterBrace) > 0) {
+                        /* Create nested struct member */
+                        fsdoc_struct_member* pMember = fs_malloc(sizeof(fsdoc_struct_member), NULL);
+                        if (pMember != NULL) {
+                            memset(pMember, 0, sizeof(*pMember));
+                            
+                            /* Set member name */
+                            strncpy(pMember->name, pAfterBrace, sizeof(pMember->name) - 1);
+                            pMember->name[sizeof(pMember->name) - 1] = '\0';
+                            
+                            /* Build nested struct type */
+                            strcpy(pMember->type, "struct {");
+                            
+                            /* Extract content - skip "struct" and "{" lines, get content before "}" line */
+                            const char* pContentStart = pNestedStructStart;
+                            
+                            /* Skip to line after "struct" */
+                            const char* pStructLine = strchr(pContentStart, '\n');
+                            if (pStructLine != NULL) {
+                                pStructLine++; /* Skip to line after "struct" */
+                                /* Skip to line after "{" */
+                                const char* pBraceLine = strchr(pStructLine, '\n');
+                                if (pBraceLine != NULL) {
+                                    pContentStart = pBraceLine + 1; /* Start after "{" line */
+                                }
+                            }
+                            
+                            /* Extract nested content up to current line */
+                            const char* pContentScan = pContentStart;
+                            while (pContentScan < pLineStart) {
+                                const char* pScanLineEnd = strchr(pContentScan, '\n');
+                                if (pScanLineEnd == NULL || pScanLineEnd > pLineStart) {
+                                    pScanLineEnd = pLineStart;
+                                }
+                                
+                                size_t scanLineLen = pScanLineEnd - pContentScan;
+                                if (scanLineLen > 0 && scanLineLen < 256) {
+                                    char scanLine[256];
+                                    strncpy(scanLine, pContentScan, scanLineLen);
+                                    scanLine[scanLineLen] = '\0';
+                                    fsdoc_trim_whitespace(scanLine);
+                                    
+                                    /* Remove comments and semicolon */
+                                    char* pComment = strstr(scanLine, "/*");
+                                    if (pComment != NULL) {
+                                        *pComment = '\0';
+                                        fsdoc_trim_whitespace(scanLine);
+                                    }
+                                    pComment = strstr(scanLine, "//");
+                                    if (pComment != NULL) {
+                                        *pComment = '\0';
+                                        fsdoc_trim_whitespace(scanLine);
+                                    }
+                                    if (strlen(scanLine) > 0 && scanLine[strlen(scanLine) - 1] == ';') {
+                                        scanLine[strlen(scanLine) - 1] = '\0';
+                                        fsdoc_trim_whitespace(scanLine);
+                                    }
+                                    
+                                    if (strlen(scanLine) > 0 && scanLine[0] != '/' && scanLine[0] != '*') {
+                                        strcat(pMember->type, "\n        ");
+                                        strcat(pMember->type, scanLine);
+                                        strcat(pMember->type, ";");
+                                    }
+                                }
+                                
+                                pContentScan = (pScanLineEnd < pLineStart && *pScanLineEnd == '\n') ? pScanLineEnd + 1 : pScanLineEnd;
+                            }
+                            
+                            strcat(pMember->type, "\n    }");
+                            
+                            pMember->pDescription = fs_malloc(1, NULL);
+                            if (pMember->pDescription != NULL) {
+                                pMember->pDescription[0] = '\0';
+                            }
+                            
+                            /* Add to list */
+                            if (pLastMember == NULL) {
+                                pStruct->pFirstMember = pMember;
+                            } else {
+                                pLastMember->pNext = pMember;
+                            }
+                            pLastMember = pMember;
+                        }
+                    }
+                    
+                    /* Reset state */
+                    isInNestedStruct = 0;
+                    nestedBraceCount = 0;
+                    pNestedStructStart = NULL;
+                    
+                    /* Move to next line since we processed this closing brace line */
+                    pCurrent = (pLineEnd < pBodyEnd && *pLineEnd == '\n') ? pLineEnd + 1 : pLineEnd;
+                    continue;
+                }
+            } else if (isInNestedStruct && nestedBraceCount == 0) {
+                /* We saw "struct" but next line wasn't "{" - not a nested struct */
+                isInNestedStruct = 0;
+                pNestedStructStart = NULL;
+                /* Continue processing this line as normal since it's not part of nested struct */
+            }
+            
+            /* Skip processing if we're inside a nested struct */
+            if (isInNestedStruct) {
+                /* Move to next line */
+                pCurrent = (pLineEnd < pBodyEnd && *pLineEnd == '\n') ? pLineEnd + 1 : pLineEnd;
+                continue;
+            }
+            
+            /* Skip empty lines, comments, braces, and lines that look like member names without types */
+            if (strlen(line) > 0 && line[0] != '/' && line[0] != '*' && 
+                strcmp(line, "{") != 0 && strcmp(line, "}") != 0 && 
+                strstr(line, "struct {") == NULL && strcmp(line, "struct") != 0 &&
+                /* Skip standalone identifiers that look like member names from nested structs */
+                !(strchr(line, ' ') == NULL && 
+                  (strcmp(line, "readonly") == 0 || strcmp(line, "write") == 0 || 
+                   ((line[0] >= 'a' && line[0] <= 'z') || (line[0] >= 'A' && line[0] <= 'Z'))))) {
+                /* Check for nested struct: struct { ... } memberName; */
+                char* pStructKeyword = strstr(line, "struct");
+                char* pOpenBrace = NULL;
+                
+                if (pStructKeyword != NULL) {
+                    /* Look for opening brace after struct keyword */
+                    char* pAfterStruct = pStructKeyword + 6; /* strlen("struct") */
+                    while (*pAfterStruct != '\0' && FSDOC_IS_SPACE(*pAfterStruct)) {
+                        pAfterStruct++;
+                    }
+                    if (*pAfterStruct == '{') {
+                        pOpenBrace = pAfterStruct;
+                    }
+                }
+                
+                if (pOpenBrace != NULL) {
+                    /* This is a nested struct - find the complete nested structure */
+                    const char* pNestedCurrent = pOpenBrace + 1;
+                    int braceCount = 1;
+                    
+                    /* Find the matching closing brace by scanning forward in the body */
+                    while (pNestedCurrent < pBodyEnd && braceCount > 0) {
+                        if (*pNestedCurrent == '{') {
+                            braceCount++;
+                        } else if (*pNestedCurrent == '}') {
+                            braceCount--;
+                        }
+                        pNestedCurrent++;
+                    }
+                    
+                    if (braceCount == 0) {
+                        /* Found the complete nested struct - extract member name after closing brace */
+                        const char* pAfterBrace = pNestedCurrent;
+                        while (pAfterBrace < pBodyEnd && FSDOC_IS_SPACE(*pAfterBrace)) {
+                            pAfterBrace++;
+                        }
+                        
+                        const char* pMemberNameStart = pAfterBrace;
+                        const char* pMemberNameEnd = pMemberNameStart;
+                        while (pMemberNameEnd < pBodyEnd && !FSDOC_IS_SPACE(*pMemberNameEnd) && *pMemberNameEnd != ';' && *pMemberNameEnd != '\n') {
+                            pMemberNameEnd++;
+                        }
+                        
+                        if (pMemberNameEnd > pMemberNameStart) {
+                            /* Create a nested struct member */
+                            fsdoc_struct_member* pMember = fs_malloc(sizeof(fsdoc_struct_member), NULL);
+                            if (pMember != NULL) {
+                                memset(pMember, 0, sizeof(*pMember));
+                                
+                                /* Set member name */
+                                size_t nameLen = pMemberNameEnd - pMemberNameStart;
+                                if (nameLen < sizeof(pMember->name)) {
+                                    strncpy(pMember->name, pMemberNameStart, nameLen);
+                                    pMember->name[nameLen] = '\0';
+                                }
+                                
+                                /* Extract and format nested struct members */
+                                const char* pContentStart = pOpenBrace + 1;
+                                const char* pContentEnd = pNestedCurrent - 1; /* Exclude closing brace */
+                                
+                                /* Copy the content and format it properly */
+                                size_t maxTypeLen = sizeof(pMember->type) - 50; /* Leave space for formatting */
+                                size_t contentLen = pContentEnd - pContentStart;
+                                
+                                strcpy(pMember->type, "struct {");
+                                
+                                if (contentLen > 0 && contentLen < maxTypeLen) {
+                                    char content[1024];
+                                    strncpy(content, pContentStart, contentLen);
+                                    content[contentLen] = '\0';
+                                    
+                                    /* Clean up the content and format it */
+                                    char* line_tok = strtok(content, "\n");
+                                    while (line_tok != NULL) {
+                                        /* Trim and clean each line */
+                                        fsdoc_trim_whitespace(line_tok);
+                                        if (strlen(line_tok) > 0 && line_tok[0] != '/' && line_tok[0] != '*') {
+                                            /* Remove trailing semicolon if present */
+                                            if (strlen(line_tok) > 0 && line_tok[strlen(line_tok) - 1] == ';') {
+                                                line_tok[strlen(line_tok) - 1] = '\0';
+                                            }
+                                            /* Remove inline comments */
+                                            char* pComment = strstr(line_tok, "//");
+                                            if (pComment != NULL) {
+                                                *pComment = '\0';
+                                                fsdoc_trim_whitespace(line_tok);
+                                            }
+                                            pComment = strstr(line_tok, "/*");
+                                            if (pComment != NULL) {
+                                                *pComment = '\0';
+                                                fsdoc_trim_whitespace(line_tok);
+                                            }
+                                            
+                                            if (strlen(line_tok) > 0) {
+                                                strcat(pMember->type, "\n        ");
+                                                strcat(pMember->type, line_tok);
+                                                strcat(pMember->type, ";");
+                                            }
+                                        }
+                                        line_tok = strtok(NULL, "\n");
+                                    }
+                                }
+                                
+                                strcat(pMember->type, "\n    }");
+                                
+                                pMember->pDescription = fs_malloc(1, NULL);
+                                if (pMember->pDescription != NULL) {
+                                    pMember->pDescription[0] = '\0';
+                                }
+                                
+                                /* Add to the list */
+                                if (pLastMember == NULL) {
+                                    pStruct->pFirstMember = pMember;
+                                } else {
+                                    pLastMember->pNext = pMember;
+                                }
+                                pLastMember = pMember;
+                            }
+                        }
+                        
+                        /* Skip to after the nested struct */
+                        pCurrent = pNestedCurrent;
+                        while (pCurrent < pBodyEnd && *pCurrent != '\n') {
+                            pCurrent++;
+                        }
+                        if (pCurrent < pBodyEnd && *pCurrent == '\n') {
+                            pCurrent++;
+                        }
+                        continue;
+                    }
+                }
+                
+                /* Regular member parsing */
+                fsdoc_struct_member* pMember = fs_malloc(sizeof(fsdoc_struct_member), NULL);
+                if (pMember != NULL) {
+                    memset(pMember, 0, sizeof(*pMember));
+                    
+                    /* Parse type and name - handle function pointers and complex types */
+                    char* pFuncPtrStart = strstr(line, "(*");
+                    
+                    if (pFuncPtrStart != NULL) {
+                        /* Function pointer: void* (*onMalloc)(size_t sz, void* pUserData) */
+                        char* pNameStart = pFuncPtrStart + 2;
+                        char* pNameEnd = strchr(pNameStart, ')');
+                        
+                        if (pNameEnd != NULL) {
+                            /* Extract function name */
+                            size_t nameLen = pNameEnd - pNameStart;
+                            if (nameLen < sizeof(pMember->name)) {
+                                strncpy(pMember->name, pNameStart, nameLen);
+                                pMember->name[nameLen] = '\0';
+                                fsdoc_trim_whitespace(pMember->name);
+                                
+                                /* Build type by replacing name with placeholder */
+                                char typeBuffer[512];
+                                size_t prefixLen = pNameStart - line;
+                                strncpy(typeBuffer, line, prefixLen);
+                                typeBuffer[prefixLen] = '\0';
+                                strcat(typeBuffer, pNameEnd);
+                                
+                                strncpy(pMember->type, typeBuffer, sizeof(pMember->type) - 1);
+                                pMember->type[sizeof(pMember->type) - 1] = '\0';
+                                fsdoc_trim_whitespace(pMember->type);
+                            }
+                        }
+                    } else {
+                        /* Regular variable - find the last space that's not inside brackets/parens */
+                        int bracketDepth = 0;
+                        int parenDepth = 0;
+                        int lastSpacePos = -1;
+                        int i;
+                        
+                        for (i = strlen(line) - 1; i >= 0; i--) {
+                            if (line[i] == ']') bracketDepth++;
+                            else if (line[i] == '[') bracketDepth--;
+                            else if (line[i] == ')') parenDepth++;
+                            else if (line[i] == '(') parenDepth--;
+                            else if (line[i] == ' ' && bracketDepth == 0 && parenDepth == 0) {
+                                lastSpacePos = i;
+                                break;
+                            }
+                        }
+                        
+                        if (lastSpacePos >= 0) {
+                            line[lastSpacePos] = '\0';
+                            fsdoc_trim_whitespace(line);
+                            fsdoc_trim_whitespace(line + lastSpacePos + 1);
+                            
+                            strncpy(pMember->type, line, sizeof(pMember->type) - 1);
+                            pMember->type[sizeof(pMember->type) - 1] = '\0';
+                            
+                            strncpy(pMember->name, line + lastSpacePos + 1, sizeof(pMember->name) - 1);
+                            pMember->name[sizeof(pMember->name) - 1] = '\0';
+                        } else {
+                            /* No space found - treat entire line as name with unknown type */
+                            strncpy(pMember->type, "unknown", sizeof(pMember->type) - 1);
+                            pMember->type[sizeof(pMember->type) - 1] = '\0';
+                            
+                            strncpy(pMember->name, line, sizeof(pMember->name) - 1);
+                            pMember->name[sizeof(pMember->name) - 1] = '\0';
+                        }
+                    }
+                    
+                    pMember->pDescription = fs_malloc(1, NULL);
+                    if (pMember->pDescription != NULL) {
+                        pMember->pDescription[0] = '\0';
+                    }
+                    
+                    /* Add to the list */
+                    if (pLastMember == NULL) {
+                        pStruct->pFirstMember = pMember;
+                    } else {
+                        pLastMember->pNext = pMember;
+                    }
+                    pLastMember = pMember;
+                } else {
+                    fs_free(pMember, NULL);
+                }
+            }
+        }
+        
+        pCurrent = (pLineEnd < pBodyEnd && *pLineEnd == '\n') ? pLineEnd + 1 : pBodyEnd;
+    }
+    
+    return 0;
+}
+
 static void fsdoc_write_json_string(fs_file* pFile, const char* pStr)
 {
     const char* p;
@@ -1659,6 +2490,56 @@ static int fsdoc_output_json(fsdoc_context* pContext, const char* pOutputPath)
             fsdoc_write_json_string(pFile, pValue->pDescription ? pValue->pDescription : "");
             fs_file_writef(pFile, "\n");
             fs_file_writef(pFile, "        }");
+        }
+        
+        fs_file_writef(pFile, "\n      ]\n");
+        fs_file_writef(pFile, "    }");
+    }
+    
+    fs_file_writef(pFile, "\n  ],\n");
+    
+    /* Output structs */
+    fs_file_writef(pFile, "  \"structs\": [\n");
+    
+    fsdoc_struct* pStruct;
+    int isFirstStruct = 1;
+    for (pStruct = pContext->pFirstStruct; pStruct != NULL; pStruct = pStruct->pNext) {
+        if (!isFirstStruct) {
+            fs_file_writef(pFile, ",\n");
+        }
+        isFirstStruct = 0;
+
+        fs_file_writef(pFile, "    {\n");
+        fs_file_writef(pFile, "      \"name\": ");
+        fsdoc_write_json_string(pFile, pStruct->name);
+        fs_file_writef(pFile, ",\n");
+        fs_file_writef(pFile, "      \"description\": ");
+        fsdoc_write_json_string(pFile, pStruct->pDescription ? pStruct->pDescription : "");
+        fs_file_writef(pFile, ",\n");
+        fs_file_writef(pFile, "      \"isOpaque\": %s,\n", pStruct->isOpaque ? "true" : "false");
+        fs_file_writef(pFile, "      \"members\": [\n");
+        
+        if (!pStruct->isOpaque) {
+            fsdoc_struct_member* pMember;
+            int isFirstMember = 1;
+            for (pMember = pStruct->pFirstMember; pMember != NULL; pMember = pMember->pNext) {
+                if (!isFirstMember) {
+                    fs_file_writef(pFile, ",\n");
+                }
+                isFirstMember = 0;
+                
+                fs_file_writef(pFile, "        {\n");
+                fs_file_writef(pFile, "          \"name\": ");
+                fsdoc_write_json_string(pFile, pMember->name);
+                fs_file_writef(pFile, ",\n");
+                fs_file_writef(pFile, "          \"type\": ");
+                fsdoc_write_json_string(pFile, pMember->type);
+                fs_file_writef(pFile, ",\n");
+                fs_file_writef(pFile, "          \"description\": ");
+                fsdoc_write_json_string(pFile, pMember->pDescription ? pMember->pDescription : "");
+                fs_file_writef(pFile, "\n");
+                fs_file_writef(pFile, "        }");
+            }
         }
         
         fs_file_writef(pFile, "\n      ]\n");
@@ -1929,6 +2810,101 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                 }
                 
                 fs_file_writef(pFile, "\n");
+            }
+            
+            fs_file_writef(pFile, "---\n\n");
+        }
+    }
+
+    /* Output structs */
+    if (pContext->pFirstStruct != NULL) {
+        fsdoc_struct* pStruct;
+        for (pStruct = pContext->pFirstStruct; pStruct != NULL; pStruct = pStruct->pNext) {
+            fs_file_writef(pFile, "# struct %s\n\n", pStruct->name);
+            
+            /* Description */
+            if (pStruct->pDescription != NULL && strlen(pStruct->pDescription) > 0) {
+                fs_file_writef(pFile, "%s\n\n", pStruct->pDescription);
+            }
+            
+            if (pStruct->isOpaque) {
+                fs_file_writef(pFile, "*Opaque.*\n\n");
+            } else {
+                /* Code block representation */
+                if (pStruct->pFirstMember != NULL) {
+                    /* First pass: find the maximum type length for alignment */
+                    size_t maxTypeLen = 0;
+                    fsdoc_struct_member* pMember;
+                    for (pMember = pStruct->pFirstMember; pMember != NULL; pMember = pMember->pNext) {
+                        /* For nested structs, calculate display length differently */
+                        size_t typeLen;
+                        if (strstr(pMember->type, "struct {") != NULL) {
+                            /* For nested structs, use a fixed display length since they span multiple lines */
+                            typeLen = strlen("struct { ... }");
+                        } else {
+                            typeLen = strlen(pMember->type);
+                        }
+                        if (typeLen > maxTypeLen) {
+                            maxTypeLen = typeLen;
+                        }
+                    }
+                    
+                    /* Generate the struct code block */
+                    fs_file_writef(pFile, "```c\n");
+                    fs_file_writef(pFile, "struct %s\n", pStruct->name);
+                    fs_file_writef(pFile, "{\n");
+                    
+                    for (pMember = pStruct->pFirstMember; pMember != NULL; pMember = pMember->pNext) {
+                        /* Handle nested structs specially */
+                        if (strstr(pMember->type, "struct {") != NULL) {
+                            /* For nested structs, format them with opening brace on separate line */
+                            /* Make a copy since strtok modifies the string */
+                            char nestedTypeCopy[1024];
+                            strcpy(nestedTypeCopy, pMember->type);
+                            
+                            char* line = strtok(nestedTypeCopy, "\n");
+                            int isFirstLine = 1;
+                            
+                            while (line != NULL) {
+                                if (isFirstLine) {
+                                    /* First line: "struct {" - split into "struct" and "{" */
+                                    fs_file_writef(pFile, "    struct\n");
+                                    fs_file_writef(pFile, "    {\n");
+                                    isFirstLine = 0;
+                                } else if (strstr(line, "}") != NULL) {
+                                    /* Last line: "    }" - add member name with just one space */
+                                    fs_file_writef(pFile, "    } %s;\n", pMember->name);
+                                } else {
+                                    /* Middle lines: member definitions - reduce indentation from 8 to 4 spaces */
+                                    /* Remove the extra 4 spaces of indentation */
+                                    char* trimmedLine = line;
+                                    if (strncmp(line, "        ", 8) == 0) {
+                                        trimmedLine = line + 4; /* Remove 4 extra spaces, keep 4 */
+                                    }
+                                    fs_file_writef(pFile, "    %s\n", trimmedLine);
+                                }
+                                line = strtok(NULL, "\n");
+                            }
+                        } else {
+                            /* Regular member */
+                            /* Calculate padding needed for alignment */
+                            size_t typeLen = strlen(pMember->type);
+                            size_t padding = maxTypeLen - typeLen;
+                            
+                            fs_file_writef(pFile, "    %s", pMember->type);
+                            
+                            /* Add padding spaces */
+                            for (size_t i = 0; i < padding; i++) {
+                                fs_file_writef(pFile, " ");
+                            }
+                            
+                            fs_file_writef(pFile, " %s;\n", pMember->name);
+                        }
+                    }
+                    
+                    fs_file_writef(pFile, "};\n");
+                    fs_file_writef(pFile, "```\n\n");
+                }
             }
             
             fs_file_writef(pFile, "---\n\n");
@@ -2641,4 +3617,170 @@ static void fsdoc_free_enum(fsdoc_enum* pEnum)
 
     fsdoc_free_enum_values(pEnum->pFirstValue);
     fs_free(pEnum, NULL);
+}
+
+static void fsdoc_free_struct_members(fsdoc_struct_member* pMember)
+{
+    fsdoc_struct_member* pCurrent;
+    fsdoc_struct_member* pNext;
+
+    pCurrent = pMember;
+    while (pCurrent != NULL) {
+        pNext = pCurrent->pNext;
+        
+        if (pCurrent->pDescription != NULL) {
+            fs_free(pCurrent->pDescription, NULL);
+        }
+        
+        fs_free(pCurrent, NULL);
+        pCurrent = pNext;
+    }
+}
+
+static void fsdoc_free_struct(fsdoc_struct* pStruct)
+{
+    if (pStruct == NULL) {
+        return;
+    }
+
+    if (pStruct->pDescription != NULL) {
+        fs_free(pStruct->pDescription, NULL);
+    }
+
+    fsdoc_free_struct_members(pStruct->pFirstMember);
+    fs_free(pStruct, NULL);
+}
+
+static void fsdoc_free_full_struct_names(fsdoc_full_struct_name* pName)
+{
+    while (pName != NULL) {
+        fsdoc_full_struct_name* pNext = pName->pNext;
+        fs_free(pName, NULL);
+        pName = pNext;
+    }
+}
+
+static int fsdoc_scan_for_full_struct_definitions(fsdoc_context* pContext)
+{
+    char* pCurrent;
+    
+    if (pContext == NULL || pContext->pFileContent == NULL) {
+        return 1;
+    }
+    
+    pCurrent = pContext->pFileContent;
+    
+    while (*pCurrent != '\0') {
+        char* pStructLine = strstr(pCurrent, "typedef struct");
+        char* pPlainStructLine = strstr(pCurrent, "struct ");
+        
+        /* Find the earliest one */
+        char* pEarliest = NULL;
+        int isTypedef = 0;
+        
+        if (pStructLine != NULL && pPlainStructLine != NULL) {
+            if (pStructLine < pPlainStructLine) {
+                pEarliest = pStructLine;
+                isTypedef = 1;
+            } else {
+                pEarliest = pPlainStructLine;
+                isTypedef = 0;
+            }
+        } else if (pStructLine != NULL) {
+            pEarliest = pStructLine;
+            isTypedef = 1;
+        } else if (pPlainStructLine != NULL) {
+            pEarliest = pPlainStructLine;
+            isTypedef = 0;
+        } else {
+            break;
+        }
+        
+        /* Check if this has a full definition (contains braces) */
+        char* pSemicolon = strchr(pEarliest, ';');
+        char* pOpenBrace = strchr(pEarliest, '{');
+        
+        if (pOpenBrace != NULL && (pSemicolon == NULL || pOpenBrace < pSemicolon)) {
+            /* This is a full definition - extract the struct name */
+            char* pNameStart;
+            char* pNameEnd;
+            
+            if (isTypedef) {
+                /* For typedef struct { ... } name; find name after closing brace */
+                char* pCloseBrace = pOpenBrace;
+                int braceCount = 0;
+                
+                while (*pCloseBrace != '\0') {
+                    if (*pCloseBrace == '{') {
+                        braceCount++;
+                    } else if (*pCloseBrace == '}') {
+                        braceCount--;
+                        if (braceCount == 0) {
+                            break;
+                        }
+                    }
+                    pCloseBrace++;
+                }
+                
+                if (*pCloseBrace == '}') {
+                    /* Find the struct name after the closing brace */
+                    pNameStart = pCloseBrace + 1;
+                    while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+                        pNameStart++;
+                    }
+                    
+                    pNameEnd = pNameStart;
+                    while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != ';') {
+                        pNameEnd++;
+                    }
+                }
+            } else {
+                /* For struct name { ... }; find name before opening brace */
+                pNameStart = pEarliest + 7; /* strlen("struct ") */
+                while (*pNameStart != '\0' && FSDOC_IS_SPACE(*pNameStart)) {
+                    pNameStart++;
+                }
+                
+                pNameEnd = pNameStart;
+                while (*pNameEnd != '\0' && !FSDOC_IS_SPACE(*pNameEnd) && *pNameEnd != '{') {
+                    pNameEnd++;
+                }
+            }
+            
+            /* Add this struct name to our list */
+            if (pNameEnd > pNameStart) {
+                size_t nameLen = pNameEnd - pNameStart;
+                if (nameLen < 256) {
+                    fsdoc_full_struct_name* pNewName = fs_malloc(sizeof(fsdoc_full_struct_name), NULL);
+                    if (pNewName != NULL) {
+                        strncpy(pNewName->name, pNameStart, nameLen);
+                        pNewName->name[nameLen] = '\0';
+                        pNewName->pNext = pContext->pFirstFullStructName;
+                        pContext->pFirstFullStructName = pNewName;
+                    }
+                }
+            }
+        }
+        
+        pCurrent = pEarliest + (isTypedef ? 14 : 7); /* Move past the keyword */
+    }
+    
+    return 0;
+}
+
+static int fsdoc_is_struct_fully_defined(fsdoc_context* pContext, const char* pStructName)
+{
+    fsdoc_full_struct_name* pCurrent;
+    
+    if (pContext == NULL || pStructName == NULL) {
+        return 0;
+    }
+    
+    for (pCurrent = pContext->pFirstFullStructName; pCurrent != NULL; pCurrent = pCurrent->pNext) {
+        if (strcmp(pCurrent->name, pStructName) == 0) {
+            return 1;
+        }
+    }
+    
+    return 0;
 }
