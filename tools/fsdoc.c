@@ -1427,12 +1427,27 @@ static int fsdoc_parse_enum_declaration(const char* pDeclaration, fsdoc_enum* pE
                         /* Split name and value */
                         *pEquals = '\0';
                         fsdoc_trim_whitespace(line);
-                        fsdoc_trim_whitespace(pEquals + 1);
+                        
+                        char* valueStr = pEquals + 1;
+                        fsdoc_trim_whitespace(valueStr);
+                        
+                        /* Remove comments from value */
+                        char* commentStart = strstr(valueStr, "/*");
+                        if (commentStart != NULL) {
+                            *commentStart = '\0';
+                            fsdoc_trim_whitespace(valueStr);
+                        }
+                        
+                        /* Remove trailing comma from value */
+                        if (strlen(valueStr) > 0 && valueStr[strlen(valueStr) - 1] == ',') {
+                            valueStr[strlen(valueStr) - 1] = '\0';
+                            fsdoc_trim_whitespace(valueStr);
+                        }
                         
                         strncpy(pValue->name, line, sizeof(pValue->name) - 1);
                         pValue->name[sizeof(pValue->name) - 1] = '\0';
                         
-                        strncpy(pValue->value, pEquals + 1, sizeof(pValue->value) - 1);
+                        strncpy(pValue->value, valueStr, sizeof(pValue->value) - 1);
                         pValue->value[sizeof(pValue->value) - 1] = '\0';
                     } else {
                         /* Just the name */
@@ -1881,15 +1896,38 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                 fs_file_writef(pFile, "%s\n\n", pEnum->pDescription);
             }
             
-            /* Values list */
+            /* Values table */
             if (pEnum->pFirstValue != NULL) {
+                /* First, check if any values have explicit assignments */
+                int hasExplicitValues = 0;
                 fsdoc_enum_value* pValue;
                 for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
-                    fs_file_writef(pFile, "- `%s`", pValue->name);
                     if (strlen(pValue->value) > 0) {
-                        fs_file_writef(pFile, " = `%s`", pValue->value);
+                        hasExplicitValues = 1;
+                        break;
                     }
-                    fs_file_writef(pFile, "\n");
+                }
+                
+                if (hasExplicitValues) {
+                    /* Two-column table: Name and Value */
+                    fs_file_writef(pFile, "| Name | Value |\n");
+                    fs_file_writef(pFile, "|------|-------|\n");
+                    
+                    for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+                        fs_file_writef(pFile, "| `%s` | ", pValue->name);
+                        if (strlen(pValue->value) > 0) {
+                            fs_file_writef(pFile, "`%s`", pValue->value);
+                        }
+                        fs_file_writef(pFile, " |\n");
+                    }
+                } else {
+                    /* Single-column table: Name only */
+                    fs_file_writef(pFile, "| Name |\n");
+                    fs_file_writef(pFile, "|------|\n");
+                    
+                    for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
+                        fs_file_writef(pFile, "| `%s` |\n", pValue->name);
+                    }
                 }
                 
                 fs_file_writef(pFile, "\n");
