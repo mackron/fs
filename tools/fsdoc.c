@@ -1881,24 +1881,15 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
                 fs_file_writef(pFile, "%s\n\n", pEnum->pDescription);
             }
             
-            /* Values table */
+            /* Values list */
             if (pEnum->pFirstValue != NULL) {
-                fs_file_writef(pFile, "| Value | Description |\n");
-                fs_file_writef(pFile, "|-------|-------------|\n");
-                
                 fsdoc_enum_value* pValue;
                 for (pValue = pEnum->pFirstValue; pValue != NULL; pValue = pValue->pNext) {
-                    fs_file_writef(pFile, "| `%s`", pValue->name);
+                    fs_file_writef(pFile, "- `%s`", pValue->name);
                     if (strlen(pValue->value) > 0) {
                         fs_file_writef(pFile, " = `%s`", pValue->value);
                     }
-                    fs_file_writef(pFile, " | ");
-                    
-                    if (pValue->pDescription != NULL && strlen(pValue->pDescription) > 0) {
-                        fs_file_writef(pFile, "%s", pValue->pDescription);
-                    }
-                    
-                    fs_file_writef(pFile, " |\n");
+                    fs_file_writef(pFile, "\n");
                 }
                 
                 fs_file_writef(pFile, "\n");
