@@ -1883,13 +1883,11 @@ static int fsdoc_output_markdown(fsdoc_context* pContext, const char* pOutputPat
         fs_file_writef(pFile, "---\n\n");
     }
 
-    /* Output enums section */
+    /* Output enums */
     if (pContext->pFirstEnum != NULL) {
-        fs_file_writef(pFile, "# Enums\n\n");
-        
         fsdoc_enum* pEnum;
         for (pEnum = pContext->pFirstEnum; pEnum != NULL; pEnum = pEnum->pNext) {
-            fs_file_writef(pFile, "## %s\n\n", pEnum->name);
+            fs_file_writef(pFile, "# enum %s\n\n", pEnum->name);
             
             /* Description */
             if (pEnum->pDescription != NULL && strlen(pEnum->pDescription) > 0) {

@@ -2814,9 +2814,7 @@ int fs_snprintf(
 
 ---
 
-# Enums
-
-## fs_result
+# enum fs_result
 
 | Name | Value |
 |------|-------|
@@ -2881,7 +2879,7 @@ int fs_snprintf(
 
 ---
 
-## fs_seek_origin
+# enum fs_seek_origin
 
 | Name | Value |
 |------|-------|
@@ -2891,7 +2889,7 @@ int fs_snprintf(
 
 ---
 
-## fs_format
+# enum fs_format
 
 | Name |
 |------|
@@ -2900,7 +2898,7 @@ int fs_snprintf(
 
 ---
 
-## fs_sysdir_type
+# enum fs_sysdir_type
 
 | Name |
 |------|
