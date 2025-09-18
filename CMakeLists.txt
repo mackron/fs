@@ -79,6 +79,12 @@ add_library(fssub STATIC
 )
 target_compile_options(fssub PRIVATE ${COMPILE_OPTIONS})
 
+add_library(fsmem STATIC
+    extras/backends/mem/fs_mem.c
+    extras/backends/mem/fs_mem.h
+)
+target_compile_options(fsmem PRIVATE ${COMPILE_OPTIONS})
+
 
 # Tests
 if(FS_BUILD_TESTS)
@@ -90,6 +96,7 @@ if(FS_BUILD_TESTS)
         fszip
         fspak
         fssub
+        fsmem
     )
     target_compile_options(fs_test PRIVATE ${COMPILE_OPTIONS})
     add_test(NAME fs_test COMMAND fs_test)

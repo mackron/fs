@@ -1,6 +1,7 @@
 #include "../fs.c"
 #include "../extras/backends/zip/fs_zip.h"
 #include "../extras/backends/pak/fs_pak.h"
+#include "../extras/backends/mem/fs_mem.h"
 
 #include "files/test1.zip.c"
 #include "files/test2.zip.c"
@@ -327,7 +328,7 @@ static int fs_test_reconstruct_path_forward(const fs_path_iterator* pIterator, s
 
     pPath[0] = '\0';
 
-    for (i = 0; i < iteratorCount; i++) {
+    for (i = 0; i < iteratorCount; i += 1) {
         fs_strncpy(pPath + len, pIterator[i].pFullPath + pIterator[i].segmentOffset, pIterator[i].segmentLength);
         len += pIterator[i].segmentLength;
 
@@ -2840,6 +2841,1068 @@ int fs_test_archives_uninit(fs_test* pTest)
 }
 /* END archive_uninit */
 
+/* BEG mem_init */
+int fs_test_mem_init(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_config fsConfig;
+    fs* pFS;
+    fs_file_info info;
+
+    /* Initialize fs_mem backend. */
+    fsConfig = fs_config_init(FS_MEM, NULL, NULL);
+
+    result = fs_init(&fsConfig, &pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize fs_mem file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    pTestState->pFS = pFS;
+
+    /* Verify root directory exists and is accessible. */
+    result = fs_info(pFS, "/", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || !info.directory) {
+        printf("%s: Root directory is not accessible.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_init */
+
+/* BEG mem_mkdir */
+int fs_test_mem_mkdir(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file_info info;
+
+    /* Create nested directory structure. */
+    result = fs_mkdir(pFS, "/testdir", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /testdir.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pFS, "/testdir/subdir1", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /testdir/subdir1.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pFS, "/testdir/subdir2", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /testdir/subdir2.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_mkdir(pFS, "/testdir/subdir1/nested", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /testdir/subdir1/nested.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Verify directories exist and have correct properties. */
+    result = fs_info(pFS, "/testdir", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || !info.directory) {
+        printf("%s: /testdir does not exist or is not a directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pFS, "/testdir/subdir1/nested", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || !info.directory) {
+        printf("%s: Nested directory does not exist or is not a directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test duplicate directory creation fails. */
+    result = fs_mkdir(pFS, "/testdir", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result == FS_SUCCESS) {
+        printf("%s: Duplicate directory creation should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to mkdir with file as parent (requires a file to exist first). */
+    /* Create a temporary file for this test. */
+    {
+        fs_file* pFile;
+        result = fs_file_open(pFS, "/testdir/temp_file_for_mkdir_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+        if (result == FS_SUCCESS) {
+            fs_file_close(pFile);
+            
+            /* Now try to mkdir with this file as parent. */
+            result = fs_mkdir(pFS, "/testdir/temp_file_for_mkdir_test.txt/subdir", FS_WRITE | FS_IGNORE_MOUNTS);
+            if (result == FS_SUCCESS) {
+                printf("%s: Creating directory with file as parent should have failed.\n", pTest->name);
+                return FS_ERROR;
+            }
+            
+            /* Clean up the temp file. */
+            fs_remove(pFS, "/testdir/temp_file_for_mkdir_test.txt", FS_WRITE | FS_IGNORE_MOUNTS);
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_mkdir */
+
+/* BEG mem_write */
+int fs_test_mem_write(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+
+    /* This is just a container test - actual write tests are in sub-tests. */
+    (void)pTestState;
+    return FS_SUCCESS;
+}
+/* END mem_write */
+
+/* BEG mem_write_new */
+int fs_test_mem_write_new(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    const char* testContent = "Hello, Memory File System!";
+    fs_file_info info;
+
+    result = fs_test_open_and_write_file(pTest, pFS, "/testdir/test_new.txt", FS_WRITE | FS_IGNORE_MOUNTS, testContent, strlen(testContent));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Verify file exists and has correct size. */
+    result = fs_info(pFS, "/testdir/test_new.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS) {
+        printf("%s: Created file does not exist.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (info.directory || (unsigned int)info.size != strlen(testContent)) {
+        printf("%s: Created file has incorrect properties (directory=%d, size=%u, expected=%u).\n", pTest->name, info.directory, (unsigned int)info.size, (unsigned int)strlen(testContent));
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to create file in non-existent directory - should fail. */
+    {
+        fs_file* pFile;
+        result = fs_file_open(pFS, "/completely_nonexistent_dir/file.txt", FS_WRITE | FS_IGNORE_MOUNTS | FS_NO_CREATE_DIRS, &pFile);
+        if (result == FS_SUCCESS) {
+            fs_file_close(pFile);
+            printf("%s: Creating file in non-existent directory should have failed (result=%d).\n", pTest->name, result);
+            return FS_ERROR;
+        }
+
+        /* Verify the expected error is FS_DOES_NOT_EXIST. */
+        if (result != FS_DOES_NOT_EXIST) {
+            printf("%s: Expected FS_DOES_NOT_EXIST (%d) but got %d when creating file in non-existent directory.\n", pTest->name, FS_DOES_NOT_EXIST, result);
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_new */
+
+/* BEG mem_write_overwrite */
+int fs_test_mem_write_overwrite(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    const char* originalContent = "Hello, Memory File System!";
+    const char* newContent = "Overwritten content!";
+    fs_file_info info;
+
+    /* First write the original content to ensure we have a baseline. */
+    result = fs_test_open_and_write_file(pTest, pFS, "/testdir/overwrite_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, originalContent, strlen(originalContent));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Overwrite the file with new content. */
+    result = fs_test_open_and_write_file(pTest, pFS, "/testdir/overwrite_test.txt", FS_WRITE | FS_TRUNCATE | FS_IGNORE_MOUNTS, newContent, strlen(newContent));
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Verify file has new size. */
+    result = fs_info(pFS, "/testdir/overwrite_test.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || (unsigned int)info.size != strlen(newContent)) {
+        printf("%s: Overwritten file has incorrect size (got=%u, expected=%u).\n", pTest->name, (unsigned int)info.size, (unsigned int)strlen(newContent));
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_overwrite */
+
+/* BEG mem_write_append */
+int fs_test_mem_write_append(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    const char* appendContent = " Appended!";
+    size_t originalSize;
+    fs_file_info info;
+    size_t bytesWritten;
+
+    /* Get current file size. */
+    result = fs_info(pFS, "/testdir/test_new.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS) {
+        printf("%s: Cannot get file info for append test.\n", pTest->name);
+        return FS_ERROR;
+    }
+    originalSize = (size_t)info.size;
+
+    /* Open file in append mode. */
+    result = fs_file_open(pFS, "/testdir/test_new.txt", FS_WRITE | FS_APPEND | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file in append mode.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Write additional content. */
+    result = fs_file_write(pFile, appendContent, strlen(appendContent), &bytesWritten);
+    if (result != FS_SUCCESS || bytesWritten != strlen(appendContent)) {
+        printf("%s: Failed to write in append mode.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Verify total size. */
+    result = fs_info(pFS, "/testdir/test_new.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || (unsigned int)info.size != originalSize + strlen(appendContent)) {
+        printf("%s: Appended file has incorrect size (got=%u, expected=%u).\n", pTest->name, (unsigned int)info.size, (unsigned int)(originalSize + strlen(appendContent)));
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_append */
+
+/* BEG mem_write_exclusive */
+int fs_test_mem_write_exclusive(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    const char* content = "Exclusive content";
+    size_t bytesWritten;
+
+    /* Try to create exclusive file that already exists - should fail. */
+    result = fs_file_open(pFS, "/testdir/test_new.txt", FS_WRITE | FS_EXCLUSIVE | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) {
+        fs_file_close(pFile);
+        printf("%s: Exclusive open of existing file should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Create new file with exclusive flag - should succeed. */
+    result = fs_file_open(pFS, "/testdir/exclusive_test.txt", FS_WRITE | FS_EXCLUSIVE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Exclusive creation of new file failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+    result = fs_file_write(pFile, content, strlen(content), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write to exclusive file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END mem_write_exclusive */
+
+/* BEG mem_write_truncate */
+int fs_test_mem_write_truncate(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    fs_int64 cursor;
+    const char* newContent = "Truncated and rewritten";
+    size_t bytesWritten;
+    fs_file_info info;
+
+    /* Open existing file with truncate flag. */
+    result = fs_file_open(pFS, "/testdir/test_new.txt", FS_WRITE | FS_TRUNCATE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file with truncate flag.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* File should be empty now. */
+    result = fs_file_tell(pFile, &cursor);
+    if (result != FS_SUCCESS || cursor != 0) {
+        printf("%s: File cursor should be at 0 after truncate.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Write new content. */
+    result = fs_file_write(pFile, newContent, strlen(newContent), &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write after truncate.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Verify final size. */
+    result = fs_info(pFS, "/testdir/test_new.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || info.size != strlen(newContent)) {
+        printf("%s: Truncated file has incorrect size.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_truncate */
+
+/* BEG mem_write_seek */
+int fs_test_mem_write_seek(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    size_t bytesWritten;
+
+    /* Create a file for seek testing. */
+    result = fs_test_open_and_write_file(pTest, pFS, "/testdir/seek_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, "0123456789", 10);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Open for read/write and test seeking. */
+    result = fs_file_open(pFS, "/testdir/seek_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for seek test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Seek to position 5 and write. */
+    result = fs_file_seek(pFile, 5, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek to position 5.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, "ABC", 3, &bytesWritten);
+    if (result != FS_SUCCESS || bytesWritten != 3) {
+        printf("%s: Failed to write at seek position.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Verify the result by reading back. */
+    result = fs_test_open_and_read_file(pTest, pFS, "/testdir/seek_test.txt", FS_READ | FS_IGNORE_MOUNTS, "01234ABC89", 10);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test invalid seek (negative position). */
+    result = fs_file_open(pFS, "/testdir/seek_test.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for seek test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, -10, FS_SEEK_SET);
+    if (result == FS_SUCCESS) {
+        printf("%s: Seeking to negative position should have failed.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Test edge case: Seek beyond file end and write (sparse file behavior). */
+    result = fs_file_open(pFS, "/testdir/sparse_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create file for sparse test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Seek to position 100 (beyond end of empty file). */
+    result = fs_file_seek(pFile, 100, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek beyond file end.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Write at position 100 - should create a sparse-like effect. */
+    result = fs_file_write(pFile, "test", 4, &bytesWritten);
+    if (result != FS_SUCCESS || bytesWritten != 4) {
+        printf("%s: Failed to write at seek position 100.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+    fs_file_close(pFile);
+
+    /* Verify file size is now 104. */
+    {
+        fs_file_info info;
+        result = fs_info(pFS, "/testdir/sparse_test.txt", FS_IGNORE_MOUNTS, &info);
+        if (result != FS_SUCCESS || info.size != 104) {
+            printf("%s: File size should be 104 after sparse write, got %u.\n", pTest->name, (unsigned int)info.size);
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_seek */
+
+/* BEG mem_write_truncate2 */
+int fs_test_mem_write_truncate2(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    fs_file_info info;
+
+    /* Open the seek test file and truncate it using fs_file_truncate(). */
+    result = fs_file_open(pFS, "/testdir/seek_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for truncate test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Seek to position 5 and truncate there. */
+    result = fs_file_seek(pFile, 5, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek for truncate test.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_truncate(pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to truncate file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    /* Verify truncated size. */
+    result = fs_info(pFS, "/testdir/seek_test.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || info.size != 5) {
+        printf("%s: Truncated file has incorrect size (got=%u, expected=5).\n", pTest->name, (unsigned int)info.size);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_write_truncate2 */
+
+/* BEG mem_write_flush */
+int fs_test_mem_write_flush(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    size_t bytesWritten;
+
+    /* For memory backend, flush is essentially a no-op, but we should test it doesn't fail. */
+    result = fs_file_open(pFS, "/testdir/flush_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for flush test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_write(pFile, "test", 4, &bytesWritten);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write for flush test.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    result = fs_file_flush(pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to flush file.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END mem_write_flush */
+
+/* BEG mem_read */
+int fs_test_mem_read(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+
+    /* Read back the truncated content from the seek test. */
+    result = fs_test_open_and_read_file(pTest, pFS, "/testdir/seek_test.txt", FS_READ | FS_IGNORE_MOUNTS, "01234", 5);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test reading the overwrite test file. */
+    result = fs_test_open_and_read_file(pTest, pFS, "/testdir/overwrite_test.txt", FS_READ | FS_IGNORE_MOUNTS, "Overwritten content!", 20);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test reading the exclusive test file. */
+    result = fs_test_open_and_read_file(pTest, pFS, "/testdir/exclusive_test.txt", FS_READ | FS_IGNORE_MOUNTS, "Exclusive content", 17);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to open directory as file - should fail. */
+    {
+        fs_file* pFile;
+        result = fs_file_open(pFS, "/testdir", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+        if (result == FS_SUCCESS) {
+            fs_file_close(pFile);
+            printf("%s: Opening directory as file should have failed.\n", pTest->name);
+            return FS_ERROR;
+        }
+    }
+
+    /* Test edge case: Zero-byte file operations. */
+    {
+        fs_file* pFile;
+        fs_file_info info;
+        char buffer[10];
+        size_t bytesRead;
+        
+        /* Create empty file. */
+        result = fs_file_open(pFS, "/testdir/empty.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to create empty file.\n", pTest->name);
+            return FS_ERROR;
+        }
+        fs_file_close(pFile);
+
+        /* Verify empty file has size 0. */
+        result = fs_info(pFS, "/testdir/empty.txt", FS_IGNORE_MOUNTS, &info);
+        if (result != FS_SUCCESS || info.size != 0) {
+            printf("%s: Empty file should have size 0, got %u.\n", pTest->name, (unsigned int)info.size);
+            return FS_ERROR;
+        }
+
+        /* Read from empty file. */
+        result = fs_file_open(pFS, "/testdir/empty.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to open empty file for reading.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+        result = fs_file_read(pFile, buffer, sizeof(buffer), &bytesRead);
+        if (result != FS_AT_END || bytesRead != 0) {
+            printf("%s: Reading from empty file should return FS_AT_END with 0 bytes.\n", pTest->name);
+            fs_file_close(pFile);
+            return FS_ERROR;
+        }
+        fs_file_close(pFile);
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_read */
+
+/* BEG mem_read_readonly */
+int fs_test_mem_read_readonly(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    size_t bytesWritten;
+
+    /* Open file in read-only mode. */
+    result = fs_file_open(pFS, "/testdir/test_new.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file in read-only mode.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Try to write - should fail. */
+    result = fs_file_write(pFile, "test", 4, &bytesWritten);
+    if (result == FS_SUCCESS) {
+        printf("%s: Writing to read-only file should have failed.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    return FS_SUCCESS;
+}
+/* END mem_read_readonly */
+
+/* BEG mem_read_noexist */
+int fs_test_mem_read_noexist(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+
+    /* Try to open non-existent file. */
+    result = fs_file_open(pFS, "/testdir/nonexistent.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) {
+        fs_file_close(pFile);
+        printf("%s: Opening non-existent file should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Check that the error is the expected one. */
+    if (result != FS_DOES_NOT_EXIST) {
+        printf("%s: Expected FS_DOES_NOT_EXIST but got %d.\n", pTest->name, result);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_read_noexist */
+
+/* BEG mem_duplicate */
+int fs_test_mem_duplicate(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file* pFile;
+    fs_file* pDuplicate;
+    char buffer1[32], buffer2[32];
+    size_t bytesRead1, bytesRead2;
+
+    /* Open a file. */
+    result = fs_file_open(pFS, "/testdir/test_new.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open file for duplication test.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Duplicate the file handle. */
+    result = fs_file_duplicate(pFile, &pDuplicate);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate file handle.\n", pTest->name);
+        fs_file_close(pFile);
+        return FS_ERROR;
+    }
+
+    /* Read from both handles. */
+    
+    result = fs_file_read(pFile, buffer1, sizeof(buffer1), &bytesRead1);
+    if (result != FS_SUCCESS && result != FS_AT_END) {
+        printf("%s: Failed to read from original file handle.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_file_close(pDuplicate);
+        return FS_ERROR;
+    }
+
+    /* Reset cursor on duplicate and read. */
+    result = fs_file_seek(pDuplicate, 0, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to seek duplicate handle.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_file_close(pDuplicate);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pDuplicate, buffer2, sizeof(buffer2), &bytesRead2);
+    if (result != FS_SUCCESS && result != FS_AT_END) {
+        printf("%s: Failed to read from duplicate file handle.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_file_close(pDuplicate);
+        return FS_ERROR;
+    }
+
+    /* Compare the reads. */
+    if (bytesRead1 != bytesRead2 || memcmp(buffer1, buffer2, bytesRead1) != 0) {
+        printf("%s: Original and duplicate file handles returned different content.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_file_close(pDuplicate);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+    fs_file_close(pDuplicate);
+
+    /* Test edge case: Multiple file handles to same file. */
+    {
+        fs_file* pFile1;
+        fs_file* pFile2;
+        char readBuffer[10];
+        size_t bytesRead;
+        size_t bytesWritten;
+        
+        result = fs_file_open(pFS, "/testdir/multihandle.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile1);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to open file for multi-handle test.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+        result = fs_file_open(pFS, "/testdir/multihandle.txt", FS_READ | FS_IGNORE_MOUNTS, &pFile2);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to open second handle to same file.\n", pTest->name);
+            fs_file_close(pFile1);
+            return FS_ERROR;
+        }
+
+        /* Write with first handle. */
+        result = fs_file_write(pFile1, "handle1", 7, &bytesWritten);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to write with first handle.\n", pTest->name);
+            fs_file_close(pFile1);
+            fs_file_close(pFile2);
+            return FS_ERROR;
+        }
+
+        /* Read with second handle should see the data. */
+        result = fs_file_read(pFile2, readBuffer, 7, &bytesRead);
+        if (result != FS_SUCCESS || bytesRead != 7 || memcmp(readBuffer, "handle1", 7) != 0) {
+            printf("%s: Second handle should see data written by first handle.\n", pTest->name);
+            fs_file_close(pFile1);
+            fs_file_close(pFile2);
+            return FS_ERROR;
+        }
+
+        fs_file_close(pFile1);
+        fs_file_close(pFile2);
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_duplicate */
+
+/* BEG mem_iteration */
+int fs_test_mem_iteration(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_iterator* pIterator;
+    int fileCount = 0;
+    int dirCount = 0;
+    int expectedFiles = 0;
+    fs_file_info info;
+    char fullPath[512];
+    const char* expectedFileNames[] = {
+        "/testdir/test_new.txt",
+        "/testdir/overwrite_test.txt", 
+        "/testdir/exclusive_test.txt",
+        "/testdir/seek_test.txt",
+        "/testdir/flush_test.txt"
+    };
+    int i;
+    
+    /* Count expected files by checking what exists */
+    for (i = 0; i < 5; i += 1) {
+        result = fs_info(pFS, expectedFileNames[i], FS_IGNORE_MOUNTS, &info);
+        if (result == FS_SUCCESS && !info.directory) {
+            expectedFiles += 1;
+        }
+    }
+
+    /* Iterate through /testdir. */
+    pIterator = fs_first(pFS, "/testdir", FS_IGNORE_MOUNTS);
+    if (pIterator == NULL) {
+        printf("%s: Failed to start directory iteration.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    while (pIterator != NULL) {
+        if (pIterator->info.directory) {
+            dirCount += 1;
+        } else {
+            fileCount += 1;
+        }
+        
+        /* Verify we can get info for each item. */
+        fs_snprintf(fullPath, sizeof(fullPath), "/testdir/%s", pIterator->pName);
+        
+        result = fs_info(pFS, fullPath, FS_IGNORE_MOUNTS, &info);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to get info for iterated item %s.\n", pTest->name, pIterator->pName);
+            return FS_ERROR;
+        }
+
+        if (info.directory != pIterator->info.directory) {
+            printf("%s: Iterator and info disagree on directory status for %s.\n", pTest->name, pIterator->pName);
+            return FS_ERROR;
+        }
+
+        pIterator = fs_next(pIterator);
+    }
+
+    /* We should have found at least 1 directory and some files. */
+    if (dirCount < 1) {
+        printf("%s: Expected at least 1 directory, found %d.\n", pTest->name, dirCount);
+        return FS_ERROR;
+    }
+
+    if (fileCount < expectedFiles) {
+        printf("%s: Expected at least %d files, found %d.\n", pTest->name, expectedFiles, fileCount);
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to iterate a file as directory. */
+    /* Create a temporary file for this test. */
+    {
+        fs_file* pFile;
+        result = fs_file_open(pFS, "/testdir/temp_file_for_iteration_test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+        if (result == FS_SUCCESS) {
+            fs_file_close(pFile);
+            
+            /* Now try to iterate this file as a directory. */
+            pIterator = fs_first(pFS, "/testdir/temp_file_for_iteration_test.txt", FS_IGNORE_MOUNTS);
+            if (pIterator != NULL) {
+                printf("%s: Iterating a file as directory should have failed.\n", pTest->name);
+                return FS_ERROR;
+            }
+            
+            /* Clean up the temp file. */
+            fs_remove(pFS, "/testdir/temp_file_for_iteration_test.txt", FS_WRITE | FS_IGNORE_MOUNTS);
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_iteration */
+
+/* BEG mem_rename */
+int fs_test_mem_rename(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file_info info;
+
+    /* Rename a file. */
+    result = fs_rename(pFS, "/testdir/test_new.txt", "/testdir/renamed_file.txt", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to rename file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Verify old name doesn't exist. */
+    result = fs_info(pFS, "/testdir/test_new.txt", FS_IGNORE_MOUNTS, &info);
+    if (result == FS_SUCCESS) {
+        printf("%s: Old file name still exists after rename.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Verify new name exists. */
+    result = fs_info(pFS, "/testdir/renamed_file.txt", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS) {
+        printf("%s: New file name doesn't exist after rename.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Rename a directory. */
+    result = fs_rename(pFS, "/testdir/subdir2", "/testdir/renamed_dir", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to rename directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Verify directory rename worked. */
+    result = fs_info(pFS, "/testdir/renamed_dir", FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || !info.directory) {
+        printf("%s: Renamed directory doesn't exist or is not a directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to rename root directory - should fail. */
+    result = fs_rename(pFS, "/", "/newroot", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result == FS_SUCCESS) {
+        printf("%s: Renaming root directory should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_rename */
+
+/* BEG mem_remove */
+int fs_test_mem_remove(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    fs_file_info info;
+
+    /* Remove a file. */
+    result = fs_remove(pFS, "/testdir/flush_test.txt", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove file.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Verify file is gone. */
+    result = fs_info(pFS, "/testdir/flush_test.txt", FS_IGNORE_MOUNTS, &info);
+    if (result == FS_SUCCESS) {
+        printf("%s: File still exists after removal.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Try to remove non-empty directory - should fail. */
+    result = fs_remove(pFS, "/testdir/subdir1", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result == FS_SUCCESS) {
+        printf("%s: Removing non-empty directory should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Remove nested directory first. */
+    result = fs_remove(pFS, "/testdir/subdir1/nested", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove nested directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Now remove the parent directory. */
+    result = fs_remove(pFS, "/testdir/subdir1", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove empty directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Remove the renamed empty directory. */
+    result = fs_remove(pFS, "/testdir/renamed_dir", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to remove renamed directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* Test error condition: Try to remove root directory - should fail. */
+    result = fs_remove(pFS, "/", FS_WRITE | FS_IGNORE_MOUNTS);
+    if (result == FS_SUCCESS) {
+        printf("%s: Removing root directory should have failed.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_remove */
+
+/* BEG mem_edge_cases */
+int fs_test_mem_edge_cases(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    
+    /* This test function previously contained various edge case tests */
+    /* that have been moved to their more appropriate test functions. */
+    /* Keeping this function for now to maintain test structure. */
+    (void)pTestState;
+    
+    return FS_SUCCESS;
+}
+/* END mem_edge_cases */
+
+/* BEG mem_stress_test */
+int fs_test_mem_stress_test(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+    fs_result result;
+    char filename[64];
+    char content[32];
+    int i;
+
+    /* Create many files in one directory. */
+    for (i = 0; i < 50; i += 1) {
+        fs_snprintf(filename, sizeof(filename), "/testdir/stress_%03d.txt", i);
+        fs_snprintf(content, sizeof(content), "File number %d content", i);
+        
+        result = fs_test_open_and_write_file(pTest, pFS, filename, FS_WRITE | FS_IGNORE_MOUNTS, content, strlen(content));
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to create stress test file %d.\n", pTest->name, i);
+            return FS_ERROR;
+        }
+    }
+
+    /* Verify all files exist and have correct content. */
+    for (i = 0; i < 50; i += 1) {
+        fs_snprintf(filename, sizeof(filename), "/testdir/stress_%03d.txt", i);
+        fs_snprintf(content, sizeof(content), "File number %d content", i);
+        
+        result = fs_test_open_and_read_file(pTest, pFS, filename, FS_READ | FS_IGNORE_MOUNTS, content, strlen(content));
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to verify stress test file %d.\n", pTest->name, i);
+            return FS_ERROR;
+        }
+    }
+
+    /* Create deep directory structure. */
+    {
+        char deepPath[256] = "/testdir";
+        for (i = 0; i < 10; i += 1) {
+            fs_snprintf(deepPath, sizeof(deepPath), "%s/level%d", deepPath, i);
+            
+            result = fs_mkdir(pFS, deepPath, FS_WRITE | FS_IGNORE_MOUNTS);
+            if (result != FS_SUCCESS) {
+                printf("%s: Failed to create deep directory level %d.\n", pTest->name, i);
+                return FS_ERROR;
+            }
+        }
+
+        /* Create a file in the deepest directory. */
+        strncat(deepPath, "/deep_file.txt", sizeof(deepPath) - strlen(deepPath) - 1);
+        result = fs_test_open_and_write_file(pTest, pFS, deepPath, FS_WRITE | FS_IGNORE_MOUNTS, "deep content", 12);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to create file in deep directory.\n", pTest->name);
+            return FS_ERROR;
+        }
+
+        /* Verify the deep file. */
+        result = fs_test_open_and_read_file(pTest, pFS, deepPath, FS_READ | FS_IGNORE_MOUNTS, "deep content", 12);
+        if (result != FS_SUCCESS) {
+            printf("%s: Failed to read file from deep directory.\n", pTest->name);
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_stress_test */
+
+/* BEG mem_uninit */
+int fs_test_mem_uninit(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs* pFS = pTestState->pFS;
+
+    if (pFS != NULL) {
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+    }
+
+    return FS_SUCCESS;
+}
+/* END mem_uninit */
+
 
 int main(int argc, char** argv)
 {
@@ -2892,11 +3955,33 @@ int main(int argc, char** argv)
     fs_test test_archives_iteration_transparent;    /* Tests iteration with archives in transparent mode. */
     fs_test test_archives_recursive;                /* Tests archives inside archives. */
     fs_test test_archives_uninit;                   /* This needs to be the last archive test. */
+    fs_test test_mem;                               /* The top-level test for memory backend. This will set up the fs_mem object in preparation for subsequent tests. */
+    fs_test test_mem_init;                          /* Initializes the memory backend. */
+    fs_test test_mem_mkdir;                         /* Tests creating directories with memory backend. */
+    fs_test test_mem_write;                         /* Tests writing to memory backend. */
+    fs_test test_mem_write_new;                     /* Tests creation of a new file in memory. */
+    fs_test test_mem_write_overwrite;               /* Tests FS_WRITE (overwrite mode) in memory. */
+    fs_test test_mem_write_append;                  /* Tests FS_WRITE | FS_APPEND in memory. */
+    fs_test test_mem_write_exclusive;               /* Tests FS_WRITE | FS_EXCLUSIVE in memory. */
+    fs_test test_mem_write_truncate;                /* Tests FS_WRITE | FS_TRUNCATE in memory. */
+    fs_test test_mem_write_seek;                    /* Tests seeking while writing in memory. */
+    fs_test test_mem_write_truncate2;               /* Tests fs_file_truncate() in memory. */
+    fs_test test_mem_write_flush;                   /* Tests fs_file_flush() in memory. */
+    fs_test test_mem_read;                          /* Tests FS_READ in memory. Also acts as the parent test for other reading related tests. */
+    fs_test test_mem_read_readonly;                 /* Tests that writing to a read-only file fails in memory. */
+    fs_test test_mem_read_noexist;                  /* Tests that reading a non-existent file fails cleanly in memory. */
+    fs_test test_mem_duplicate;                     /* Tests fs_file_duplicate() in memory. */
+    fs_test test_mem_iteration;                     /* Tests directory iteration in memory. */
+    fs_test test_mem_rename;                        /* Tests fs_rename() in memory. Make sure this is done before the remove test. */
+    fs_test test_mem_remove;                        /* Tests fs_remove() in memory. This will delete test files. */
+    fs_test test_mem_stress_test;                   /* Tests stress scenarios like many files and deep directories in memory. */
+    fs_test test_mem_uninit;                        /* Needs to be last since this is where the fs_uninit() function is called for memory backend. */
 
     /* Test states. */
     fs_test_state test_system_state;
     fs_test_state test_mounts_state;
     fs_test_state test_archives_state;
+    fs_test_state test_mem_state;
 
     /* Grab the backend so we can pass it into the test state. */
     pBackend = fs_test_get_backend(argc, argv);
@@ -2906,6 +3991,7 @@ int main(int argc, char** argv)
 
     /* Make sure the test states are initialized before running anything. */
     test_system_state   = fs_test_state_init(pBackend);
+    test_mem_state      = fs_test_state_init(FS_MEM);  /* Memory backend uses its own backend type. */
     test_mounts_state   = fs_test_state_init(pBackend);
     test_archives_state = fs_test_state_init(pBackend);
 
@@ -2977,6 +4063,32 @@ int main(int argc, char** argv)
     fs_test_init(&test_archives_recursive,             "Archives Recursive",             fs_test_archives_recursive,             &test_archives_state, &test_archives);
     fs_test_init(&test_archives_uninit,                "Archives Uninitialization",      fs_test_archives_uninit,                &test_archives_state, &test_archives);
 
+    /*
+    Memory Backend Tests.
+
+    This tests the in-memory file system backend independently from the system backend.
+    */
+    fs_test_init(&test_mem,                            "Memory Backend",                 NULL,                                   &test_mem_state,       &test_root);
+    fs_test_init(&test_mem_init,                       "Memory Initialization",          fs_test_mem_init,                       &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_mkdir,                      "Memory Make Directory",          fs_test_mem_mkdir,                      &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_write,                      "Memory Write",                   fs_test_mem_write,                      &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_write_new,                  "Memory Write New",               fs_test_mem_write_new,                  &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_overwrite,            "Memory Write Overwrite",         fs_test_mem_write_overwrite,            &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_append,               "Memory Write Append",            fs_test_mem_write_append,               &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_exclusive,            "Memory Write Exclusive",         fs_test_mem_write_exclusive,            &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_truncate,             "Memory Write Truncate",          fs_test_mem_write_truncate,             &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_seek,                 "Memory Write Seek",              fs_test_mem_write_seek,                 &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_truncate2,            "Memory fs_file_truncate()",      fs_test_mem_write_truncate2,            &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_write_flush,                "Memory Write Flush",             fs_test_mem_write_flush,                &test_mem_state,       &test_mem_write);
+    fs_test_init(&test_mem_read,                       "Memory Read",                    fs_test_mem_read,                       &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_read_readonly,              "Memory Read Read-Only",          fs_test_mem_read_readonly,              &test_mem_state,       &test_mem_read);
+    fs_test_init(&test_mem_read_noexist,               "Memory Read Non-Existent",       fs_test_mem_read_noexist,               &test_mem_state,       &test_mem_read);
+    fs_test_init(&test_mem_duplicate,                  "Memory Duplicate",               fs_test_mem_duplicate,                  &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_iteration,                  "Memory Iteration",               fs_test_mem_iteration,                  &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_rename,                     "Memory Rename",                  fs_test_mem_rename,                     &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_remove,                     "Memory Remove",                  fs_test_mem_remove,                     &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_stress_test,                "Memory Stress Test",             fs_test_mem_stress_test,                &test_mem_state,       &test_mem);
+    fs_test_init(&test_mem_uninit,                     "Memory Uninitialization",        fs_test_mem_uninit,                     &test_mem_state,       &test_mem);
 
     result = fs_test_run(&test_root);
 
