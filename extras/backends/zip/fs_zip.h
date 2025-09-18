@@ -1,7 +1,8 @@
 /*
 Zip file support.
 
-This only supports STORE and DEFLATE. It does not support DEFLATE64.
+This only supports STORE, DEFLATE and DEFLATE64. DEFLATE64 has only had limited testing so use
+with caution. Feedback welcome if you encounter any issues.
 
 To use this, you'll first need a fs_stream containing a Zip archive file. You can get this
 easily from a fs object.
