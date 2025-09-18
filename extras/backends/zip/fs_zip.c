@@ -779,26 +779,26 @@ common_exit:
 
 
 /* BEG fs_zip.c */
-#ifndef FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES
-#define FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES    32768
+#ifndef FS_ZIP_DEFLATE32_UNCOMPRESSED_CACHE_SIZE_IN_BYTES
+#define FS_ZIP_DEFLATE32_UNCOMPRESSED_CACHE_SIZE_IN_BYTES   32768
 #endif
 
-#ifndef FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES
-#define FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES    65536
+#ifndef FS_ZIP_DEFLATE64_UNCOMPRESSED_CACHE_SIZE_IN_BYTES
+#define FS_ZIP_DEFLATE64_UNCOMPRESSED_CACHE_SIZE_IN_BYTES   65536
 #endif
 
 #ifndef FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES
-#define FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES   4096
+#define FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES               4096
 #endif
 
-#define FS_ZIP_EOCD_SIGNATURE                   0x06054b50
-#define FS_ZIP_EOCD64_SIGNATURE                 0x06064b50
-#define FS_ZIP_EOCD64_LOCATOR_SIGNATURE         0x07064b50
-#define FS_ZIP_CD_FILE_HEADER_SIGNATURE         0x02014b50
+#define FS_ZIP_EOCD_SIGNATURE                               0x06054b50
+#define FS_ZIP_EOCD64_SIGNATURE                             0x06064b50
+#define FS_ZIP_EOCD64_LOCATOR_SIGNATURE                     0x07064b50
+#define FS_ZIP_CD_FILE_HEADER_SIGNATURE                     0x02014b50
 
-#define FS_ZIP_COMPRESSION_METHOD_STORE         0
-#define FS_ZIP_COMPRESSION_METHOD_DEFLATE       8
-#define FS_ZIP_COMPRESSION_METHOD_DEFLATE64     9
+#define FS_ZIP_COMPRESSION_METHOD_STORE                     0
+#define FS_ZIP_COMPRESSION_METHOD_DEFLATE                   8
+#define FS_ZIP_COMPRESSION_METHOD_DEFLATE64                 9
 
 
 typedef struct fs_zip_cd_node fs_zip_cd_node;
@@ -1849,10 +1849,10 @@ typedef struct fs_file_zip
     fs_uint64 absoluteCursorUncompressed;
     fs_uint64 absoluteCursorCompressed;         /* The position of the cursor in the compressed data. */
     fs_zip_deflate_decompressor decompressor;   /* Only used for compressed files. */
-    size_t cacheCap;                            /* The capacity of the cache. Never changes. */
-    size_t cacheSize;                           /* The number of valid bytes in the cache. Can be less than the capacity, but never more. Will be less when holding the tail end fo the file data. */
-    size_t cacheCursor;                         /* The cursor within the cache. The cache size minus the cursor defines how much data remains in the cache. */
-    unsigned char* pCache;                      /* Cache must be at least 64K. Stores uncompressed data. Stored at the end of the struct. */
+    size_t uncompressedCacheCap;                /* The capacity of the uncompressed cache. Never changes. */
+    size_t uncompressedCacheSize;               /* The number of valid bytes in the uncompressed cache. Can be less than the capacity, but never more. Will be less when holding the tail end fo the file data. */
+    size_t uncompressedCacheCursor;             /* The cursor within the uncompressed cache. The uncompressed cache size minus the cursor defines how much data remains in the uncompressed cache. */
+    unsigned char* pUncompressedCache;          /* Uncompressed cache must be at least 64K. Stores uncompressed data. Stored at the end of the struct. */
     size_t compressedCacheCap;                  /* The capacity of the compressed cache. Never changes. */
     size_t compressedCacheSize;                 /* The number of valid bytes in the compressed cache. Can be less than the capacity, but never more. Will be less when holding the tail end fo the file data. */
     size_t compressedCacheCursor;               /* The cursor within the compressed cache. The compressed cache size minus the cursor defines how much data remains in the compressed cache. */
@@ -1863,8 +1863,8 @@ static size_t fs_file_alloc_size_zip(fs* pFS)
 {
     (void)pFS;
 
-    /* Allocate enough space for the largest possible cache (DEFLATE64). */
-    return sizeof(fs_file_zip) + FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES + FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
+    /* Allocate enough space for the largest possible uncompressed cache (DEFLATE64). */
+    return sizeof(fs_file_zip) + FS_ZIP_DEFLATE64_UNCOMPRESSED_CACHE_SIZE_IN_BYTES + FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
 }
 
 static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath, int openMode, fs_file* pFile)
@@ -1907,14 +1907,14 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     /* Make double sure the cursor is at the start. */
     pZipFile->absoluteCursorUncompressed = 0;
     
-    /* Use larger cache for DEFLATE64 to handle extended back-reference distances. We can make use of that memory for STORE as well. */
+    /* Use larger uncompressed cache for DEFLATE64 to handle extended back-reference distances. We can make use of that memory for STORE as well. */
     if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
-        pZipFile->cacheCap = FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES;
+        pZipFile->uncompressedCacheCap = FS_ZIP_DEFLATE32_UNCOMPRESSED_CACHE_SIZE_IN_BYTES;
     } else {
-        pZipFile->cacheCap = FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES;
+        pZipFile->uncompressedCacheCap = FS_ZIP_DEFLATE64_UNCOMPRESSED_CACHE_SIZE_IN_BYTES;
     }
 
-    FS_ZIP_ASSERT(pZipFile->cacheCap > 0);
+    FS_ZIP_ASSERT(pZipFile->uncompressedCacheCap > 0);
 
     /*
     We allocated memory for a compressed cache, even when the file is not compressed. Make use
@@ -1924,29 +1924,32 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     to increase the compressed cache size, reducing the number of read operations needed.
     */
     if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_STORE) {
-        /* STORE. Since we're not using compressed we can make use of the memory we preemptively allocated for the compressed cache. */
-        pZipFile->cacheCap          += FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
-        pZipFile->compressedCacheCap = 0;
+        /*
+        STORE. Since we're not using compression we can make use of the memory we preemptively allocated for the
+        compressed cache for the uncompressed cache instead.
+        */
+        pZipFile->uncompressedCacheCap += FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
+        pZipFile->compressedCacheCap    = 0;
     } else if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
         /*
-        DEFALTE. We allocated a full 64kb buffer for the decompressed cache in case the file ended up being compressed
-        with DEFALTE64. Since we don't need much space for regular DEFLATE, we'll give the extra 32KB to the compressed
+        DEFLATE. We allocated a full 64kb buffer for the uncompressed cache in case the file ended up being compressed
+        with DEFLATE64. Since we don't need much space for regular DEFLATE, we'll give the extra 32KB to the compressed
         cache.
         */
-        pZipFile->compressedCacheCap = FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES + (FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES - FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES);
+        pZipFile->compressedCacheCap = FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES + (FS_ZIP_DEFLATE64_UNCOMPRESSED_CACHE_SIZE_IN_BYTES - FS_ZIP_DEFLATE32_UNCOMPRESSED_CACHE_SIZE_IN_BYTES);
     } else {
         /*
         DEFLATE64. We need the full 64KB cache so we'll have to use the standard size for the compressed cache.
         */
         pZipFile->compressedCacheCap = FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
+        FS_ZIP_ASSERT(pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE64);
     }
 
-    pZipFile->pCache           = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip));
-    pZipFile->pCompressedCache = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip) + pZipFile->cacheCap);
-
     /* 
-    Memory layout: [fs_file_zip struct][cache buffer][compressed cache buffer]
+    Memory layout: [fs_file_zip struct][uncompressed cache][compressed cache]
     */
+    pZipFile->pUncompressedCache = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip));
+    pZipFile->pCompressedCache   = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip) + pZipFile->uncompressedCacheCap);
 
     /*
     We need to move the file offset forward so that it's pointing to the first byte of the actual
@@ -2019,25 +2022,25 @@ static fs_result fs_file_read_zip_store(fs* pFS, fs_file_zip* pZipFile, void* pD
 
     bytesRead = 0;
 
-    /* Read from the cache first. */
+    /* Read from the uncompressed cache first. */
     {
-        size_t bytesRemainingInCache = pZipFile->cacheSize - pZipFile->cacheCursor;
+        size_t bytesRemainingInCache = pZipFile->uncompressedCacheSize - pZipFile->uncompressedCacheCursor;
         size_t bytesToReadFromCache = bytesToRead;
         if (bytesToReadFromCache > bytesRemainingInCache) {
             bytesToReadFromCache = bytesRemainingInCache;
         }
 
-        FS_ZIP_COPY_MEMORY(pDst, pZipFile->pCache + pZipFile->cacheCursor, bytesToReadFromCache);
-        pZipFile->cacheCursor += bytesToReadFromCache;
+        FS_ZIP_COPY_MEMORY(pDst, pZipFile->pUncompressedCache + pZipFile->uncompressedCacheCursor, bytesToReadFromCache);
+        pZipFile->uncompressedCacheCursor += bytesToReadFromCache;
 
         bytesRead = bytesToReadFromCache;
     }
 
     if (bytesRead < bytesToRead) {
         /*
-        There's more data to read. If there's more data remaining than the cache capacity, we
-        simply load some data straight into the output buffer. Any remainder we load into the
-        cache and then read from that.
+        There's more data to read. If there's more data remaining than the uncompressed cache
+        capacity, we simply load some data straight into the output buffer. Any remainder we
+        load into the uncompressed cache and then read from that.
         */
         size_t bytesRemainingToRead = bytesToRead - bytesRead;
         size_t bytesToReadFromArchive;
@@ -2047,10 +2050,10 @@ static fs_result fs_file_read_zip_store(fs* pFS, fs_file_zip* pZipFile, void* pD
             return result;
         }
 
-        if (bytesRemainingToRead > pZipFile->cacheCap) {
+        if (bytesRemainingToRead > pZipFile->uncompressedCacheCap) {
             size_t bytesReadFromArchive;
 
-            bytesToReadFromArchive = (bytesRemainingToRead / pZipFile->cacheCap) * pZipFile->cacheCap;
+            bytesToReadFromArchive = (bytesRemainingToRead / pZipFile->uncompressedCacheCap) * pZipFile->uncompressedCacheCap;
 
             result = fs_stream_read(pZipFile->pStream, FS_ZIP_OFFSET_PTR(pDst, bytesRead), bytesToReadFromArchive, &bytesReadFromArchive);
             if (result != FS_SUCCESS) {
@@ -2062,21 +2065,21 @@ static fs_result fs_file_read_zip_store(fs* pFS, fs_file_zip* pZipFile, void* pD
         }
 
         /*
-        At this point we should have less than the cache capacity remaining to read. We need to
-        read into the cache, and then read any leftover from it.
+        At this point we should have less than the uncompressed cache capacity remaining to read. We need to
+        read into the uncompressed cache, and then read any leftover from it.
         */
         if (bytesRemainingToRead > 0) {
-            FS_ZIP_ASSERT(bytesRemainingToRead < pZipFile->cacheCap);
+            FS_ZIP_ASSERT(bytesRemainingToRead < pZipFile->uncompressedCacheCap);
 
-            result = fs_stream_read(pZipFile->pStream, pZipFile->pCache, (size_t)FS_ZIP_MIN(pZipFile->cacheCap, (pZipFile->info.uncompressedSize - (pZipFile->absoluteCursorUncompressed + bytesRead))), &pZipFile->cacheSize); /* Safe cast to size_t because reading will be clamped to bytesToRead. */
+            result = fs_stream_read(pZipFile->pStream, pZipFile->pUncompressedCache, (size_t)FS_ZIP_MIN(pZipFile->uncompressedCacheCap, (pZipFile->info.uncompressedSize - (pZipFile->absoluteCursorUncompressed + bytesRead))), &pZipFile->uncompressedCacheSize); /* Safe cast to size_t because reading will be clamped to bytesToRead. */
             if (result != FS_SUCCESS) {
                 return result;
             }
 
-            pZipFile->cacheCursor = 0;
+            pZipFile->uncompressedCacheCursor = 0;
 
-            FS_ZIP_COPY_MEMORY(FS_ZIP_OFFSET_PTR(pDst, bytesRead), pZipFile->pCache + pZipFile->cacheCursor, bytesRemainingToRead);
-            pZipFile->cacheCursor += bytesRemainingToRead;
+            FS_ZIP_COPY_MEMORY(FS_ZIP_OFFSET_PTR(pDst, bytesRead), pZipFile->pUncompressedCache + pZipFile->uncompressedCacheCursor, bytesRemainingToRead);
+            pZipFile->uncompressedCacheCursor += bytesRemainingToRead;
 
             bytesRead += bytesRemainingToRead;
         }
@@ -2113,20 +2116,20 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
 
 
     /*
-    The way reading works for deflate is that we need to read from the cache until it's exhausted,
-    and then refill it and read from it again. We need to do this until we've read the requested
-    number of bytes.
+    The way reading works for deflate is that we need to read from the uncompressed cache until it's
+    exhausted, and then refill it and read from it again. We need to do this until we've read the
+    requested number of bytes.
     */
     for (;;) {
-        /* Read from the cache first. */
-        size_t bytesRemainingInCache = pZipFile->cacheSize - pZipFile->cacheCursor;
+        /* Read from the uncompressed cache first. */
+        size_t bytesRemainingInCache = pZipFile->uncompressedCacheSize - pZipFile->uncompressedCacheCursor;
         size_t bytesToReadFromCache = bytesToRead - uncompressedBytesRead;
         if (bytesToReadFromCache > bytesRemainingInCache) {
             bytesToReadFromCache = bytesRemainingInCache;
         }
 
-        FS_ZIP_COPY_MEMORY(FS_ZIP_OFFSET_PTR(pDst, uncompressedBytesRead), pZipFile->pCache + pZipFile->cacheCursor, bytesToReadFromCache);
-        pZipFile->cacheCursor += bytesToReadFromCache;
+        FS_ZIP_COPY_MEMORY(FS_ZIP_OFFSET_PTR(pDst, uncompressedBytesRead), pZipFile->pUncompressedCache + pZipFile->uncompressedCacheCursor, bytesToReadFromCache);
+        pZipFile->uncompressedCacheCursor += bytesToReadFromCache;
 
         uncompressedBytesRead += bytesToReadFromCache;
 
@@ -2137,14 +2140,14 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
 
         
         /*
-        Getting here means we've exchausted the cache but still have more data to read. We now need
-        to refill the cache and read from it again.
+        Getting here means we've exhausted the uncompressed cache but still have more data to read. We
+        now need to refill the uncompressed cache and read from it again.
 
         This needs to be run in a loop because we may need to read multiple times to get enough input
-        data to fill the entire output cache, which must be at least 32KB.
+        data to fill the entire uncompressed output cache, which must be at least 32KB.
         */
-        pZipFile->cacheCursor = 0;
-        pZipFile->cacheSize   = 0;
+        pZipFile->uncompressedCacheCursor = 0;
+        pZipFile->uncompressedCacheSize   = 0;
 
         for (;;) {
             fs_result decompressResult;
@@ -2179,9 +2182,9 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
                 }
 
                 /*
-                Read the compressed data into the cache. The number of compressed bytes we read needs
-                to be clamped to the number of bytes remaining in the file and the number of bytes
-                remaining in the cache.
+                Read the compressed data into the compressed cache. The number of compressed bytes we
+                read needs to be clamped to the number of bytes remaining in the file and the number
+                of bytes remaining in the compressed cache.
                 */
                 compressedBytesToRead = (size_t)FS_ZIP_MIN(pZipFile->compressedCacheCap - pZipFile->compressedCacheCursor, (pZipFile->info.compressedSize - pZipFile->absoluteCursorCompressed));
 
@@ -2208,16 +2211,16 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
 
             /*
             At this point we should have the compressed data. Here is where we decompress it into
-            the cache. We need to set up a few parameters here. The input buffer needs to start from
-            the current cursor position of the compressed cache. The input size is the number of
-            bytes in the compressed cache between the cursor and the end of the cache. The output
-            buffer is from the current cursor position.
+            the uncompressed cache. We need to set up a few parameters here. The input buffer needs
+            to start from the current cursor position of the compressed cache. The input size is the
+            number of bytes in the compressed cache between the cursor and the end of the compressed
+            cache. The output buffer is from the current cursor position in the uncompressed cache.
             */
             {
                 size_t inputBufferSize = pZipFile->compressedCacheSize - pZipFile->compressedCacheCursor;
-                size_t outputBufferSize = pZipFile->cacheCap - pZipFile->cacheSize;
+                size_t outputBufferSize = pZipFile->uncompressedCacheCap - pZipFile->uncompressedCacheSize;
 
-                decompressResult = fs_zip_deflate_decompress(&pZipFile->decompressor, pZipFile->pCompressedCache + pZipFile->compressedCacheCursor, &inputBufferSize, pZipFile->pCache, pZipFile->pCache + pZipFile->cacheSize, &outputBufferSize, decompressFlags);
+                decompressResult = fs_zip_deflate_decompress(&pZipFile->decompressor, pZipFile->pCompressedCache + pZipFile->compressedCacheCursor, &inputBufferSize, pZipFile->pUncompressedCache, pZipFile->pUncompressedCache + pZipFile->uncompressedCacheSize, &outputBufferSize, decompressFlags);
                 if (decompressResult < 0) {
                     return decompressResult; /* Failed to decompress the data. Return the specific error code. */
                 }
@@ -2225,8 +2228,8 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
                 /* Move our input cursors forward since we've just consumed some input. */
                 pZipFile->compressedCacheCursor += inputBufferSize;
 
-                /* We've just generated some uncompressed data, so push out the size of the cache to accommodate it. */
-                pZipFile->cacheSize += outputBufferSize;
+                /* We've just generated some uncompressed data, so push out the size of the uncompressed cache to accommodate it. */
+                pZipFile->uncompressedCacheSize += outputBufferSize;
 
                 /*
                 If the compressed cache has been fully exhausted we need to reset it so more data
@@ -2315,35 +2318,35 @@ static fs_result fs_file_seek_zip(fs_file* pFile, fs_int64 offset, fs_seek_origi
     newAbsoluteCursor = (fs_uint64)newSeekTarget;
 
     /*
-    We can do fast seeking if we are moving within the cache. Otherwise we just move the cursor and
-    clear the cache. The next time we read, it'll see that the cache is empty which will trigger a
-    fresh read of data from the archive stream.
+    We can do fast seeking if we are moving within the uncompressed cache. Otherwise we just move the cursor and
+    clear the uncompressed cache. The next time we read, it'll see that the uncompressed cache is empty which will
+    trigger a fresh read of data from the archive stream.
     */
     if (newAbsoluteCursor > pZipFile->absoluteCursorUncompressed) {
         /* Moving forward. */
         fs_uint64 delta = newAbsoluteCursor - pZipFile->absoluteCursorUncompressed;
-        if (delta <= (pZipFile->cacheSize - pZipFile->cacheCursor)) {
-            pZipFile->cacheCursor += (size_t)delta; /* Safe cast. */
+        if (delta <= (pZipFile->uncompressedCacheSize - pZipFile->uncompressedCacheCursor)) {
+            pZipFile->uncompressedCacheCursor += (size_t)delta; /* Safe cast. */
             pZipFile->absoluteCursorUncompressed = newAbsoluteCursor;
             return FS_SUCCESS;
         } else {
-            /* Seeking beyond the cache. Fall through. */
+            /* Seeking beyond the uncompressed cache. Fall through. */
         }
     } else {
         /* Moving backward. */
         fs_uint64 delta = pZipFile->absoluteCursorUncompressed - newAbsoluteCursor;
-        if (delta <= pZipFile->cacheCursor) {
-            pZipFile->cacheCursor -= (size_t)delta;
+        if (delta <= pZipFile->uncompressedCacheCursor) {
+            pZipFile->uncompressedCacheCursor -= (size_t)delta;
             pZipFile->absoluteCursorUncompressed = newAbsoluteCursor;
             return FS_SUCCESS;
         } else {
-            /* Seeking beyond the cache. Fall through. */
+            /* Seeking beyond the uncompressed cache. Fall through. */
         }
     }
 
-    /* Getting here means we're seeking beyond the cache. Just clear it. The next read will read in fresh data. */
-    pZipFile->cacheSize   = 0;
-    pZipFile->cacheCursor = 0;
+    /* Getting here means we're seeking beyond the uncompressed cache. Just clear it. The next read will read in fresh data. */
+    pZipFile->uncompressedCacheSize   = 0;
+    pZipFile->uncompressedCacheCursor = 0;
 
     /*
     Seeking is more complicated for compressed files. We need to actually read to the seek point.
