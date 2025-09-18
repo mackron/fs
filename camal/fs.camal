@@ -75,23 +75,24 @@ convert_c89thread_basic_types :: function(src:string) string
 convert_c89thread_mtx_h :: function(src:string) string
 {
     return rename_c89thread_namespace(src)
-        // We don't need forward declarations.
-        ["\R(?m)^.*fs_mtx_init.*\R"] <= ""
-        ["(?m)^.*fs_mtx_destroy.*\R"] <= ""
-        ["(?m)^.*fs_mtx_lock.*\R"] <= ""
+        ["int fs_mtx_init"]     <= "FS_API int fs_mtx_init"
+        ["void fs_mtx_destroy"] <= "FS_API void fs_mtx_destroy"
+        ["int fs_mtx_lock"]     <= "FS_API int fs_mtx_lock"
+        ["int fs_mtx_unlock"]   <= "FS_API int fs_mtx_unlock"
+
+        // Some functions are unused.
         ["(?m)^.*fs_mtx_timedlock.*\R"] <= ""
         ["(?m)^.*fs_mtx_trylock.*\R"] <= ""
-        ["\R(?m)^.*fs_mtx_unlock.*"] <= ""
     ;
 }
 
 convert_c89thread_mtx_c :: function(src:string) string
 {
     return rename_c89thread_namespace(src)
-        ["int fs_mtx_init"]     <= "static int fs_mtx_init"
-        ["void fs_mtx_destroy"] <= "static void fs_mtx_destroy"
-        ["int fs_mtx_lock"]     <= "static int fs_mtx_lock"
-        ["int fs_mtx_unlock"]   <= "static int fs_mtx_unlock"
+        ["int fs_mtx_init"]     <= "FS_API int fs_mtx_init"
+        ["void fs_mtx_destroy"] <= "FS_API void fs_mtx_destroy"
+        ["int fs_mtx_lock"]     <= "FS_API int fs_mtx_lock"
+        ["int fs_mtx_unlock"]   <= "FS_API int fs_mtx_unlock"
     ;
 }
 
@@ -118,6 +119,6 @@ build_c89thread_mtx_c :: function() string
     return result;
 }
 
-fs_c("/\* BEG fs_thread_basic_types.c \*/\R" : "\R/\* END fs_thread_basic_types.c \*/") = convert_c89thread_basic_types(@(c89thread_h("/\* BEG c89thread_basic_types.h \*/\R" : "\R/\* END c89thread_basic_types.h \*/")));
-fs_c("/\* BEG fs_thread_mtx.h \*/\R" : "\R/\* END fs_thread_mtx.h \*/") = convert_c89thread_mtx_h(@(c89thread_h("/\* BEG c89thread_mtx.h \*/\R" : "\R/\* END c89thread_mtx.h \*/")));
+fs_h("/\* BEG fs_thread_basic_types.h \*/\R" : "\R/\* END fs_thread_basic_types.h \*/") = convert_c89thread_basic_types(@(c89thread_h("/\* BEG c89thread_basic_types.h \*/\R" : "\R/\* END c89thread_basic_types.h \*/")));
+fs_h("/\* BEG fs_thread_mtx.h \*/\R" : "\R/\* END fs_thread_mtx.h \*/") = convert_c89thread_mtx_h(@(c89thread_h("/\* BEG c89thread_mtx.h \*/\R" : "\R/\* END c89thread_mtx.h \*/")));
 fs_c("/\* BEG fs_thread_mtx.c \*/\R" : "\R/\* END fs_thread_mtx.c \*/") = build_c89thread_mtx_c();

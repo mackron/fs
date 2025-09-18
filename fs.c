@@ -823,72 +823,9 @@ code. These are the differences:
 Parameter ordering is the same as c89thread to make amalgamation easier.
 */
 
-/* BEG fs_thread_basic_types.c */
-#if defined(FS_POSIX)
-    #ifndef FS_USE_PTHREAD
-    #define FS_USE_PTHREAD
-    #endif
-
-    #ifndef FS_NO_PTHREAD_IN_HEADER
-        #include <pthread.h>
-        typedef pthread_t       fs_pthread_t;
-        typedef pthread_mutex_t fs_pthread_mutex_t;
-    #else
-        typedef fs_uintptr      fs_pthread_t;
-        typedef union           fs_pthread_mutex_t { char __data[40]; fs_uint64 __alignment; } fs_pthread_mutex_t;
-    #endif
-#endif
-/* END fs_thread_basic_types.c */
-
-
-/* BEG fs_thread_mtx.h */
-#if defined(FS_WIN32)
-    typedef struct
-    {
-        void* handle;    /* HANDLE, CreateMutex(), CreateEvent() */
-        int type;
-    } fs_mtx;
-#else
-    /*
-    We may need to force the use of a manual recursive mutex which will happen when compiling
-    on very old compilers, or with `-std=c89`.
-    */
-
-    /* If __STDC_VERSION__ is not defined it means we're compiling in C89 mode. */
-    #if !defined(FS_USE_MANUAL_RECURSIVE_MUTEX) && !defined(__STDC_VERSION__)
-        #define FS_USE_MANUAL_RECURSIVE_MUTEX
-    #endif
-
-    /* This is for checking if PTHREAD_MUTEX_RECURSIVE is available. */
-    #if !defined(FS_USE_MANUAL_RECURSIVE_MUTEX) && (!defined(__USE_UNIX98) && !defined(__USE_XOPEN2K8))
-        #define FS_USE_MANUAL_RECURSIVE_MUTEX
-    #endif
-
-    #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
-        typedef struct
-        {
-            fs_pthread_mutex_t mutex;    /* The underlying pthread mutex. */
-            fs_pthread_mutex_t guard;    /* Guard for metadata (owner and recursionCount). */
-            fs_pthread_t owner;
-            int recursionCount;
-            int type;
-        } fs_mtx;
-    #else
-        typedef fs_pthread_mutex_t fs_mtx;
-    #endif
-#endif
-
-enum
-{
-    fs_mtx_plain     = 0x00000000,
-    fs_mtx_timed     = 0x00000001,
-    fs_mtx_recursive = 0x00000002
-};
-/* END fs_thread_mtx.h */
-
 /* BEG fs_thread_mtx.c */
 #if defined(FS_WIN32) && !defined(FS_USE_PTHREAD)
-static int fs_mtx_init(fs_mtx* mutex, int type)
+FS_API int fs_mtx_init(fs_mtx* mutex, int type)
 {
     HANDLE hMutex;
 
@@ -921,7 +858,7 @@ static int fs_mtx_init(fs_mtx* mutex, int type)
     return FS_SUCCESS;
 }
 
-static void fs_mtx_destroy(fs_mtx* mutex)
+FS_API void fs_mtx_destroy(fs_mtx* mutex)
 {
     if (mutex == NULL) {
         return;
@@ -930,7 +867,7 @@ static void fs_mtx_destroy(fs_mtx* mutex)
     CloseHandle((HANDLE)mutex->handle);
 }
 
-static int fs_mtx_lock(fs_mtx* mutex)
+FS_API int fs_mtx_lock(fs_mtx* mutex)
 {
     DWORD result;
 
@@ -946,7 +883,7 @@ static int fs_mtx_lock(fs_mtx* mutex)
     return FS_SUCCESS;
 }
 
-static int fs_mtx_unlock(fs_mtx* mutex)
+FS_API int fs_mtx_unlock(fs_mtx* mutex)
 {
     BOOL result;
 
@@ -967,7 +904,7 @@ static int fs_mtx_unlock(fs_mtx* mutex)
     return FS_SUCCESS;
 }
 #else
-static int fs_mtx_init(fs_mtx* mutex, int type)
+FS_API int fs_mtx_init(fs_mtx* mutex, int type)
 {
     int result;
 
@@ -1021,7 +958,7 @@ static int fs_mtx_init(fs_mtx* mutex, int type)
     #endif
 }
 
-static void fs_mtx_destroy(fs_mtx* mutex)
+FS_API void fs_mtx_destroy(fs_mtx* mutex)
 {
     if (mutex == NULL) {
         return;
@@ -1043,7 +980,7 @@ static void fs_mtx_destroy(fs_mtx* mutex)
     #endif
 }
 
-static int fs_mtx_lock(fs_mtx* mutex)
+FS_API int fs_mtx_lock(fs_mtx* mutex)
 {
     int result;
 
@@ -1115,7 +1052,7 @@ static int fs_mtx_lock(fs_mtx* mutex)
     #endif
 }
 
-static int fs_mtx_unlock(fs_mtx* mutex)
+FS_API int fs_mtx_unlock(fs_mtx* mutex)
 {
     int result;
 
