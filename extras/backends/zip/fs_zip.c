@@ -85,7 +85,8 @@ enum
     FS_ZIP_DEFLATE_FLAG_PARSE_ZLIB_HEADER = 1,
     FS_ZIP_DEFLATE_FLAG_HAS_MORE_INPUT = 2,
     FS_ZIP_DEFLATE_FLAG_USING_NON_WRAPPING_OUTPUT_BUF = 4,
-    FS_ZIP_DEFLATE_FLAG_COMPUTE_ADLER32 = 8
+    FS_ZIP_DEFLATE_FLAG_COMPUTE_ADLER32 = 8,
+    FS_ZIP_DEFLATE_FLAG_DEFLATE64 = 16
 };
 
 enum
@@ -278,6 +279,35 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
         7,  7,  8,  8,  9,  9,  10, 10,
         11, 11, 12, 12, 13, 13
     };
+    
+    /* DEFLATE64 extended tables */
+    static const int sLengthBase64[31] =
+    {
+        3,  4,  5,  6,   7,   8,   9,   10,  11, 13,
+        15, 17, 19, 23,  27,  31,  35,  43,  51, 59,
+        67, 83, 99, 115, 131, 163, 195, 227, 3,  0,
+        0
+    };
+    static const int sLengthExtra64[31] =
+    {
+        0, 0, 0, 0, 0, 0, 0, 0,
+        1, 1, 1, 1, 2, 2, 2, 2,
+        3, 3, 3, 3, 4, 4, 4, 4,
+        5, 5, 5, 5, 16, 0, 0
+    };
+    static const int sDistBase64[32] =
+    {
+        1,   2,   3,   4,   5,    7,    9,    13,   17,   25,   33,   49,    65,    97,    129,   193,
+        257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 32769, 49153
+    };
+    static const int sDistExtra64[32] =
+    {
+        0,  0,  0,  0,  1,  1,  2,  2,
+        3,  3,  4,  4,  5,  5,  6,  6,
+        7,  7,  8,  8,  9,  9,  10, 10,
+        11, 11, 12, 12, 13, 13, 14, 14
+    };
+    
     static const fs_uint8 sLengthDeZigZag[19] =
     {
         16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
@@ -610,8 +640,14 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                     break;
                 }
                 
-                extraCount = sLengthExtra[counter - 257];
-                counter = sLengthBase[counter - 257];
+                /* Use appropriate tables based on DEFLATE vs DEFLATE64 mode */
+                if (flags & FS_ZIP_DEFLATE_FLAG_DEFLATE64) {
+                    extraCount = sLengthExtra64[counter - 257];
+                    counter = sLengthBase64[counter - 257];
+                } else {
+                    extraCount = sLengthExtra[counter - 257];
+                    counter = sLengthBase[counter - 257];
+                }
                 
                 if (extraCount) {
                     unsigned int extraBits;
@@ -621,8 +657,14 @@ FS_API fs_result fs_zip_deflate_decompress(fs_zip_deflate_decompressor* pDecompr
                 
                 FS_ZIP_DEFLATE_HUFF_DECODE(26, dist, &pDecompressor->tables[1]);
                 
-                extraCount = sDistExtra[dist];
-                dist = sDistBase[dist];
+                /* Use appropriate distance tables based on DEFLATE vs DEFLATE64 mode */
+                if (flags & FS_ZIP_DEFLATE_FLAG_DEFLATE64) {
+                    extraCount = sDistExtra64[dist];
+                    dist = sDistBase64[dist];
+                } else {
+                    extraCount = sDistExtra[dist];
+                    dist = sDistBase[dist];
+                }
                 
                 if (extraCount) {
                     unsigned int extraBits;
@@ -737,8 +779,12 @@ common_exit:
 
 
 /* BEG fs_zip.c */
-#ifndef FS_ZIP_CACHE_SIZE_IN_BYTES
-#define FS_ZIP_CACHE_SIZE_IN_BYTES              32768
+#ifndef FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES
+#define FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES    32768
+#endif
+
+#ifndef FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES
+#define FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES    65536
 #endif
 
 #ifndef FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES
@@ -752,6 +798,7 @@ common_exit:
 
 #define FS_ZIP_COMPRESSION_METHOD_STORE         0
 #define FS_ZIP_COMPRESSION_METHOD_DEFLATE       8
+#define FS_ZIP_COMPRESSION_METHOD_DEFLATE64     9
 
 
 typedef struct fs_zip_cd_node fs_zip_cd_node;
@@ -1797,15 +1844,15 @@ typedef struct fs_iterator_zip
 
 typedef struct fs_file_zip
 {
-    fs_stream* pStream;                       /* Duplicated from the main file system stream. Freed with fs_stream_delete_duplicate(). */
+    fs_stream* pStream;                         /* Duplicated from the main file system stream. Freed with fs_stream_delete_duplicate(). */
     fs_zip_file_info info;
     fs_uint64 absoluteCursorUncompressed;
     fs_uint64 absoluteCursorCompressed;         /* The position of the cursor in the compressed data. */
-    fs_zip_deflate_decompressor decompressor; /* Only used for compressed files. */
+    fs_zip_deflate_decompressor decompressor;   /* Only used for compressed files. */
     size_t cacheCap;                            /* The capacity of the cache. Never changes. */
     size_t cacheSize;                           /* The number of valid bytes in the cache. Can be less than the capacity, but never more. Will be less when holding the tail end fo the file data. */
     size_t cacheCursor;                         /* The cursor within the cache. The cache size minus the cursor defines how much data remains in the cache. */
-    unsigned char* pCache;                      /* Cache must be at least 32K. Stores uncompressed data. Stored at the end of the struct. */
+    unsigned char* pCache;                      /* Cache must be at least 64K. Stores uncompressed data. Stored at the end of the struct. */
     size_t compressedCacheCap;                  /* The capacity of the compressed cache. Never changes. */
     size_t compressedCacheSize;                 /* The number of valid bytes in the compressed cache. Can be less than the capacity, but never more. Will be less when holding the tail end fo the file data. */
     size_t compressedCacheCursor;               /* The cursor within the compressed cache. The compressed cache size minus the cursor defines how much data remains in the compressed cache. */
@@ -1815,7 +1862,9 @@ typedef struct fs_file_zip
 static size_t fs_file_alloc_size_zip(fs* pFS)
 {
     (void)pFS;
-    return sizeof(fs_file_zip) + FS_ZIP_CACHE_SIZE_IN_BYTES + FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
+
+    /* Allocate enough space for the largest possible cache (DEFLATE64). */
+    return sizeof(fs_file_zip) + FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES + FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
 }
 
 static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath, int openMode, fs_file* pFile)
@@ -1848,30 +1897,56 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
         return FS_IS_DIRECTORY;
     }
 
-    /* Validate the compression method. We're only supporting Store and Deflate. */
-    if (pZipFile->info.compressionMethod != FS_ZIP_COMPRESSION_METHOD_STORE && pZipFile->info.compressionMethod != FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
+    /* Validate the compression method. We're supporting Store, Deflate, and Deflate64. */
+    if (pZipFile->info.compressionMethod != FS_ZIP_COMPRESSION_METHOD_STORE && 
+        pZipFile->info.compressionMethod != FS_ZIP_COMPRESSION_METHOD_DEFLATE && 
+        pZipFile->info.compressionMethod != FS_ZIP_COMPRESSION_METHOD_DEFLATE64) {
         return FS_INVALID_FILE;
     }
 
     /* Make double sure the cursor is at the start. */
     pZipFile->absoluteCursorUncompressed = 0;
-    pZipFile->cacheCap = FS_ZIP_CACHE_SIZE_IN_BYTES;
+    
+    /* Use larger cache for DEFLATE64 to handle extended back-reference distances. We can make use of that memory for STORE as well. */
+    if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
+        pZipFile->cacheCap = FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES;
+    } else {
+        pZipFile->cacheCap = FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES;
+    }
 
     FS_ZIP_ASSERT(pZipFile->cacheCap > 0);
 
     /*
     We allocated memory for a compressed cache, even when the file is not compressed. Make use
     of this memory if the file is not compressed.
+    
+    For DEFLATE (not DEFLATE64), we can use the extra 32KB from the unused DEFLATE64 cache space
+    to increase the compressed cache size, reducing the number of read operations needed.
     */
     if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_STORE) {
+        /* STORE. Since we're not using compressed we can make use of the memory we preemptively allocated for the compressed cache. */
         pZipFile->cacheCap          += FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
         pZipFile->compressedCacheCap = 0;
+    } else if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
+        /*
+        DEFALTE. We allocated a full 64kb buffer for the decompressed cache in case the file ended up being compressed
+        with DEFALTE64. Since we don't need much space for regular DEFLATE, we'll give the extra 32KB to the compressed
+        cache.
+        */
+        pZipFile->compressedCacheCap = FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES + (FS_ZIP_DEFLATE64_CACHE_SIZE_IN_BYTES - FS_ZIP_DEFLATE32_CACHE_SIZE_IN_BYTES);
     } else {
+        /*
+        DEFLATE64. We need the full 64KB cache so we'll have to use the standard size for the compressed cache.
+        */
         pZipFile->compressedCacheCap = FS_ZIP_COMPRESSED_CACHE_SIZE_IN_BYTES;
     }
 
     pZipFile->pCache           = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip));
     pZipFile->pCompressedCache = (unsigned char*)FS_ZIP_OFFSET_PTR(pZipFile, sizeof(fs_file_zip) + pZipFile->cacheCap);
+
+    /* 
+    Memory layout: [fs_file_zip struct][cache buffer][compressed cache buffer]
+    */
 
     /*
     We need to move the file offset forward so that it's pointing to the first byte of the actual
@@ -1903,7 +1978,8 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
 
 
     /* Initialize the decompressor if necessary. */
-    if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
+    if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE || 
+        pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE64) {
         result = fs_zip_deflate_decompressor_init(&pZipFile->decompressor);
         if (result != FS_SUCCESS) {
             return result;
@@ -2071,10 +2147,15 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
         pZipFile->cacheSize   = 0;
 
         for (;;) {
+            fs_result decompressResult;
             size_t compressedBytesRead;
             size_t compressedBytesToRead;
             int decompressFlags = FS_ZIP_DEFLATE_FLAG_HAS_MORE_INPUT;    /* The default stance is that we have more input available. */
-            fs_result decompressResult;
+            
+            /* Add DEFLATE64 flag if this is a DEFLATE64 compressed file */
+            if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE64) {
+                decompressFlags |= FS_ZIP_DEFLATE_FLAG_DEFLATE64;
+            }
 
             /* If we've already read the entire compressed file we need to set the flag to indicate there is no more input. */
             if (pZipFile->absoluteCursorCompressed == pZipFile->info.compressedSize) {
@@ -2185,7 +2266,8 @@ static fs_result fs_file_read_zip(fs_file* pFile, void* pDst, size_t bytesToRead
 
     if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_STORE) {
         return fs_file_read_zip_store(fs_file_get_fs(pFile), pZipFile, pDst, bytesToRead, pBytesRead);
-    } else if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE) {
+    } else if (pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE || 
+               pZipFile->info.compressionMethod == FS_ZIP_COMPRESSION_METHOD_DEFLATE64) {
         return fs_file_read_zip_deflate(fs_file_get_fs(pFile), pZipFile, pDst, bytesToRead, pBytesRead);
     } else {
         return FS_INVALID_FILE;  /* Should never get here. */
