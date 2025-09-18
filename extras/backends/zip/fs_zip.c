@@ -2137,7 +2137,7 @@ static fs_result fs_file_read_zip_deflate(fs* pFS, fs_file_zip* pZipFile, void* 
 
                 decompressResult = fs_zip_deflate_decompress(&pZipFile->decompressor, pZipFile->pCompressedCache + pZipFile->compressedCacheCursor, &inputBufferSize, pZipFile->pCache, pZipFile->pCache + pZipFile->cacheSize, &outputBufferSize, decompressFlags);
                 if (decompressResult < 0) {
-                    return FS_ERROR; /* Failed to decompress the data. */
+                    return decompressResult; /* Failed to decompress the data. Return the specific error code. */
                 }
 
                 /* Move our input cursors forward since we've just consumed some input. */
