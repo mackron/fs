@@ -862,7 +862,7 @@ static fs_result fs_zip_get_file_info_by_record_offset(fs_zip* pZip, size_t offs
     pInfo->pathLen = filePathLen;
 
     /* We can determine if the entry is a directory by checking if the path ends in a slash. */
-    if (pInfo->pPath[pInfo->pathLen-1] == '/' || pInfo->pPath[pInfo->pathLen-1] == '\\') {
+    if (pInfo->pathLen > 0 && (pInfo->pPath[pInfo->pathLen-1] == '/' || pInfo->pPath[pInfo->pathLen-1] == '\\')) {
         pInfo->directory = FS_TRUE;
     }
 
@@ -1009,7 +1009,7 @@ static fs_result fs_zip_find_file_by_path(fs_zip* pZip, const fs_allocation_call
     /* Skip past the root item if any. */
     if (pFilePath[0] == '/' || pFilePath[0] == '\\') {
         pFilePath += 1;
-        if (filePathLen > 0) {
+        if (filePathLen > 0 && filePathLen != FS_NULL_TERMINATED) {
             filePathLen -= 1;
         }
     }
@@ -1298,8 +1298,7 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
                 }
 
                 for (; bufferCursor <= (bufferSize - 4); bufferCursor += 1) {
-                    /* Is it safe to do unaligned access like this on all platforms? Safer to do a byte-by-byte comparison? */
-                    if (*(fs_uint32*)(buffer + bufferCursor) == FS_ZIP_EOCD_SIGNATURE) {
+                    if (FS_ZIP_READ_LE32(buffer + bufferCursor) == FS_ZIP_EOCD_SIGNATURE) {
                         /* The signature has been found. */
                         foundEOCD = FS_TRUE;
                         break;
@@ -1857,6 +1856,8 @@ static fs_result fs_file_open_zip(fs* pFS, fs_stream* pStream, const char* pPath
     /* Make double sure the cursor is at the start. */
     pZipFile->absoluteCursorUncompressed = 0;
     pZipFile->cacheCap = FS_ZIP_CACHE_SIZE_IN_BYTES;
+
+    FS_ZIP_ASSERT(pZipFile->cacheCap > 0);
 
     /*
     We allocated memory for a compressed cache, even when the file is not compressed. Make use
