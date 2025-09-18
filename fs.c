@@ -3,14 +3,6 @@
 
 #include "fs.h"
 
-/* BEG fs_platform_detection.c */
-#if defined(_WIN32)
-    #define FS_WIN32
-#else
-    #define FS_POSIX
-#endif
-/* END fs_platform_detection.c */
-
 #include <errno.h>
 
 /* BEG fs_common_macros.c */
