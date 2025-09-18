@@ -543,40 +543,6 @@ A pointer to the file system object to uninitialize. Must not be NULL.
 
 ---
 
-# fs_ioctl
-
-```c
-fs_result fs_ioctl(
-    [in]           fs*   pFS,
-    [in]           int   op,
-    [in, optional] void* pArg
-);
-```
-
-Performs a control operation on the file system.
-
-This is backend-specific. Check the documentation for the backend you are using to see what
-operations are supported.
-
-## Parameters
-
-[in] **pFS**  
-A pointer to the file system object. Must not be NULL.
-
-[in] **op**  
-The operation to perform. This is backend-specific.
-
-[in, optional] **pArg**  
-An optional pointer to an argument struct. This is backend-specific. Can be NULL if the
-operation does not require any arguments.
-
-## Return Value
-
-Returns FS_SUCCESS on success; any other result code otherwise. May return FS_NOT_IMPLEMENTED if
-the operation is not supported by the backend.
-
----
-
 # fs_remove
 
 ```c
@@ -3031,7 +2997,6 @@ struct fs_backend
     size_t       (*)(const void* pBackendConfig)                                                       alloc_size;
     fs_result    (*)(fs* pFS, const void* pBackendConfig, fs_stream* pStream)                          init;
     void         (*)(fs* pFS)                                                                          uninit;
-    fs_result    (*)(fs* pFS, int op, void* pArg)                                                      ioctl;
     fs_result    (*)(fs* pFS, const char* pFilePath)                                                   remove;
     fs_result    (*)(fs* pFS, const char* pOldPath, const char* pNewPath)                              rename;
     fs_result    (*)(fs* pFS, const char* pPath)                                                       mkdir;

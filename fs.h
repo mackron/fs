@@ -740,12 +740,6 @@ init
 uninit
     This is where you should do any cleanup. Do not close the stream here.
 
-ioctl
-    This function is optional. You can use this to implement custom IO control commands. Return
-    `FS_INVALID_OPERATION` if the command is not recognized. The format of the `pArg` parameter is
-    command specific. If the backend does not need to implement this function, it can be left as
-    `NULL` or return `FS_NOT_IMPLEMENTED`.
-
 remove
     This function is used to delete a file or directory. This is not recursive. If the path is
     a directory, the backend should return an error if it is not empty. Backends do not need to
@@ -1502,7 +1496,6 @@ struct fs_backend
     size_t       (* alloc_size      )(const void* pBackendConfig);
     fs_result    (* init            )(fs* pFS, const void* pBackendConfig, fs_stream* pStream);              /* Return 0 on success or an errno result code on error. pBackendConfig is a pointer to a backend-specific struct. The documentation for your backend will tell you how to use this. You can usually pass in NULL for this. */
     void         (* uninit          )(fs* pFS);
-    fs_result    (* ioctl           )(fs* pFS, int op, void* pArg);                                          /* Optional. */
     fs_result    (* remove          )(fs* pFS, const char* pFilePath);
     fs_result    (* rename          )(fs* pFS, const char* pOldPath, const char* pNewPath);                  /* Return FS_DIFFERENT_DEVICE if the old and new paths are on different devices and would require a copy. */
     fs_result    (* mkdir           )(fs* pFS, const char* pPath);                                           /* This is not recursive. Return FS_ALREADY_EXISTS if directory already exists. Return FS_DOES_NOT_EXIST if a parent directory does not exist. */
@@ -1697,34 +1690,6 @@ See Also
 fs_init()
 */
 FS_API void fs_uninit(fs* pFS);
-
-
-/*
-Performs a control operation on the file system.
-
-This is backend-specific. Check the documentation for the backend you are using to see what
-operations are supported.
-
-
-Parameters
-----------
-pFS : (in)
-    A pointer to the file system object. Must not be NULL.
-
-op : (in)
-    The operation to perform. This is backend-specific.
-
-pArg : (in, optional)
-    An optional pointer to an argument struct. This is backend-specific. Can be NULL if the
-    operation does not require any arguments.
-
-
-Return Value
-------------
-Returns FS_SUCCESS on success; any other result code otherwise. May return FS_NOT_IMPLEMENTED if
-the operation is not supported by the backend.
-*/
-FS_API fs_result fs_ioctl(fs* pFS, int op, void* pArg);
 
 
 /*

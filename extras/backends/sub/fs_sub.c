@@ -177,16 +177,6 @@ static void fs_uninit_sub(fs* pFS)
     FS_SUB_UNUSED(pFS);
 }
 
-static fs_result fs_ioctl_sub(fs* pFS, int op, void* pArgs)
-{
-    fs_sub* pSubFS;
-
-    pSubFS = (fs_sub*)fs_get_backend_data(pFS);
-    FS_SUB_ASSERT(pSubFS != NULL);
-
-    return fs_ioctl(pSubFS->pOwnerFS, op, pArgs);
-}
-
 static fs_result fs_remove_sub(fs* pFS, const char* pFilePath)
 {
     fs_result result;
@@ -422,7 +412,6 @@ fs_backend fs_sub_backend =
     fs_alloc_size_sub,
     fs_init_sub,
     fs_uninit_sub,
-    fs_ioctl_sub,
     fs_remove_sub,
     fs_rename_sub,
     fs_mkdir_sub,

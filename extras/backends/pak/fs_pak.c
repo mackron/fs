@@ -553,7 +553,6 @@ fs_backend fs_pak_backend =
     fs_alloc_size_pak,
     fs_init_pak,
     fs_uninit_pak,
-    NULL,   /* ioctl */
     NULL,   /* remove */
     NULL,   /* rename */
     NULL,   /* mkdir */

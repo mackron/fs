@@ -1551,17 +1551,6 @@ static void fs_backend_uninit(const fs_backend* pBackend, fs* pFS)
     }
 }
 
-static fs_result fs_backend_ioctl(const fs_backend* pBackend, fs* pFS, int command, void* pArgs)
-{
-    FS_ASSERT(pBackend != NULL);
-
-    if (pBackend->ioctl == NULL) {
-        return FS_NOT_IMPLEMENTED;
-    } else {
-        return pBackend->ioctl(pFS, command, pArgs);
-    }
-}
-
 static fs_result fs_backend_remove(const fs_backend* pBackend, fs* pFS, const char* pFilePath)
 {
     FS_ASSERT(pBackend != NULL);
@@ -2717,15 +2706,6 @@ FS_API void fs_uninit(fs* pFS)
     fs_mtx_destroy(&pFS->archiveLock);
 
     fs_free(pFS, &pFS->allocationCallbacks);
-}
-
-FS_API fs_result fs_ioctl(fs* pFS, int request, void* pArg)
-{
-    if (pFS == NULL) {
-        return FS_INVALID_ARGS;
-    }
-
-    return fs_backend_ioctl(pFS->pBackend, pFS, request, pArg);
 }
 
 FS_API fs_result fs_remove(fs* pFS, const char* pFilePath, int options)
@@ -5369,15 +5349,6 @@ static void fs_uninit_posix(fs* pFS)
     (void)pFS;
 }
 
-static fs_result fs_ioctl_posix(fs* pFS, int op, void* pArg)
-{
-    (void)pFS;
-    (void)op;
-    (void)pArg;
-
-    return FS_NOT_IMPLEMENTED;
-}
-
 static fs_result fs_remove_posix(fs* pFS, const char* pFilePath)
 {
     int result = remove(pFilePath);
@@ -5933,7 +5904,6 @@ static fs_backend fs_posix_backend =
     fs_alloc_size_posix,
     fs_init_posix,
     fs_uninit_posix,
-    fs_ioctl_posix,
     fs_remove_posix,
     fs_rename_posix,
     fs_mkdir_posix,
@@ -6188,15 +6158,6 @@ static fs_result fs_init_win32(fs* pFS, const void* pBackendConfig, fs_stream* p
 static void fs_uninit_win32(fs* pFS)
 {
     (void)pFS;
-}
-
-static fs_result fs_ioctl_win32(fs* pFS, int op, void* pArg)
-{
-    (void)pFS;
-    (void)op;
-    (void)pArg;
-
-    return FS_NOT_IMPLEMENTED;
 }
 
 static fs_result fs_remove_win32(fs* pFS, const char* pFilePath)
@@ -6841,7 +6802,6 @@ static fs_backend fs_win32_backend =
     fs_alloc_size_win32,
     fs_init_win32,
     fs_uninit_win32,
-    fs_ioctl_win32,
     fs_remove_win32,
     fs_rename_win32,
     fs_mkdir_win32,
