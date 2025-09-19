@@ -3904,7 +3904,7 @@ int fs_test_mem_uninit(fs_test* pTest)
 /* END mem_uninit */
 
 /* Helper function to set up source directory structure for serialization test */
-int fs_test_serialization_set_up_src(fs_test* pTest, fs* pFS)
+static fs_result fs_test_serialization_set_up_src(fs_test* pTest, fs* pFS)
 {
     fs_result result;
     
