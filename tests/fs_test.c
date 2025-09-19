@@ -3903,6 +3903,266 @@ int fs_test_mem_uninit(fs_test* pTest)
 }
 /* END mem_uninit */
 
+/* Helper function to set up source directory structure for serialization test */
+int fs_test_serialization_set_up_src(fs_test* pTest, fs* pFS)
+{
+    fs_result result;
+    
+    /* Create the source directory structure */
+    result = fs_mkdir(pFS, "/root/src", FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /root/src directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+    
+    result = fs_mkdir(pFS, "/root/src/subdir", FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create /root/src/subdir directory.\n", pTest->name);
+        return FS_ERROR;
+    }
+    
+    return FS_SUCCESS;
+}
+
+/* BEG serialization */
+int fs_test_serialization(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_config fsConfig;
+    fs* pFS;
+    fs_memory_stream serializedData;
+    const char* pContentA = "Content A";
+    const char* pContentB = "Content B";
+    const char* pContentC = "Content C";
+
+    /* Initialize fs_mem backend. */
+    fsConfig = fs_config_init(pTestState->pBackend, NULL, NULL);
+
+    result = fs_init(&fsConfig, &pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize fs_mem file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    pTestState->pFS = pFS;
+
+    /* Create a temp directory. */
+    result = fs_mktmp("fs_", pTestState->pTempDir, sizeof(pTestState->pTempDir), FS_MKTMP_DIR);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create temp directory for serialization test.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    /* Set up the mount point. */
+    result = fs_mount(pFS, pTestState->pTempDir, "/root", FS_READ | FS_WRITE);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to mount temp directory.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    result = fs_test_serialization_set_up_src(pTest, pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to set up source files for serialization test.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+
+    /* Serialize the /root/src directory. */
+    result = fs_test_open_and_write_file(pTest, pFS, "/root/src/a.txt", FS_WRITE, pContentA, strlen(pContentA));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write a.txt for serialization test.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    result = fs_test_open_and_write_file(pTest, pFS, "/root/src/subdir/b.txt", FS_WRITE, pContentB, strlen(pContentB));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write b.txt for serialization test.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    result = fs_test_open_and_write_file(pTest, pFS, "/root/src/subdir/c.txt", FS_WRITE, pContentC, strlen(pContentC));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write c.txt for serialization test.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    /* Initialize the memory stream for writing */
+    result = fs_memory_stream_init_write(NULL, &serializedData);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize memory stream for serialization.\n", pTest->name);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    result = fs_serialize(pFS, "/root/src", 0, (fs_stream*)&serializedData);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to serialize /root/src directory.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    /* Now deserialize into the /root/dst directory. */
+    result = fs_stream_seek((fs_stream*)&serializedData, 0, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to reset stream position before deserialization.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+    
+    result = fs_deserialize(pFS, "/root/dst", 0, (fs_stream*)&serializedData);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to deserialize into /root/dst directory.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+
+    /* Now we need to verify the data. The content within /root/dst should exactly match that in /root/src. */
+    
+    /* Verify the directory structure and file contents match between src and dst */
+    
+    /* First, verify that all files in /root/src exist in /root/dst with same content */
+    result = fs_test_open_and_read_file(pTest, pFS, "/root/dst/a.txt", FS_READ, pContentA, strlen(pContentA));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to verify a.txt content in dst directory.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+    
+    result = fs_test_open_and_read_file(pTest, pFS, "/root/dst/subdir/b.txt", FS_READ, pContentB, strlen(pContentB));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to verify b.txt content in dst directory.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+    
+    result = fs_test_open_and_read_file(pTest, pFS, "/root/dst/subdir/c.txt", FS_READ, pContentC, strlen(pContentC));
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to verify c.txt content in dst directory.\n", pTest->name);
+        fs_memory_stream_uninit(&serializedData);
+        fs_uninit(pFS);
+        pTestState->pFS = NULL;
+        return FS_ERROR;
+    }
+    
+    /* Verify directory structure by iterating through both directories and comparing */
+    {
+        fs_iterator* pSrcIterator;
+        fs_iterator* pDstIterator;
+        int srcCount = 0, dstCount = 0;
+        
+        /* Count items in src directory */
+        pSrcIterator = fs_first(pFS, "/root/src", FS_READ);
+        if (pSrcIterator == NULL) {
+            printf("%s: Failed to iterate /root/src directory.\n", pTest->name);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+        
+        while (pSrcIterator != NULL) {
+            srcCount++;
+            pSrcIterator = fs_next(pSrcIterator);
+        }
+        
+        /* Count items in dst directory */
+        pDstIterator = fs_first(pFS, "/root/dst", FS_READ);
+        if (pDstIterator == NULL) {
+            printf("%s: Failed to iterate /root/dst directory.\n", pTest->name);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+        
+        while (pDstIterator != NULL) {
+            dstCount++;
+            pDstIterator = fs_next(pDstIterator);
+        }
+        
+        if (srcCount != dstCount) {
+            printf("%s: Directory item count mismatch - src has %d items, dst has %d items.\n", pTest->name, srcCount, dstCount);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+        
+        /* Verify subdir structure too */
+        srcCount = 0;
+        dstCount = 0;
+        
+        pSrcIterator = fs_first(pFS, "/root/src/subdir", FS_READ);
+        if (pSrcIterator == NULL) {
+            printf("%s: Failed to iterate /root/src/subdir directory.\n", pTest->name);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+        
+        while (pSrcIterator != NULL) {
+            srcCount++;
+            pSrcIterator = fs_next(pSrcIterator);
+        }
+        
+        pDstIterator = fs_first(pFS, "/root/dst/subdir", FS_READ);
+        if (pDstIterator == NULL) {
+            printf("%s: Failed to iterate /root/dst/subdir directory.\n", pTest->name);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+        
+        while (pDstIterator != NULL) {
+            dstCount++;
+            pDstIterator = fs_next(pDstIterator);
+        }
+        
+        if (srcCount != dstCount) {
+            printf("%s: Subdir item count mismatch - src/subdir has %d items, dst/subdir has %d items.\n", pTest->name, srcCount, dstCount);
+            fs_memory_stream_uninit(&serializedData);
+            fs_uninit(pFS);
+            pTestState->pFS = NULL;
+            return FS_ERROR;
+        }
+    }
+    
+    /* Clean up the serialized data */
+    fs_memory_stream_uninit(&serializedData);
+
+    /* Clean up the file system. */
+    fs_test_system_remove_directory(pTest, pTestState->pTempDir);
+
+    return FS_SUCCESS;
+}
+/* END serialization */
+
 
 int main(int argc, char** argv)
 {
@@ -3976,12 +4236,14 @@ int main(int argc, char** argv)
     fs_test test_mem_remove;                        /* Tests fs_remove() in memory. This will delete test files. */
     fs_test test_mem_stress_test;                   /* Tests stress scenarios like many files and deep directories in memory. */
     fs_test test_mem_uninit;                        /* Needs to be last since this is where the fs_uninit() function is called for memory backend. */
+    fs_test test_serialization;
 
     /* Test states. */
     fs_test_state test_system_state;
     fs_test_state test_mounts_state;
     fs_test_state test_archives_state;
     fs_test_state test_mem_state;
+    fs_test_state test_serialization_state;
 
     /* Grab the backend so we can pass it into the test state. */
     pBackend = fs_test_get_backend(argc, argv);
@@ -3990,10 +4252,11 @@ int main(int argc, char** argv)
     printf("Backend: %s\n", fs_test_get_backend_name(pBackend));
 
     /* Make sure the test states are initialized before running anything. */
-    test_system_state   = fs_test_state_init(pBackend);
-    test_mem_state      = fs_test_state_init(FS_MEM);  /* Memory backend uses its own backend type. */
-    test_mounts_state   = fs_test_state_init(pBackend);
-    test_archives_state = fs_test_state_init(pBackend);
+    test_system_state        = fs_test_state_init(pBackend);
+    test_mem_state           = fs_test_state_init(FS_MEM);  /* Memory backend uses its own backend type. */
+    test_mounts_state        = fs_test_state_init(pBackend);
+    test_archives_state      = fs_test_state_init(pBackend);
+    test_serialization_state = fs_test_state_init(pBackend);
 
     /*
     Note that the order of tests is important here because we will use the output from previous tests
@@ -4089,6 +4352,12 @@ int main(int argc, char** argv)
     fs_test_init(&test_mem_remove,                     "Memory Remove",                  fs_test_mem_remove,                     &test_mem_state,       &test_mem);
     fs_test_init(&test_mem_stress_test,                "Memory Stress Test",             fs_test_mem_stress_test,                &test_mem_state,       &test_mem);
     fs_test_init(&test_mem_uninit,                     "Memory Uninitialization",        fs_test_mem_uninit,                     &test_mem_state,       &test_mem);
+
+    /*
+    Serialization Tests.
+    */
+    fs_test_init(&test_serialization,                  "Serialization",                  fs_test_serialization,                  &test_serialization_state, &test_root);
+
 
     result = fs_test_run(&test_root);
 

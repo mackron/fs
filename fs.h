@@ -3371,6 +3371,142 @@ FS_API fs_result fs_file_open_and_read(fs* pFS, const char* pFilePath, fs_format
 FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, const void* pData, size_t dataSize);
 
 
+/*
+Serializes a file system subdirectory to a stream.
+
+This function recursively serializes all files and directories within the specified directory
+to a binary stream. The serialized data can later be restored using `fs_deserialize()`.
+
+The directory parameter specifies which directory to serialize. This function is built on top of
+standard file iteration functions, i.e. `fs_first()`, `fs_next()`. The directory and options all
+work the same way as they do for `fs_first()`.
+
+It is possible for serialization to fail partway through, in which case the stream will contain
+partial data. It is the caller's responsibility to handle this case appropriately.
+
+When calculating offsets, it will use `fs_stream_tell()` to get the current position in the stream.
+Keep this in mind if you are appending this to the end of an existing stream. This may or may not
+be useful to you depending on your use case.
+
+Below is the format:
+
+    |: MAIN STRUCTURE                      :|
+    |---------------------------------------|
+    | n    | File Data                      |
+    |------|--------------------------------|
+    | n    | TOC Entries                    |
+    |------|--------------------------------|
+    | 8    | 'FSSRLZ1\0'                    |
+    | 8    | TOC Offset                     |
+    | 4    | TOC Entry Count                |
+    | 4    | Reserved (set to zero)         |
+    
+
+    |: TOC ENTRY                           :|
+    |---------------------------------------|
+    | 4    | File Flags                     |
+    | 4    | File Path Length               |
+    | n    | File Path                      |
+    | 1    | '\0' (Null Terminator)         |
+    | n    | Padding to 8-byte alignment    |
+    | 8    | File Size                      |
+    | 8    | File Offset                    |
+
+
+    |: FILE FLAGS                          :|
+    |---------------------------------------|
+    | 0x1  | Directory                      |
+
+
+    Notes:
+    - The signature is located at the end of the stream. To parse, seek to the last 24 bytes, read
+      the signature and TOC offset and entry count, then seek to the TOC offset to read the TOC.
+    - Directories should be explicitly listed in the TOC, and also have the "Directory" flag set.
+    - Directories must be listed before any files that are contained within them.
+    - File Offset is relative to the start of the stream.
+    - File data is aligned to 8-byte boundaries.
+    - All multi-byte values are little-endian.
+    - File paths are stored using UTF-8 encoding.
+    - To calculate the padding between the null terminator and the next 8-byte aligned offset, round
+      the length of the file path plus one (for the null terminator) up to the next multiple of 8,
+      then subtract the length of the file path plus one.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pDirectoryPath : (in, optional)
+    The path to the directory to serialize.
+
+options : (in)
+    Options for the serialization operation. These are passed in directly to `fs_first()` and
+    therefore have the same meaning. See `fs_first()` for details. These will also be passed into
+    `fs_file_open()` when opening files, combined with `FS_READ`.
+
+pOutputStream : (in)
+    A pointer to the output stream where the serialized data will be written. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_deserialize()
+fs_first()
+*/
+FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pOutputStream);
+
+/*
+Deserializes file system data from a stream.
+
+This function reads serialized file system data from a stream and recreates the files and
+directories in the specified subdirectory. The format of the data must match that produced by
+`fs_serialize()`.
+
+The subdirectory parameter specifies where to restore the serialized data. If NULL or empty, the
+data is restored to the file system root. The path is relative to the file system root.
+
+Existing files with the same name will be overwritten during deserialization. If the output
+directory already exists, it will not emptied before restoring the data.
+
+This function will not attempt to clean up any partially restored data if an error occurs during
+the process.
+
+
+Parameters
+----------
+pFS : (in)
+    A pointer to the file system object. Must not be NULL.
+
+pSubdirectoryPath : (in, optional)
+    The path to the subdirectory where the data should be restored. Can be NULL or empty to
+    restore to the filesystem root. The path should use forward slashes ('/') as separators.
+
+options : (in)
+    Options for the deserialization operation. These will be passed into `fs_file_open()` when
+    creating files. See `fs_file_open()` for details.
+
+pInputStream : (in)
+    A pointer to the input stream containing the serialized data. Must not be NULL.
+
+
+Return Value
+------------
+Returns FS_SUCCESS on success; any other result code otherwise.
+
+
+See Also
+--------
+fs_serialize()
+*/
+FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pInputStream);
+
+
 /* BEG fs_backend_posix.h */
 extern const fs_backend* FS_BACKEND_POSIX;
 /* END fs_backend_posix.h */
