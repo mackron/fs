@@ -154,7 +154,7 @@ int unpack(int argc, char** argv)
     */
     pArchive = NULL;
 
-    result = fs_file_seek(pArchiveFile, -24, FS_SEEK_END);
+    result = fs_file_seek(pArchiveFile, -32, FS_SEEK_END);
     if (result == FS_SUCCESS) {
         char sig[8];
         size_t bytesRead = 0;

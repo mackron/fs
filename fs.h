@@ -3388,42 +3388,54 @@ When calculating offsets, it will use `fs_stream_tell()` to get the current posi
 Keep this in mind if you are appending this to the end of an existing stream. This may or may not
 be useful to you depending on your use case.
 
+The format is designed to be appendable to existing payloads using tools like `cat`. Offsets are
+stored relative to the end of the archive to support this use case. The Base Offset field in the
+tail specifies where file data begins relative to the end of the stream, and will always be a
+negative number. Each file's offset is then relative to this base offset. To seek to a file's data,
+you would add the file's offset to the base offset and then seek by that amount relative to the end
+of the stream.
+
 Below is the format:
 
-    |: MAIN STRUCTURE                      :|
-    |---------------------------------------|
-    | n    | File Data                      |
-    |------|--------------------------------|
-    | n    | TOC Entries                    |
-    |------|--------------------------------|
-    | 8    | 'FSSRLZ1\0'                    |
-    | 8    | TOC Offset                     |
-    | 4    | TOC Entry Count                |
-    | 4    | Reserved (set to zero)         |
+    |: MAIN STRUCTURE                               :|
+    |------------------------------------------------|
+    | n    | File Data                               |
+    |------|-----------------------------------------|
+    | n    | TOC Entries                             |
+    |------|-----------------------------------------|
+    | 8    | 'FSSRLZ1\0'                             |
+    | 8    | Base Offset (negative, relative to end) |
+    | 8    | TOC Offset (relative to Base Offset)    |
+    | 4    | TOC Entry Count                         |
+    | 4    | Reserved (set to zero)                  |
     
 
-    |: TOC ENTRY                           :|
-    |---------------------------------------|
-    | 4    | File Flags                     |
-    | 4    | File Path Length               |
-    | n    | File Path                      |
-    | 1    | '\0' (Null Terminator)         |
-    | n    | Padding to 8-byte alignment    |
-    | 8    | File Size                      |
-    | 8    | File Offset                    |
+    |: TOC ENTRY                                    :|
+    |------------------------------------------------|
+    | 4    | File Flags                              |
+    | 4    | File Path Length                        |
+    | n    | File Path                               |
+    | 1    | '\0' (Null Terminator)                  |
+    | n    | Padding to 8-byte alignment             |
+    | 8    | File Size                               |
+    | 8    | File Offset (local, relative)           |
 
 
-    |: FILE FLAGS                          :|
-    |---------------------------------------|
-    | 0x1  | Directory                      |
+    |: FILE FLAGS                                   :|
+    |------------------------------------------------|
+    | 0x1  | Directory                               |
 
 
     Notes:
-    - The signature is located at the end of the stream. To parse, seek to the last 24 bytes, read
-      the signature and TOC offset and entry count, then seek to the TOC offset to read the TOC.
+    - The signature is located at the end of the stream. To parse, seek to the last 32 bytes, read
+      the signature, base offset, TOC offset and entry count, then calculate the absolute TOC offset
+      as Base Offset + TOC Offset and seek to that position, relative to the end, to read the TOC.
+      The base offset is always negative.
     - Directories should be explicitly listed in the TOC, and also have the "Directory" flag set.
     - Directories must be listed before any files that are contained within them.
-    - File Offset is relative to the start of the stream.
+    - File Offset and TOC Offset are both local offsets relative to the Base Offset position. Sum
+      the offsets with the base offset, and then seek relative to the end.
+    - The Base Offset is relative to the end of the archive (negative value).
     - File data is aligned to 8-byte boundaries.
     - All multi-byte values are little-endian.
     - File paths are stored using UTF-8 encoding.

@@ -5435,12 +5435,10 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
     fs_result result;
     fs_uint32 sig[2] = { FS_SERIALIZED_SIG_0, FS_SERIALIZED_SIG_1 };
     fs_memory_stream toc;
-    fs_uint32 tocEntryCount = 0;        /* <-- Must be initialized to zero. */
-    fs_uint32 reserved = 0;             /* <-- Must be initialized to zero. */
-    fs_uint64 runningFileOffset = 0;    /* <-- Must be initialized to zero. */
-    fs_int64 tocOffset;
+    fs_uint32 tocEntryCount = 0;    /* <-- Must be initialized to zero. */
+    fs_uint64 runningOffset = 0;    /* <-- Must be initialized to zero. */
+    fs_uint64 tocOffset;
     fs_int64 initialPos;
-    
 
     if (pOutputStream == NULL) {
         return FS_INVALID_ARGS;
@@ -5476,75 +5474,91 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
 
 
     /* File Data. */
-    result = fs_serialize_directory(pFS, pDirectoryPath, pDirectoryPath, options, pOutputStream, (fs_stream*)&toc, &tocEntryCount, &runningFileOffset);
+    result = fs_serialize_directory(pFS, pDirectoryPath, pDirectoryPath, options, pOutputStream, (fs_stream*)&toc, &tocEntryCount, &runningOffset);
     if (result != FS_SUCCESS) {
         fs_memory_stream_uninit(&toc);
         return result;
     }
 
-    /*
-    The current position of the main stream is where we'll be putting the TOC. We need to get the offset so we
-    can output the TOC offset at the end of the file.
-    */
-    result = fs_stream_tell(pOutputStream, &tocOffset);
-    if (result != FS_SUCCESS) {
+    /* TOC. */
+    {
+        void* pTOCData;
+        size_t tocDataSize;
+
+        /* Grab the TOC offset for output later. */
+        tocOffset = runningOffset;
+
+        pTOCData = fs_memory_stream_take_ownership(&toc, &tocDataSize); /* <-- Should never fail. */
+        FS_ASSERT(pTOCData != NULL || tocDataSize == 0);
+
         fs_memory_stream_uninit(&toc);
-        return result;
-    }
 
-    /* We can now write the TOC stream to the output stream. */
-    result = fs_stream_seek((fs_stream*)&toc, 0, FS_SEEK_SET);
-    if (result != FS_SUCCESS) {
-        fs_memory_stream_uninit(&toc);
-        return result;
-    }
+        result = fs_stream_write(pOutputStream, pTOCData, tocDataSize, NULL);
+        fs_free(pTOCData, fs_get_allocation_callbacks(pFS));
 
-    for (;;) {
-        char buffer[4096];
-        size_t bytesRead;
-
-        result = fs_stream_read((fs_stream*)&toc, buffer, sizeof(buffer), &bytesRead);
-        if (result != FS_SUCCESS && result != FS_AT_END) {
-            fs_memory_stream_uninit(&toc);
-            return result;
-        }
-
-        if (bytesRead == 0) {
-            break;
-        }
-
-        result = fs_stream_write(pOutputStream, buffer, bytesRead, NULL);
         if (result != FS_SUCCESS) {
             fs_memory_stream_uninit(&toc);
             return result;
         }
 
-        if (result == FS_AT_END) {
-            break;
+        runningOffset += tocDataSize;
+    }
+
+    /* Tail. */
+    {
+        char padding[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+        fs_int64 baseOffset;
+        fs_uint32 reserved;
+
+        /* Padding to align to 8 bytes. */
+        result = fs_stream_write(pOutputStream, padding, FS_ALIGN(runningOffset, 8) - runningOffset, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
         }
-    }
+        runningOffset = FS_ALIGN(runningOffset, 8);
 
-    fs_memory_stream_uninit(&toc);
 
-    /* We can now write out the signature and TOC offset and entry count. */
-    result = fs_stream_write(pOutputStream, sig, 8, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
+        /*
+        We'll only be outputting 32 more bytes at this point:
 
-    result = fs_stream_write(pOutputStream, &tocOffset, 8, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
+            Signature (8 bytes)
+            Base Offset (8 bytes)
+            TOC Offset (8 bytes)
+            TOC Entry Count (4 bytes)
+            Reserved (4 bytes)
+        */
+        baseOffset = -(fs_int64)(runningOffset + 32);
 
-    result = fs_stream_write(pOutputStream, &tocEntryCount, 4, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
+        /* Signature. */
+        result = fs_stream_write(pOutputStream, sig, 8, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
 
-    result = fs_stream_write(pOutputStream, &reserved, 4, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
+        /* Base Offset. */
+        result = fs_stream_write(pOutputStream, &baseOffset, 8, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+
+        /* TOC Offset. */
+        result = fs_stream_write(pOutputStream, &tocOffset, 8, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+
+        /* TOC Entry Count. */
+        result = fs_stream_write(pOutputStream, &tocEntryCount, 4, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+
+        /* Reserved. */
+        reserved = 0;
+        result = fs_stream_write(pOutputStream, &reserved, 4, NULL);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
     }
 
     return FS_SUCCESS;
@@ -5584,10 +5598,26 @@ static fs_result fs_stream_read_u64_le(fs_stream* pStream, fs_uint64* pResult)
     return FS_SUCCESS;
 }
 
+static fs_result fs_stream_read_s64_le(fs_stream* pStream, fs_int64* pResult)
+{
+    fs_result result;
+    fs_uint64 temp;
+
+    result = fs_stream_read_u64_le(pStream, &temp);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    *pResult = (fs_int64)temp;
+
+    return FS_SUCCESS;
+}
+
 FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pInputStream)
 {
     fs_result result;
     fs_uint32 sig[2];
+    fs_int64 baseOffset;
     fs_uint64 tocOffset;
     fs_uint32 tocEntryCount;
     fs_uint32 reserved;
@@ -5602,7 +5632,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
     }
 
     /* First thing we need to do is read the tail. */
-    result = fs_stream_seek(pInputStream, -24, FS_SEEK_END);
+    result = fs_stream_seek(pInputStream, -32, FS_SEEK_END);
     if (result != FS_SUCCESS) {
         return result;  /* Failed to seek to the tail. Either too small, or the stream does not support seeking from the end. */
     }
@@ -5622,7 +5652,13 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         return FS_INVALID_DATA; /* Not a serialized stream. */
     }
 
-    /* TOC Offset. */
+    /* Base Offset (relative to end). */
+    result = fs_stream_read_s64_le(pInputStream, &baseOffset);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* TOC Offset (local, relative to base). */
     result = fs_stream_read_u64_le(pInputStream, &tocOffset);
     if (result != FS_SUCCESS) {
         return result;
@@ -5640,9 +5676,8 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         return result;
     }
 
-
     /* Now we can seek to the TOC. */
-    result = fs_stream_seek(pInputStream, tocOffset, FS_SEEK_SET);
+    result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)tocOffset, FS_SEEK_END);
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -5760,11 +5795,13 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
                 return result;
             }
 
-            /* Seek to the file data. */
-            result = fs_stream_seek(pInputStream, (fs_int64)fileOffset, FS_SEEK_SET);
-            if (result != FS_SUCCESS) {
-                fs_file_close(pFile);
-                return result;
+            /* Seek to the file data using base offset + local offset. */
+            {
+                result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)fileOffset, FS_SEEK_END);
+                if (result != FS_SUCCESS) {
+                    fs_file_close(pFile);
+                    return result;
+                }
             }
 
             /* Copy the data across. */
