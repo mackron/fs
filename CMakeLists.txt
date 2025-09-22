@@ -142,6 +142,7 @@ if(FS_BUILD_TOOLS)
         fs
         fszip
         fspak
+        fsmem
     )
     target_compile_options(fsu PRIVATE ${COMPILE_OPTIONS})
 
