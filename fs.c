@@ -5796,12 +5796,10 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             }
 
             /* Seek to the file data using base offset + local offset. */
-            {
-                result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)fileOffset, FS_SEEK_END);
-                if (result != FS_SUCCESS) {
-                    fs_file_close(pFile);
-                    return result;
-                }
+            result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)fileOffset, FS_SEEK_END);
+            if (result != FS_SUCCESS) {
+                fs_file_close(pFile);
+                return result;
             }
 
             /* Copy the data across. */
