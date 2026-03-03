@@ -498,6 +498,51 @@ int fs_test_path_normalize(fs_test* pTest)
 }
 /* END path_normalize */
 
+/* BEG path_compare */
+static int fs_test_path_compare_internal(fs_test* pTest, const char* pPathA, const char* pPathB, int expected)
+{
+    int result;
+
+    result = fs_path_compare(pPathA, FS_NULL_TERMINATED, pPathB, FS_NULL_TERMINATED);
+    if (expected == 0) {
+        if (result != 0) {
+            printf("%s: Expected \"%s\" and \"%s\" to be equal, but got %d\n", pTest->name, pPathA, pPathB, result);
+            return 1;
+        }
+    } else if (expected < 0) {
+        if (result >= 0) {
+            printf("%s: Expected \"%s\" to be less than \"%s\", but got %d\n", pTest->name, pPathA, pPathB, result);
+            return 1;
+        }
+    } else {
+        if (result <= 0) {
+            printf("%s: Expected \"%s\" to be greater than \"%s\", but got %d\n", pTest->name, pPathA, pPathB, result);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int fs_test_path_compare(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_path_compare_internal(pTest, "test.png", "test.png", 0);
+    errorCount += fs_test_path_compare_internal(pTest, "test.png", "test.png.remap", -1);
+    errorCount += fs_test_path_compare_internal(pTest, "test.png.remap", "test.png", 1);
+    errorCount += fs_test_path_compare_internal(pTest, "abc/def", "abc/def", 0);
+    errorCount += fs_test_path_compare_internal(pTest, "abc/def", "abc/de", 1);
+    errorCount += fs_test_path_compare_internal(pTest, "abc/de", "abc/def", -1);
+
+    if (errorCount == 0) {
+        return FS_SUCCESS;
+    } else {
+        return FS_ERROR;
+    }
+}
+/* END path_compare */
+
 /* BEG path_trim_base */
 int fs_test_path_trim_base_internal(fs_test* pTest, const char* pPath, size_t pathLen, const char* pBasePath, size_t basePathLen, const char* pExpected)
 {
@@ -4174,6 +4219,7 @@ int main(int argc, char** argv)
     fs_test test_path;
     fs_test test_path_iteration;                    /* Tests path breakup logic. This is critical for some internal logic in the library. */
     fs_test test_path_normalize;                    /* Tests path normalization, like resolving ".." and "." segments. Again, this is used extensively for path validation and therefore needs proper testing. */
+    fs_test test_path_compare;
     fs_test test_path_trim_base;
     fs_test test_system;
     fs_test test_system_sysdir;                     /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
@@ -4270,6 +4316,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_path,                           "Path",                           NULL,                                   NULL,                 &test_root);
     fs_test_init(&test_path_iteration,                 "Path Iteration",                 fs_test_path_iteration,                 NULL,                 &test_path);
     fs_test_init(&test_path_normalize,                 "Path Normalize",                 fs_test_path_normalize,                 NULL,                 &test_path);
+    fs_test_init(&test_path_compare,                   "Path Compare",                   fs_test_path_compare,                   NULL,                 &test_path);
     fs_test_init(&test_path_trim_base,                 "Path Trim Base",                 fs_test_path_trim_base,                 NULL,                 &test_path);
 
     /*
