@@ -2108,7 +2108,7 @@ static fs_opened_archive* fs_find_opened_archive(fs* pFS, const char* pArchivePa
     while (cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
 
-        if (fs_strncmp(pOpenedArchive->pPath, pArchivePath, archivePathLen) == 0) {
+        if (strlen(pOpenedArchive->pPath) == archivePathLen && fs_strncmp(pOpenedArchive->pPath, pArchivePath, archivePathLen) == 0) {
             return pOpenedArchive;
         }
 
@@ -3996,7 +3996,7 @@ static void fs_iterator_internal_resolve_public_members(fs_iterator_internal* pI
     pIterator->base.info    = pIterator->ppItems[pIterator->itemIndex]->info;
 }
 
-static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterator, const char* pName)
+static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterator, const char* pName, size_t nameLen)
 {
     /*
     We cannot use ppItems here because this function will be called before that has been set up. Instead we need
@@ -4007,7 +4007,7 @@ static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterat
 
     for (iItem = 0; iItem < pIterator->itemCount; iItem += 1) {
         fs_iterator_item* pItem = (fs_iterator_item*)FS_OFFSET_PTR(pIterator, sizeof(fs_iterator_internal) + cursor);
-        if (fs_strncmp(fs_iterator_item_name(pItem), pName, pItem->nameLen) == 0) {
+        if (pItem->nameLen == nameLen && fs_strncmp(fs_iterator_item_name(pItem), pName, pItem->nameLen) == 0) {
             return pItem;
         }
 
@@ -4036,7 +4036,7 @@ static fs_iterator_internal* fs_iterator_internal_append(fs_iterator_internal* p
 
     /* Check if the item already exists. If so, skip it. */
     if (pIterator != NULL) {
-        pNewItem = fs_iterator_internal_find(pIterator, pOther->pName);
+        pNewItem = fs_iterator_internal_find(pIterator, pOther->pName, pOther->nameLen);
         if (pNewItem != NULL) {
             return pIterator;   /* Already exists. Skip it. */
         }

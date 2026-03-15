@@ -392,7 +392,7 @@ static fs_bool32 fs_iterator_item_exists_pak(fs_iterator_pak* pIteratorPak, cons
     fs_uint32 i;
 
     for (i = 0; i < pIteratorPak->count; i += 1) {
-        if (fs_strncmp(pIteratorPak->items[i].name, pName, nameLen) == 0) {
+        if (strlen(pIteratorPak->items[i].name) == nameLen && fs_strncmp(pIteratorPak->items[i].name, pName, nameLen) == 0) {
             return FS_TRUE;
         }
     }
