@@ -4,9 +4,9 @@ project(fs
 )
 
 # Options
-option(FS_BUILD_EXAMPLES             "Build typo examples"          OFF)
-option(FS_BUILD_TESTS                "Build typo tests"             OFF)
-option(FS_BUILD_TOOLS                "Build typo tools"             OFF)
+option(FS_BUILD_EXAMPLES             "Build fs examples"            OFF)
+option(FS_BUILD_TESTS                "Build fs tests"               OFF)
+option(FS_BUILD_TOOLS                "Build fs tools"               OFF)
 option(FS_FORCE_CXX                  "Force compilation as C++"     OFF)
 option(FS_FORCE_C89                  "Force compilation as C89"     OFF)
 option(FS_ENABLE_OPENED_FILES_ASSERT "Enable an assert for when a file is left open" OFF)
