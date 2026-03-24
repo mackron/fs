@@ -138,3 +138,7 @@ You can also use CMake, but support for that is very basic.
 License
 =======
 Your choice of either public domain or [MIT No Attribution](https://github.com/aws/mit-0).
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/fs)
