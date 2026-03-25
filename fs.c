@@ -3462,32 +3462,37 @@ static fs_result fs_file_alloc_and_open_or_info(fs* pFS, const char* pFilePath, 
             int dirPathLen;
 
             dirPathLen = fs_path_directory(pDirPathStack, sizeof(pDirPathStack), pFilePath, FS_NULL_TERMINATED);
-            if (dirPathLen >= (int)sizeof(pDirPathStack)) {
-                pDirPathHeap = (char*)fs_malloc(dirPathLen + 1, fs_get_allocation_callbacks(pFS));
-                if (pDirPathHeap == NULL) {
-                    fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                    fs_file_free(ppFile);
-                    return FS_OUT_OF_MEMORY;
+            if (dirPathLen > 0) {
+                if (dirPathLen >= (int)sizeof(pDirPathStack)) {
+                    pDirPathHeap = (char*)fs_malloc(dirPathLen + 1, fs_get_allocation_callbacks(pFS));
+                    if (pDirPathHeap == NULL) {
+                        fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                        fs_file_free(ppFile);
+                        return FS_OUT_OF_MEMORY;
+                    }
+
+                    dirPathLen = fs_path_directory(pDirPathHeap, dirPathLen + 1, pFilePath, FS_NULL_TERMINATED);
+                    if (dirPathLen < 0) {
+                        fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
+                        fs_file_free(ppFile);
+                        fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
+                        return FS_ERROR;
+                    }
+
+                    pDirPath = pDirPathHeap;
+                } else {
+                    pDirPath = pDirPathStack;
                 }
 
-                dirPathLen = fs_path_directory(pDirPathHeap, dirPathLen + 1, pFilePath, FS_NULL_TERMINATED);
-                if (dirPathLen < 0) {
+                /* Don't try creating a directory if there is */
+                result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
+                if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
                     fs_file_free(ppFile);
-                    fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
-                    return FS_ERROR;
+                    return result;
                 }
-
-                pDirPath = pDirPathHeap;
             } else {
-                pDirPath = pDirPathStack;
-            }
-
-            result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
-            if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
-                fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
-                fs_file_free(ppFile);
-                return result;
+                /* Getting here means the file was specified without a leading path and there is nothing to create. */
             }
         }
 
