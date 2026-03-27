@@ -2102,18 +2102,22 @@ static fs_opened_archive* fs_find_opened_archive(fs* pFS, const char* pArchivePa
     }
 
     FS_ASSERT(pArchivePath != NULL);
-    FS_ASSERT(archivePathLen > 0);
+    FS_ASSERT(archivePathLen != 0);
+
+    if (archivePathLen == FS_NULL_TERMINATED) {
+        archivePathLen = strlen(pArchivePath);
+    }
 
     cursor = 0;
     while (cursor < pFS->openedArchivesSize) {
         fs_opened_archive* pOpenedArchive = (fs_opened_archive*)FS_OFFSET_PTR(pFS->pOpenedArchives, cursor);
 
-        if (fs_strncmp(pOpenedArchive->pPath, pArchivePath, archivePathLen) == 0) {
+        if (strlen(pOpenedArchive->pPath) == archivePathLen && fs_strncmp(pOpenedArchive->pPath, pArchivePath, archivePathLen) == 0) {
             return pOpenedArchive;
         }
 
         /* Getting here means this archive is not the one we're looking for. */
-        cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+        cursor += FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
     }
 
     /* If we get here it means we couldn't find the archive by it's name. */
@@ -2140,7 +2144,7 @@ static fs_opened_archive* fs_find_opened_archive_by_fs(fs* pFS, fs* pArchive)
         }
 
         /* Getting here means this archive is not the one we're looking for. */
-        cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+        cursor += FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
     }
 
     /* If we get here it means we couldn't find the archive. */
@@ -2161,7 +2165,7 @@ static fs_result fs_add_opened_archive(fs* pFS, fs* pArchive, const char* pArchi
         archivePathLen = strlen(pArchivePath);
     }
 
-    openedArchiveSize = FS_ALIGN(sizeof(fs*) + sizeof(size_t) + archivePathLen + 1, FS_SIZEOF_PTR);
+    openedArchiveSize = FS_ALIGN(sizeof(pOpenedArchive->pArchive) + archivePathLen + 1, FS_SIZEOF_PTR);
 
     if (pFS->openedArchivesSize + openedArchiveSize > pFS->openedArchivesCap) {
         size_t newOpenedArchivesCap;
@@ -2198,7 +2202,7 @@ static fs_result fs_remove_opened_archive(fs* pFS, fs_opened_archive* pOpenedArc
     /* This is a simple matter of doing a memmove() to move memory down. pOpenedArchive should be an offset of pFS->pOpenedArchives. */
     size_t openedArchiveSize;
 
-    openedArchiveSize = FS_ALIGN(sizeof(fs_opened_archive*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+    openedArchiveSize = FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
 
     FS_ASSERT(((fs_uintptr)pOpenedArchive + openedArchiveSize) >  ((fs_uintptr)pFS->pOpenedArchives));
     FS_ASSERT(((fs_uintptr)pOpenedArchive + openedArchiveSize) <= ((fs_uintptr)pFS->pOpenedArchives + pFS->openedArchivesSize));
@@ -3996,7 +4000,7 @@ static void fs_iterator_internal_resolve_public_members(fs_iterator_internal* pI
     pIterator->base.info    = pIterator->ppItems[pIterator->itemIndex]->info;
 }
 
-static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterator, const char* pName)
+static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterator, const char* pName, size_t nameLen)
 {
     /*
     We cannot use ppItems here because this function will be called before that has been set up. Instead we need
@@ -4007,7 +4011,7 @@ static fs_iterator_item* fs_iterator_internal_find(fs_iterator_internal* pIterat
 
     for (iItem = 0; iItem < pIterator->itemCount; iItem += 1) {
         fs_iterator_item* pItem = (fs_iterator_item*)FS_OFFSET_PTR(pIterator, sizeof(fs_iterator_internal) + cursor);
-        if (fs_strncmp(fs_iterator_item_name(pItem), pName, pItem->nameLen) == 0) {
+        if (pItem->nameLen == nameLen && fs_strncmp(fs_iterator_item_name(pItem), pName, pItem->nameLen) == 0) {
             return pItem;
         }
 
@@ -4036,7 +4040,7 @@ static fs_iterator_internal* fs_iterator_internal_append(fs_iterator_internal* p
 
     /* Check if the item already exists. If so, skip it. */
     if (pIterator != NULL) {
-        pNewItem = fs_iterator_internal_find(pIterator, pOther->pName);
+        pNewItem = fs_iterator_internal_find(pIterator, pOther->pName, pOther->nameLen);
         if (pNewItem != NULL) {
             return pIterator;   /* Already exists. Skip it. */
         }
@@ -4677,7 +4681,7 @@ static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
                 FS_ASSERT(pOpenedArchive != NULL);
 
                 fs_gc_archives(pOpenedArchive->pArchive, policy);
-                cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+                cursor += FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
             }
         }
     }
@@ -4701,7 +4705,7 @@ static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
             }
         }
 
-        cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+        cursor += FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
     }
 
     /* Determine how many archives to collect. */
@@ -4733,7 +4737,7 @@ static void fs_gc_nolock(fs* pFS, int policy, fs* pSpecificArchive)
             collectionCount -= 1;
             /* Note that we're not advancing the cursor here because we just removed this entry. */
         } else {
-            cursor += FS_ALIGN(sizeof(fs*) + sizeof(size_t) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
+            cursor += FS_ALIGN(sizeof(pOpenedArchive->pArchive) + strlen(pOpenedArchive->pPath) + 1, FS_SIZEOF_PTR);
         }
     }
 }

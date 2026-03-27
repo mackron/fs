@@ -2180,6 +2180,85 @@ int fs_test_mounts_iteration(fs_test* pTest)
 
     return FS_SUCCESS;
 }
+
+int fs_test_mounts_iteration_prefix_bug(fs_test* pTest)
+{
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_result result;
+    fs_iterator* pIterator;
+    fs_config memConfig;
+    fs* pMem1;
+    fs* pMem2;
+    fs_file* pFile;
+    int count = 0;
+    fs_bool32 found1 = FS_FALSE;
+    fs_bool32 found2 = FS_FALSE;
+
+    /* We'll use the memory file system for this to avoid any dependencies on the physical disk. */
+    memConfig = fs_config_init(FS_MEM, NULL, NULL);
+
+    result = fs_init(&memConfig, &pMem1);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize memory file system 1.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_init(&memConfig, &pMem2);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize memory file system 2.\n", pTest->name);
+        fs_uninit(pMem1);
+        return FS_ERROR;
+    }
+
+    /* Create test.txt in pMem1 */
+    fs_mkdir(pMem1, "/data", FS_WRITE | FS_IGNORE_MOUNTS);
+    result = fs_file_open(pMem1, "/data/test.txt", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) {
+        fs_file_close(pFile);
+    }
+
+    /* Create test.txt.meta in pMem2 */
+    fs_mkdir(pMem2, "/data", FS_WRITE | FS_IGNORE_MOUNTS);
+    result = fs_file_open(pMem2, "/data/test.txt.meta", FS_WRITE | FS_IGNORE_MOUNTS, &pFile);
+    if (result == FS_SUCCESS) {
+        fs_file_close(pFile);
+    }
+
+    /* 
+    Mount both to root in pTestState->pFS.
+    Priority: Most recent has highest priority. We want pMem1 (test.txt) to be checked first.
+    */
+    fs_mount_fs(pTestState->pFS, pMem2, "/prefix_test", 0);
+    fs_mount_fs(pTestState->pFS, pMem1, "/prefix_test", 0);
+
+    /* Iterate /prefix_test/data */
+    pIterator = fs_first(pTestState->pFS, "/prefix_test/data", FS_READ);
+    while (pIterator != NULL) {
+        if (fs_strncmp("test.txt", pIterator->pName, pIterator->nameLen) == 0 && pIterator->nameLen == 8) {
+            found1 = FS_TRUE;
+        }
+        if (fs_strncmp("test.txt.meta", pIterator->pName, pIterator->nameLen) == 0 && pIterator->nameLen == 13) {
+            found2 = FS_TRUE;
+        }
+
+        count++;
+        pIterator = fs_next(pIterator);
+    }
+
+    /* Cleanup mounts first. */
+    fs_unmount_fs(pTestState->pFS, pMem1, FS_READ);
+    fs_unmount_fs(pTestState->pFS, pMem2, FS_READ);
+
+    fs_uninit(pMem1);
+    fs_uninit(pMem2);
+
+    if (!found1 || !found2 || count != 2) {
+        printf("%s: Prefix bug detected. Expected 2 files (test.txt and test.txt.meta), found %d.\n", pTest->name, count);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
 /* END mounts_iteration */
 
 /* BEG unmount */
@@ -4249,6 +4328,7 @@ int main(int argc, char** argv)
     fs_test test_mounts_rename;                     /* Tests renaming files with mounts. */
     fs_test test_mounts_remove;                     /* Tests removing files with mounts. */
     fs_test test_mounts_iteration;                  /* Tests iterating directories with mounts. */
+    fs_test test_mounts_iteration_prefix_bug;
     fs_test test_unmount;                           /* This needs to be the last mount test. */
     fs_test test_archives;                          /* The top-level test for archives. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
     fs_test test_archives_opaque;                   /* Tests that opening files inside an archive in opaque mode fails as expected. */
@@ -4354,8 +4434,9 @@ int main(int argc, char** argv)
     fs_test_init(&test_mounts_read,                    "Mounts Read",                    fs_test_mounts_read,                    &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_mkdir,                   "Mounts Make Directory",          fs_test_mounts_mkdir,                   &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_rename,                  "Mounts Rename",                  fs_test_mounts_rename,                  &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_remove,                  "Mounts Remove",                  fs_test_mounts_remove,                  &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_remove,                  "Mounts Remove",                  fs_test_mounts_remove,                   &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_iteration,               "Mounts Iteration",               fs_test_mounts_iteration,               &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_iteration_prefix_bug,    "Mounts Iteration Prefix Bug",    fs_test_mounts_iteration_prefix_bug,    &test_mounts_state,   &test_mounts);
     fs_test_init(&test_unmount,                        "Unmount",                        fs_test_unmount,                        &test_mounts_state,   &test_mounts);
 
     /*
