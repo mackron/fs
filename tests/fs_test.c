@@ -4434,7 +4434,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_mounts_read,                    "Mounts Read",                    fs_test_mounts_read,                    &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_mkdir,                   "Mounts Make Directory",          fs_test_mounts_mkdir,                   &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_rename,                  "Mounts Rename",                  fs_test_mounts_rename,                  &test_mounts_state,   &test_mounts);
-    fs_test_init(&test_mounts_remove,                  "Mounts Remove",                  fs_test_mounts_remove,                   &test_mounts_state,   &test_mounts);
+    fs_test_init(&test_mounts_remove,                  "Mounts Remove",                  fs_test_mounts_remove,                  &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_iteration,               "Mounts Iteration",               fs_test_mounts_iteration,               &test_mounts_state,   &test_mounts);
     fs_test_init(&test_mounts_iteration_prefix_bug,    "Mounts Iteration Prefix Bug",    fs_test_mounts_iteration_prefix_bug,    &test_mounts_state,   &test_mounts);
     fs_test_init(&test_unmount,                        "Unmount",                        fs_test_unmount,                        &test_mounts_state,   &test_mounts);
