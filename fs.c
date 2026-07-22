@@ -9097,7 +9097,7 @@ FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offse
     if (offset > dataSize || size > dataSize - offset) {
         return FS_INVALID_ARGS;
     }
-    
+
     if (size == 0) {
         return FS_SUCCESS;
     }
