@@ -5753,6 +5753,14 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             return FS_INVALID_DATA; /* Path is not null terminated. */
         }
 
+        /* The local path cannot have any ".." or "." segements. */
+        result = fs_validate_path(fs_string_cstr(&localPath), localPathLen, FS_NO_SPECIAL_DIRS);
+        if (result != FS_SUCCESS) {
+            fs_string_free(&localPath, fs_get_allocation_callbacks(pFS));
+            return FS_INVALID_DATA; /* Path his not allowed to have ".." or "." segments. */
+        }
+
+
         localPath.len = (size_t)localPathLen;
 
         fullPath    = fs_string_new();
