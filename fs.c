@@ -5911,6 +5911,12 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
                 }
             }
 
+            /* If we were unable to read every byte it means it's an invalid file. */
+            if (bytesRemaining > 0) {
+                fs_file_close(pFile);
+                return FS_INVALID_DATA;
+            }
+
             fs_file_close(pFile);
             pFile = NULL;
         }
