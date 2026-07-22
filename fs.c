@@ -9067,6 +9067,11 @@ FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offse
         return FS_INVALID_ARGS;
     }
 
+    /* Cannot modify a read-only stream. */
+    if (pStream->readonly.pData != NULL) {
+        return FS_INVALID_OPERATION;
+    }
+
     if ((offset + size) > *pStream->pDataSize) {
         return FS_INVALID_ARGS;
     }
