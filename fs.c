@@ -9015,37 +9015,46 @@ FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* p
 
 FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, int origin)
 {
-    fs_int64 newCursor;
+    size_t baseCursor;
+    size_t newCursor;
+    fs_uint64 offsetMagnitude;
 
     if (pStream == NULL) {
         return FS_INVALID_ARGS;
     }
 
-    if ((fs_uint64)FS_ABS(offset) > FS_SIZE_MAX) {
-        return FS_INVALID_ARGS;  /* Trying to seek too far. This will never happen on 64-bit builds. */
-    }
-
     if (origin == FS_SEEK_SET) {
-        newCursor = 0;
+        baseCursor = 0;
     } else if (origin == FS_SEEK_CUR) {
-        newCursor = (fs_int64)pStream->cursor;
+        baseCursor = pStream->cursor;
     } else if (origin == FS_SEEK_END) {
-        newCursor = (fs_int64)*pStream->pDataSize;
+        baseCursor = *pStream->pDataSize;
     } else {
         FS_ASSERT(!"Invalid seek origin");
         return FS_INVALID_ARGS;
     }
 
-    newCursor += offset;
+    if (offset < 0) {
+        /* Adding one before negation avoids overflowing when offset is INT64_MIN. */
+        offsetMagnitude = (fs_uint64)(-(offset + 1)) + 1;
+        if (offsetMagnitude > (fs_uint64)baseCursor) {
+            return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer. */
+        }
 
-    if (newCursor < 0) {
-        return FS_BAD_SEEK;  /* Trying to seek prior to the start of the buffer. */
-    }
-    if ((size_t)newCursor > *pStream->pDataSize) {
-        return FS_BAD_SEEK;  /* Trying to seek beyond the end of the buffer. */
+        newCursor = baseCursor - (size_t)offsetMagnitude;
+    } else {
+        offsetMagnitude = (fs_uint64)offset;
+        if (offsetMagnitude > (fs_uint64)(FS_SIZE_MAX - baseCursor)) {
+            return FS_BAD_SEEK;  /* The new cursor would overflow size_t. */
+        }
+
+        newCursor = baseCursor + (size_t)offsetMagnitude;
+        if (newCursor > *pStream->pDataSize) {
+            return FS_BAD_SEEK;  /* Trying to seek beyond the end of the buffer. */
+        }
     }
 
-    pStream->cursor = (size_t)newCursor;
+    pStream->cursor = newCursor;
 
     return FS_SUCCESS;
 }
