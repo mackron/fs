@@ -4358,6 +4358,50 @@ static int fs_test_serialization_offsets(fs_test* pTest)
 }
 
 
+static int fs_test_serialization_paths(fs_test* pTest)
+{
+    const char* pRelativePath = "dir/file";
+    const char* pColonPath = "ab:c";
+    const char* pEmptyPath = "";
+    const char* pPosixAbsolutePath = "/tmp/file";
+    const char* pWindowsRootRelativePath = "\\tmp\\file";
+    const char* pWindowsDriveAbsolutePath = "C:/file";
+    const char* pWindowsDriveRelativePath = "c:file";
+
+    if (!fs_deserialize_path_is_relative(pRelativePath, strlen(pRelativePath))) {
+        printf("%s: Rejected a relative path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (!fs_deserialize_path_is_relative(pColonPath, strlen(pColonPath))) {
+        printf("%s: Rejected a non-drive path containing a colon.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fs_deserialize_path_is_relative(pEmptyPath, strlen(pEmptyPath))) {
+        printf("%s: Accepted an empty path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fs_deserialize_path_is_relative(pPosixAbsolutePath, strlen(pPosixAbsolutePath))) {
+        printf("%s: Accepted a POSIX absolute path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fs_deserialize_path_is_relative(pWindowsRootRelativePath, strlen(pWindowsRootRelativePath))) {
+        printf("%s: Accepted a root-relative Windows path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (fs_deserialize_path_is_relative(pWindowsDriveAbsolutePath, strlen(pWindowsDriveAbsolutePath)) || fs_deserialize_path_is_relative(pWindowsDriveRelativePath, strlen(pWindowsDriveRelativePath))) {
+        printf("%s: Accepted a Windows drive-qualified path.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+
 static int fs_test_memory_stream_duplicate(fs_test* pTest)
 {
     fs_result result;
@@ -4703,6 +4747,7 @@ int main(int argc, char** argv)
     fs_test test_memory_stream_remove_bounds;
     fs_test test_serialization;
     fs_test test_serialization_offsets;
+    fs_test test_serialization_paths;
 
     /* Test states. */
     fs_test_state test_system_state;
@@ -4832,6 +4877,7 @@ int main(int argc, char** argv)
     */
     fs_test_init(&test_serialization,                  "Serialization",                  fs_test_serialization,                  &test_serialization_state, &test_root);
     fs_test_init(&test_serialization_offsets,          "Serialization Offsets",          fs_test_serialization_offsets,          NULL,                      &test_serialization);
+    fs_test_init(&test_serialization_paths,            "Serialization Paths",            fs_test_serialization_paths,            NULL,                      &test_serialization);
 
 
     result = fs_test_run(&test_root);

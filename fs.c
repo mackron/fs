@@ -5660,6 +5660,25 @@ static fs_result fs_deserialize_add_offset(fs_int64 baseOffset, fs_uint64 localO
     return FS_SUCCESS;
 }
 
+static fs_bool32 fs_deserialize_path_is_relative(const char* pPath, size_t pathLen)
+{
+    if (pPath == NULL || pathLen == 0) {
+        return FS_FALSE;
+    }
+
+    /* Reject POSIX, root-relative Windows and UNC paths. */
+    if (pPath[0] == '/' || pPath[0] == '\\') {
+        return FS_FALSE;
+    }
+
+    /* Reject Windows drive-qualified paths, including drive-relative paths such as "C:file". */
+    if (pathLen >= 2 && ((pPath[0] >= 'A' && pPath[0] <= 'Z') || (pPath[0] >= 'a' && pPath[0] <= 'z')) && pPath[1] == ':') {
+        return FS_FALSE;
+    }
+
+    return FS_TRUE;
+}
+
 FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pInputStream)
 {
     fs_result result;
@@ -5786,6 +5805,12 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         if (fs_string_cstr(&localPath)[localPathLen] != '\0') {
             fs_string_free(&localPath, fs_get_allocation_callbacks(pFS));
             return FS_INVALID_DATA; /* Path is not null terminated. */
+        }
+
+        /* The local path must be relative. */
+        if (!fs_deserialize_path_is_relative(fs_string_cstr(&localPath), localPathLen)) {
+            fs_string_free(&localPath, fs_get_allocation_callbacks(pFS));
+            return FS_INVALID_DATA; /* Only relative paths are permitted in serialized data. */
         }
 
         /* The local path cannot have any ".." or "." segements. */
