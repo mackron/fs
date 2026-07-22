@@ -128,7 +128,7 @@ FS_API int fs_strncpy(char* dst, const char* src, size_t count)
         dst[i] = src[i];
     }
 
-    if (src[i] == '\0' || i == count || count == ((size_t)-1)) {
+    if (i == count || src[i] == '\0' || count == ((size_t)-1)) {
         dst[i] = '\0';
         return 0;
     }
