@@ -8970,6 +8970,10 @@ FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* p
         return FS_INVALID_OPERATION;
     }
 
+    if (bytesToWrite == 0) {
+        return FS_SUCCESS;
+    }
+
     /* Calculate where the write will end and resize if necessary. */
     writeEndPosition = pStream->cursor + bytesToWrite;
     if (writeEndPosition > pStream->write.dataCap) {
