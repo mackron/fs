@@ -9036,12 +9036,25 @@ FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* p
     }
 
     /* Calculate where the write will end and resize if necessary. */
+    if (bytesToWrite > FS_SIZE_MAX - pStream->cursor) {
+        return FS_TOO_BIG;
+    }
+
     writeEndPosition = pStream->cursor + bytesToWrite;
     if (writeEndPosition > pStream->write.dataCap) {
         void* pNewBuffer;
         size_t newCap;
 
-        newCap = FS_MAX(writeEndPosition, pStream->write.dataCap * 2);
+        if (pStream->write.dataCap > FS_SIZE_MAX / 2) {
+            newCap = FS_SIZE_MAX;
+        } else {
+            newCap = pStream->write.dataCap * 2;
+        }
+        
+        if (newCap < writeEndPosition) {
+            newCap = writeEndPosition;
+        }
+
         pNewBuffer = fs_realloc(*pStream->ppData, newCap, &pStream->allocationCallbacks);
         if (pNewBuffer == NULL) {
             return FS_OUT_OF_MEMORY;

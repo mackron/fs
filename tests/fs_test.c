@@ -4538,6 +4538,53 @@ static int fs_test_memory_stream_seek(fs_test* pTest)
 }
 
 
+static int fs_test_memory_stream_write_bounds(fs_test* pTest)
+{
+    fs_result result;
+    fs_memory_stream stream;
+    void* pOriginalData;
+    size_t originalDataSize;
+    size_t originalDataCap;
+    size_t originalCursor;
+    size_t bytesWritten;
+
+    result = fs_memory_stream_init_write(NULL, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a writable stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_write(&stream, "x", 1, NULL);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to populate a writable stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    pOriginalData    = stream.write.pData;
+    originalDataSize = stream.write.dataSize;
+    originalDataCap  = stream.write.dataCap;
+    originalCursor   = stream.cursor;
+    bytesWritten     = 1;
+
+    result = fs_memory_stream_write(&stream, "x", FS_SIZE_MAX, &bytesWritten);
+    if (result != FS_TOO_BIG ||
+        bytesWritten != 0 ||
+        stream.write.pData != pOriginalData ||
+        stream.write.dataSize != originalDataSize ||
+        stream.write.dataCap != originalDataCap ||
+        stream.cursor != originalCursor ||
+        ((const char*)stream.write.pData)[0] != 'x') {
+        printf("%s: An overflowing write did not fail without changing the stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    fs_memory_stream_uninit(&stream);
+    return FS_SUCCESS;
+}
+
+
 static int fs_test_memory_stream_remove_bounds(fs_test* pTest)
 {
     fs_result result;
@@ -4652,6 +4699,7 @@ int main(int argc, char** argv)
     fs_test test_memory_stream;
     fs_test test_memory_stream_duplicate;
     fs_test test_memory_stream_seek;
+    fs_test test_memory_stream_write_bounds;
     fs_test test_memory_stream_remove_bounds;
     fs_test test_serialization;
     fs_test test_serialization_offsets;
@@ -4776,6 +4824,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_memory_stream,                  "Memory Stream",                  NULL,                                   NULL,                  &test_root);
     fs_test_init(&test_memory_stream_duplicate,        "Memory Stream Duplicate",        fs_test_memory_stream_duplicate,        NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_seek,             "Memory Stream Seek",             fs_test_memory_stream_seek,             NULL,                  &test_memory_stream);
+    fs_test_init(&test_memory_stream_write_bounds,     "Memory Stream Write Bounds",     fs_test_memory_stream_write_bounds,     NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_remove_bounds,    "Memory Stream Remove Bounds",    fs_test_memory_stream_remove_bounds,    NULL,                  &test_memory_stream);
 
     /*
