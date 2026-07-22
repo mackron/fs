@@ -5643,6 +5643,23 @@ static fs_result fs_stream_read_s64_le(fs_stream* pStream, fs_int64* pResult)
     return FS_SUCCESS;
 }
 
+static fs_result fs_deserialize_add_offset(fs_int64 baseOffset, fs_uint64 localOffset, fs_int64* pResult)
+{
+    fs_uint64 baseMagnitude;
+
+    FS_ASSERT(pResult != NULL);
+    FS_ASSERT(baseOffset < 0);
+
+    /* Adding one before negation avoids overflowing when baseOffset is INT64_MIN. */
+    baseMagnitude = (fs_uint64)(-(baseOffset + 1)) + 1;
+    if (localOffset >= baseMagnitude) {
+        return FS_INVALID_DATA;
+    }
+
+    *pResult = baseOffset + (fs_int64)localOffset;
+    return FS_SUCCESS;
+}
+
 FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pInputStream)
 {
     fs_result result;
@@ -5652,6 +5669,8 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
     fs_uint32 tocEntryCount;
     fs_uint32 reserved;
     fs_uint32 iEntry;
+    fs_int64 tocSeekOffset;
+    const fs_int64 tailSize = 32;
 
     if (pInputStream == NULL) {
         return FS_INVALID_ARGS;
@@ -5662,7 +5681,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
     }
 
     /* First thing we need to do is read the tail. */
-    result = fs_stream_seek(pInputStream, -32, FS_SEEK_END);
+    result = fs_stream_seek(pInputStream, -tailSize, FS_SEEK_END);
     if (result != FS_SUCCESS) {
         return result;  /* Failed to seek to the tail. Either too small, or the stream does not support seeking from the end. */
     }
@@ -5688,6 +5707,11 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         return result;
     }
 
+    /* The base offset should always be negative, and cannot overlap the tail. */
+    if (baseOffset > -tailSize) {
+        return FS_INVALID_DATA; /* Invalid base offset. */
+    }
+
     /* TOC Offset (local, relative to base). */
     result = fs_stream_read_u64_le(pInputStream, &tocOffset);
     if (result != FS_SUCCESS) {
@@ -5707,7 +5731,12 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
     }
 
     /* Now we can seek to the TOC. */
-    result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)tocOffset, FS_SEEK_END);
+    result = fs_deserialize_add_offset(baseOffset, tocOffset, &tocSeekOffset);
+    if (result != FS_SUCCESS) {
+        return result;  /* Invalid TOC offset. */
+    }
+
+    result = fs_stream_seek(pInputStream, tocSeekOffset, FS_SEEK_END);
     if (result != FS_SUCCESS) {
         return result;
     }
@@ -5722,6 +5751,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         fs_uint64 fileSize;
         fs_uint64 fileOffset;
         fs_int64 currentOffset;
+        fs_int64 fileSeekOffset;
         fs_file* pFile = NULL;
 
         /* Flags. */
@@ -5826,6 +5856,12 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             /* File. */
             fs_uint64 bytesRemaining;
 
+            result = fs_deserialize_add_offset(baseOffset, fileOffset, &fileSeekOffset);
+            if (result != FS_SUCCESS) {
+                fs_string_free(&fullPath, fs_get_allocation_callbacks(pFS));
+                return result;
+            }
+
             result = fs_file_open(pFS, fs_string_cstr(&fullPath), FS_WRITE | FS_TRUNCATE | options, &pFile);
             fs_string_free(&fullPath, fs_get_allocation_callbacks(pFS));
 
@@ -5834,7 +5870,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             }
 
             /* Seek to the file data using base offset + local offset. */
-            result = fs_stream_seek(pInputStream, baseOffset + (fs_int64)fileOffset, FS_SEEK_END);
+            result = fs_stream_seek(pInputStream, fileSeekOffset, FS_SEEK_END);
             if (result != FS_SUCCESS) {
                 fs_file_close(pFile);
                 return result;

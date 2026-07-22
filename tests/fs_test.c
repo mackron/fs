@@ -4288,6 +4288,76 @@ int fs_test_serialization(fs_test* pTest)
 /* END serialization */
 
 
+static int fs_test_serialization_offsets(fs_test* pTest)
+{
+    fs_result result;
+    fs_int64 offset;
+    fs_int64 minOffset;
+    fs_uint64 encodedBaseOffset;
+    fs_memory_stream stream;
+    unsigned char serializedTail[32];
+    int i;
+
+    minOffset = -FS_INT64_MAX - 1;
+
+    result = fs_deserialize_add_offset(-32, 0, &offset);
+    if (result != FS_SUCCESS || offset != -32) {
+        printf("%s: Failed to preserve a valid base offset.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_deserialize_add_offset(minOffset, 0, &offset);
+    if (result != FS_SUCCESS || offset != minOffset) {
+        printf("%s: Failed to preserve the minimum signed offset.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_deserialize_add_offset(minOffset, (fs_uint64)FS_INT64_MAX, &offset);
+    if (result != FS_SUCCESS || offset != -1) {
+        printf("%s: Failed to add a large unsigned offset to a negative base.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_deserialize_add_offset(-32, 32, &offset);
+    if (result != FS_INVALID_DATA) {
+        printf("%s: Accepted an offset at or beyond the end of the stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_deserialize_add_offset(-32, (fs_uint64)-1, &offset);
+    if (result != FS_INVALID_DATA) {
+        printf("%s: Accepted an oversized local offset.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    /* A malformed stream base is input validation, not a helper invariant. */
+    FS_ZERO_MEMORY(serializedTail, sizeof(serializedTail));
+    for (i = 0; i < 4; i += 1) {
+        serializedTail[i + 0] = (unsigned char)(FS_SERIALIZED_SIG_0 >> (i * 8));
+        serializedTail[i + 4] = (unsigned char)(FS_SERIALIZED_SIG_1 >> (i * 8));
+    }
+
+    encodedBaseOffset = (fs_uint64)-31;
+    for (i = 0; i < 8; i += 1) {
+        serializedTail[i + 8] = (unsigned char)(encodedBaseOffset >> (i * 8));
+    }
+
+    result = fs_memory_stream_init_readonly(serializedTail, sizeof(serializedTail), &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize the malformed serialized stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_deserialize(NULL, NULL, 0, (fs_stream*)&stream);
+    if (result != FS_INVALID_DATA) {
+        printf("%s: Accepted a base offset that overlaps the serialized tail.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+
 static int fs_test_memory_stream_duplicate(fs_test* pTest)
 {
     fs_result result;
@@ -4584,6 +4654,7 @@ int main(int argc, char** argv)
     fs_test test_memory_stream_seek;
     fs_test test_memory_stream_remove_bounds;
     fs_test test_serialization;
+    fs_test test_serialization_offsets;
 
     /* Test states. */
     fs_test_state test_system_state;
@@ -4711,6 +4782,7 @@ int main(int argc, char** argv)
     Serialization Tests.
     */
     fs_test_init(&test_serialization,                  "Serialization",                  fs_test_serialization,                  &test_serialization_state, &test_root);
+    fs_test_init(&test_serialization_offsets,          "Serialization Offsets",          fs_test_serialization_offsets,          NULL,                      &test_serialization);
 
 
     result = fs_test_run(&test_root);
