@@ -4398,6 +4398,113 @@ static int fs_test_memory_stream_duplicate(fs_test* pTest)
 }
 
 
+static int fs_test_memory_stream_seek(fs_test* pTest)
+{
+    fs_result result;
+    fs_memory_stream stream;
+    size_t cursor;
+    const char data[] = "data";
+    fs_int64 minOffset;
+
+    result = fs_memory_stream_init_readonly(data, sizeof(data) - 1, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a read-only stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_seek(&stream, 4, FS_SEEK_SET);
+    if (result == FS_SUCCESS) {
+        result = fs_memory_stream_seek(&stream, -4, FS_SEEK_CUR);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_memory_stream_tell(&stream, &cursor);
+    }
+    if (result != FS_SUCCESS || cursor != 0) {
+        printf("%s: Failed to seek to the exact stream boundaries.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_seek(&stream, -1, FS_SEEK_END);
+    if (result == FS_SUCCESS) {
+        result = fs_memory_stream_tell(&stream, &cursor);
+    }
+    if (result != FS_SUCCESS || cursor != 3) {
+        printf("%s: Failed to seek relative to the end of the stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_seek(&stream, -4, FS_SEEK_CUR);
+    if (result != FS_BAD_SEEK) {
+        printf("%s: Seeking before the start of the stream did not fail.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_seek(&stream, 2, FS_SEEK_CUR);
+    if (result != FS_BAD_SEEK) {
+        printf("%s: Seeking beyond the end of the stream did not fail.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    minOffset = -FS_INT64_MAX - 1;
+    result = fs_memory_stream_seek(&stream, minOffset, FS_SEEK_SET);
+    if (result != FS_BAD_SEEK) {
+        printf("%s: The minimum signed offset did not fail cleanly.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_seek(&stream, FS_INT64_MAX, FS_SEEK_CUR);
+    if (result != FS_BAD_SEEK) {
+        printf("%s: The maximum signed offset did not fail cleanly.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_tell(&stream, &cursor);
+    if (result != FS_SUCCESS || cursor != 3) {
+        printf("%s: A failed seek changed the stream cursor.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+
+static int fs_test_memory_stream_remove_bounds(fs_test* pTest)
+{
+    fs_result result;
+    fs_memory_stream stream;
+
+    result = fs_memory_stream_init_write(NULL, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a writable stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_write(&stream, "data", 4, NULL);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to populate a writable stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_remove(&stream, FS_SIZE_MAX, 1);
+    if (result != FS_INVALID_ARGS || stream.write.dataSize != 4) {
+        printf("%s: An overflowing removal range did not fail cleanly.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_remove(&stream, 1, 2);
+    if (result != FS_SUCCESS || stream.write.dataSize != 2 || memcmp(stream.write.pData, "da", 2) != 0) {
+        printf("%s: Failed to remove a valid range.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    fs_memory_stream_uninit(&stream);
+    return FS_SUCCESS;
+}
+
+
 int main(int argc, char** argv)
 {
     int result;
@@ -4474,6 +4581,8 @@ int main(int argc, char** argv)
     fs_test test_mem_uninit;                        /* Needs to be last since this is where the fs_uninit() function is called for memory backend. */
     fs_test test_memory_stream;
     fs_test test_memory_stream_duplicate;
+    fs_test test_memory_stream_seek;
+    fs_test test_memory_stream_remove_bounds;
     fs_test test_serialization;
 
     /* Test states. */
@@ -4595,6 +4704,8 @@ int main(int argc, char** argv)
 
     fs_test_init(&test_memory_stream,                  "Memory Stream",                  NULL,                                   NULL,                  &test_root);
     fs_test_init(&test_memory_stream_duplicate,        "Memory Stream Duplicate",        fs_test_memory_stream_duplicate,        NULL,                  &test_memory_stream);
+    fs_test_init(&test_memory_stream_seek,             "Memory Stream Seek",             fs_test_memory_stream_seek,             NULL,                  &test_memory_stream);
+    fs_test_init(&test_memory_stream_remove_bounds,    "Memory Stream Remove Bounds",    fs_test_memory_stream_remove_bounds,    NULL,                  &test_memory_stream);
 
     /*
     Serialization Tests.
