@@ -8807,28 +8807,34 @@ static size_t fs_memory_stream_duplicate_alloc_size_internal(fs_stream* pStream)
 static fs_result fs_memory_stream_duplicate_internal(fs_stream* pStream, fs_stream* pDuplicatedStream)
 {
     fs_memory_stream* pMemoryStream;
+    fs_memory_stream* pDuplicatedMemoryStream;
 
     pMemoryStream = (fs_memory_stream*)pStream;
     FS_ASSERT(pMemoryStream != NULL);
 
-    *pDuplicatedStream = *pStream;
+    pDuplicatedMemoryStream = (fs_memory_stream*)pDuplicatedStream;
+    FS_ASSERT(pDuplicatedMemoryStream != NULL);
+
+    *pDuplicatedMemoryStream = *pMemoryStream;
 
     /* Slightly special handling for write mode. Need to make a copy of the output buffer. */
-    if (pMemoryStream->write.pData != NULL) {
-        void* pNewData = fs_malloc(pMemoryStream->write.dataCap, &pMemoryStream->allocationCallbacks);
-        if (pNewData == NULL) {
-            return FS_OUT_OF_MEMORY;
+    if (pMemoryStream->ppData == &pMemoryStream->write.pData) {
+        if (pMemoryStream->write.pData != NULL) {
+            void* pNewData = fs_malloc(pMemoryStream->write.dataCap, &pMemoryStream->allocationCallbacks);
+            if (pNewData == NULL) {
+                return FS_OUT_OF_MEMORY;
+            }
+
+            FS_COPY_MEMORY(pNewData, pMemoryStream->write.pData, pMemoryStream->write.dataSize);
+
+            pDuplicatedMemoryStream->write.pData = pNewData;
         }
 
-        FS_COPY_MEMORY(pNewData, pMemoryStream->write.pData, pMemoryStream->write.dataSize);
-
-        pMemoryStream->write.pData = pNewData;
-
-        pMemoryStream->ppData    = &pMemoryStream->write.pData;
-        pMemoryStream->pDataSize = &pMemoryStream->write.dataSize;
+        pDuplicatedMemoryStream->ppData    = &pDuplicatedMemoryStream->write.pData;
+        pDuplicatedMemoryStream->pDataSize = &pDuplicatedMemoryStream->write.dataSize;
     } else {
-        pMemoryStream->ppData    = (void**)&pMemoryStream->readonly.pData;
-        pMemoryStream->pDataSize = &pMemoryStream->readonly.dataSize;
+        pDuplicatedMemoryStream->ppData    = (void**)&pDuplicatedMemoryStream->readonly.pData;
+        pDuplicatedMemoryStream->pDataSize = &pDuplicatedMemoryStream->readonly.dataSize;
     }
 
     return FS_SUCCESS;

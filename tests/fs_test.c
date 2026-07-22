@@ -4288,6 +4288,116 @@ int fs_test_serialization(fs_test* pTest)
 /* END serialization */
 
 
+static int fs_test_memory_stream_duplicate(fs_test* pTest)
+{
+    fs_result result;
+    fs_memory_stream stream;
+    fs_stream* pDuplicatedStream;
+    char originalData[3];
+    char duplicatedData[3];
+    const char readonlyData[] = "readonly";
+    char readonlyOutput[sizeof(readonlyData) - 1];
+
+    /* An empty writable stream must remain writable after duplication. */
+    result = fs_memory_stream_init_write(NULL, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize an empty writable stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    pDuplicatedStream = NULL;
+    result = fs_stream_duplicate((fs_stream*)&stream, NULL, &pDuplicatedStream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate an empty writable stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    result = fs_stream_write(pDuplicatedStream, "x", 1, NULL);
+    if (result != FS_SUCCESS || stream.write.dataSize != 0) {
+        printf("%s: Empty writable stream duplication did not preserve independent write state.\n", pTest->name);
+        fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+    fs_memory_stream_uninit(&stream);
+
+    /* A populated writable stream must receive an independent copy of its data. */
+    result = fs_memory_stream_init_write(NULL, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a populated writable stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_memory_stream_write(&stream, "abc", 3, NULL);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to populate a writable stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    pDuplicatedStream = NULL;
+    result = fs_stream_duplicate((fs_stream*)&stream, NULL, &pDuplicatedStream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate a populated writable stream.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    result = fs_stream_seek(pDuplicatedStream, 0, FS_SEEK_SET);
+    if (result == FS_SUCCESS) {
+        result = fs_stream_write(pDuplicatedStream, "X", 1, NULL);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_memory_stream_seek(&stream, 0, FS_SEEK_SET);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_memory_stream_read(&stream, originalData, sizeof(originalData), NULL);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_stream_seek(pDuplicatedStream, 0, FS_SEEK_SET);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_stream_read(pDuplicatedStream, duplicatedData, sizeof(duplicatedData), NULL);
+    }
+    if (result != FS_SUCCESS || memcmp(originalData, "abc", 3) != 0 || memcmp(duplicatedData, "Xbc", 3) != 0) {
+        printf("%s: Populated writable stream duplication did not copy data independently.\n", pTest->name);
+        fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+    fs_memory_stream_uninit(&stream);
+
+    /* A read-only duplicate must retain access to the source data. */
+    result = fs_memory_stream_init_readonly(readonlyData, sizeof(readonlyData) - 1, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a read-only stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    pDuplicatedStream = NULL;
+    result = fs_stream_duplicate((fs_stream*)&stream, NULL, &pDuplicatedStream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate a read-only stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_stream_read(pDuplicatedStream, readonlyOutput, sizeof(readonlyOutput), NULL);
+    if (result != FS_SUCCESS || memcmp(readonlyOutput, readonlyData, sizeof(readonlyOutput)) != 0) {
+        printf("%s: Read-only stream duplicate returned unexpected data.\n", pTest->name);
+        fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+        return FS_ERROR;
+    }
+
+    fs_stream_delete_duplicate(pDuplicatedStream, NULL);
+    return FS_SUCCESS;
+}
+
+
 int main(int argc, char** argv)
 {
     int result;
@@ -4362,6 +4472,8 @@ int main(int argc, char** argv)
     fs_test test_mem_remove;                        /* Tests fs_remove() in memory. This will delete test files. */
     fs_test test_mem_stress_test;                   /* Tests stress scenarios like many files and deep directories in memory. */
     fs_test test_mem_uninit;                        /* Needs to be last since this is where the fs_uninit() function is called for memory backend. */
+    fs_test test_memory_stream;
+    fs_test test_memory_stream_duplicate;
     fs_test test_serialization;
 
     /* Test states. */
@@ -4480,6 +4592,9 @@ int main(int argc, char** argv)
     fs_test_init(&test_mem_remove,                     "Memory Remove",                  fs_test_mem_remove,                     &test_mem_state,       &test_mem);
     fs_test_init(&test_mem_stress_test,                "Memory Stress Test",             fs_test_mem_stress_test,                &test_mem_state,       &test_mem);
     fs_test_init(&test_mem_uninit,                     "Memory Uninitialization",        fs_test_mem_uninit,                     &test_mem_state,       &test_mem);
+
+    fs_test_init(&test_memory_stream,                  "Memory Stream",                  NULL,                                   NULL,                  &test_root);
+    fs_test_init(&test_memory_stream_duplicate,        "Memory Stream Duplicate",        fs_test_memory_stream_duplicate,        NULL,                  &test_memory_stream);
 
     /*
     Serialization Tests.
