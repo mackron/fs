@@ -9071,6 +9071,8 @@ FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offse
 {
     void* pDst;
     void* pSrc;
+    size_t dataSize;
+    size_t removeEnd;
     size_t tailSize;
 
     if (pStream == NULL) {
@@ -9082,13 +9084,20 @@ FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offse
         return FS_INVALID_OPERATION;
     }
 
-    if ((offset + size) > *pStream->pDataSize) {
+    dataSize = *pStream->pDataSize;
+    if (offset > dataSize || size > dataSize - offset) {
         return FS_INVALID_ARGS;
     }
+    
+    if (size == 0) {
+        return FS_SUCCESS;
+    }
+
+    removeEnd = offset + size;  /* Safe because of the bounds check above. */
 
     /* The cursor needs to be moved. */
     if (pStream->cursor > offset) {
-        if (pStream->cursor >= (offset + size)) {
+        if (pStream->cursor >= removeEnd) {
             pStream->cursor -= size;
         } else {
             pStream->cursor  = offset;
@@ -9096,8 +9105,8 @@ FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offse
     }
 
     pDst = FS_OFFSET_PTR(*pStream->ppData, offset);
-    pSrc = FS_OFFSET_PTR(*pStream->ppData, offset + size);
-    tailSize = *pStream->pDataSize - (offset + size);
+    pSrc = FS_OFFSET_PTR(*pStream->ppData, removeEnd);
+    tailSize = dataSize - removeEnd;
 
     FS_MOVE_MEMORY(pDst, pSrc, tailSize);
     *pStream->pDataSize -= size;
