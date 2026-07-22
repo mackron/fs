@@ -5766,6 +5766,11 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             return result;
         }
 
+        /* Restrict the length of the file path to something reasonable since we'll be doing a heap allocation below. */
+        if (localPathLen == 0xFFFF) {
+            return FS_INVALID_DATA;
+        }
+
         /* Path. */
         result = fs_string_alloc(localPathLen + 1, fs_get_allocation_callbacks(pFS), &localPath);
         if (result != FS_SUCCESS) {
