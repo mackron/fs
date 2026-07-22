@@ -3543,11 +3543,11 @@ static fs_result fs_validate_path(const char* pPath, size_t pathLen, int mode)
         fs_result result;
 
         for (result = fs_path_first(pPath, pathLen, &iPathSeg); result == FS_SUCCESS; result = fs_path_next(&iPathSeg)) {
-            if (fs_strncmp(iPathSeg.pFullPath, ".", iPathSeg.segmentLength) == 0) {
+            if (fs_strncmp(iPathSeg.pFullPath + iPathSeg.segmentOffset, ".", iPathSeg.segmentLength) == 0) {
                 return FS_INVALID_ARGS;
             }
 
-            if (fs_strncmp(iPathSeg.pFullPath, "..", iPathSeg.segmentLength) == 0) {
+            if (fs_strncmp(iPathSeg.pFullPath + iPathSeg.segmentOffset, "..", iPathSeg.segmentLength) == 0) {
                 return FS_INVALID_ARGS;
             }
         }
