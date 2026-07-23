@@ -5636,16 +5636,17 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         result = fs_stream_write(pOutputStream, pTOCData, tocDataSize, NULL);
         fs_free(pTOCData, fs_get_allocation_callbacks(pFS));
 
-        if (FS_UINT64_MAX - runningOffset < tocDataSize) {
-            result = FS_TOO_BIG;
-        }
-
-        runningOffset += tocDataSize;
-
         if (result != FS_SUCCESS) {
             fs_memory_stream_uninit(&toc);
             return result;
         }
+
+        if (FS_UINT64_MAX - runningOffset < tocDataSize) {
+            fs_memory_stream_uninit(&toc);
+            return FS_TOO_BIG;
+        }
+
+        runningOffset += tocDataSize;
     }
 
     /* Tail. */
