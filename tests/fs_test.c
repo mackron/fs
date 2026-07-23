@@ -4927,8 +4927,8 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_read_noexist,            "Read Non-Existent",              fs_test_system_read_noexist,            &test_system_state,   &test_system_read);
     fs_test_init(&test_system_duplicate,               "Duplicate",                      fs_test_system_duplicate,               &test_system_state,   &test_system);
     fs_test_init(&test_system_rename,                  "Rename",                         fs_test_system_rename,                  &test_system_state,   &test_system);
-    fs_test_init(&test_system_remove,                  "Remove",                         fs_test_system_remove,                  &test_system_state,   &test_system);
     fs_test_init(&test_system_symlink_info,            "Symbolic Link Info",             fs_test_system_symlink_info,            &test_system_state,   &test_system);
+    fs_test_init(&test_system_remove,                  "Remove",                         fs_test_system_remove,                  &test_system_state,   &test_system);
     fs_test_init(&test_system_uninit,                  "Uninitialization",               fs_test_system_uninit,                  &test_system_state,   &test_system);
 
     /*
