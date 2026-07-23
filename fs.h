@@ -1013,7 +1013,9 @@ typedef unsigned int  fs_bool32;
 #define FS_FALSE 0
 
 
-#define FS_INT64_MAX ((fs_int64)(((fs_uint64)0x7FFFFFFF << 32) | 0xFFFFFFFF))
+#define FS_UINT64_MAX               (((fs_uint64)0xFFFFFFFF << 32) | 0xFFFFFFFF)
+#define FS_INT64_MAX    ((fs_int64 )(((fs_uint64)0x7FFFFFFF << 32) | 0xFFFFFFFF))
+#define FS_INT64_MIN    (-FS_INT64_MAX - 1)
 
 
 #ifndef FS_API

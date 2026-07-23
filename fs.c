@@ -5496,7 +5496,7 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
                         return result;
                     }
 
-                    if (FS_INT64_MAX - fileSize < bytesRead) {
+                    if (FS_UINT64_MAX - fileSize < bytesRead) {
                         fs_string_free(&path, fs_get_allocation_callbacks(pFS));
                         return FS_TOO_BIG;  /* File is too big. Should never happen in practice. */
                     }
@@ -5512,7 +5512,7 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
                 pFile = NULL;
             }
 
-            if (FS_INT64_MAX - *pRunningFileOffset < fileSize) {
+            if (FS_UINT64_MAX - *pRunningFileOffset < fileSize) {
                 fs_string_free(&path, fs_get_allocation_callbacks(pFS));
                 return FS_TOO_BIG;
             }
@@ -5636,12 +5636,16 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         result = fs_stream_write(pOutputStream, pTOCData, tocDataSize, NULL);
         fs_free(pTOCData, fs_get_allocation_callbacks(pFS));
 
+        if (FS_UINT64_MAX - runningOffset < tocDataSize) {
+            result = FS_TOO_BIG;
+        }
+
+        runningOffset += tocDataSize;
+
         if (result != FS_SUCCESS) {
             fs_memory_stream_uninit(&toc);
             return result;
         }
-
-        runningOffset += tocDataSize;
     }
 
     /* Tail. */
@@ -5675,6 +5679,15 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
             TOC Entry Count (4 bytes)
             Reserved (4 bytes)
         */
+        if (FS_UINT64_MAX - runningOffset < 32) {
+            return FS_TOO_BIG;  /* Overflowed. */
+        }
+
+        /* The base offset is negative so we'll need to make sure it fits in a signed 64-bit integer. */
+        if (runningOffset > (fs_uint64)FS_INT64_MAX + 1) {
+            return FS_TOO_BIG;
+        }
+
         baseOffset = -(fs_int64)(runningOffset + 32);
 
         /* Signature. */
