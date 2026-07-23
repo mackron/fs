@@ -5874,7 +5874,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
         }
 
         /* Restrict the length of the file path to something reasonable since we'll be doing a heap allocation below. */
-        if (localPathLen >= 0xFFFF) {
+        if (localPathLen > 0xFFFF) {
             return FS_INVALID_DATA;
         }
 
