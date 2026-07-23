@@ -5496,6 +5496,11 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
                         return result;
                     }
 
+                    if (FS_INT64_MAX - fileSize < bytesRead) {
+                        fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+                        return FS_TOO_BIG;  /* File is too big. Should never happen in practice. */
+                    }
+
                     fileSize += bytesRead;
 
                     if (result == FS_AT_END) {
