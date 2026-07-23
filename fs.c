@@ -5511,7 +5511,14 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
                 fs_file_close(pFile);
                 pFile = NULL;
             }
+
+            if (FS_INT64_MAX - *pRunningFileOffset < fileSize) {
+                fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+                return FS_TOO_BIG;
+            }
+
             *pRunningFileOffset += fileSize;
+
 
             /* Add padding zeros to align the data to 8 bytes. */
             result = fs_stream_write(pOutputStream, padding, (size_t)(FS_ALIGN(*pRunningFileOffset, 8) - *pRunningFileOffset), NULL);
