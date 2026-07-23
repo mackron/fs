@@ -5684,7 +5684,7 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         }
 
         /* The base offset is negative so we'll need to make sure it fits in a signed 64-bit integer. */
-        if (runningOffset > (fs_uint64)FS_INT64_MAX + 1) {
+        if (runningOffset > (fs_uint64)FS_INT64_MAX - 32) {
             return FS_TOO_BIG;
         }
 
