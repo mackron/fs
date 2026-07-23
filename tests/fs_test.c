@@ -1584,6 +1584,78 @@ int fs_test_system_remove(fs_test* pTest)
 }
 /* END system_remove */
 
+/* BEG system_symlink_info */
+#if defined(FS_HAS_POSIX) && !defined(FS_NO_LSTAT)
+    #if defined(__cplusplus)
+    extern "C" {
+    #endif
+
+    int symlink(const char* pTarget, const char* pLinkPath);
+
+    #if defined(__cplusplus)
+    }
+    #endif
+#endif
+
+static int fs_test_system_symlink_info(fs_test* pTest)
+{
+#if defined(FS_HAS_POSIX) && !defined(FS_NO_LSTAT)
+    fs_test_state* pTestState = (fs_test_state*)pTest->pUserData;
+    fs_file_info info;
+    fs_iterator* pIterator;
+    fs_result result;
+    char targetPath[256];
+    char linkPath[256];
+    fs_bool32 foundLink;
+
+    if (pTestState->pBackend != FS_BACKEND_POSIX) {
+        return FS_SUCCESS;
+    }
+
+    fs_path_append(targetPath, sizeof(targetPath), pTestState->pTempDir, (size_t)-1, "symlink-target", (size_t)-1);
+    fs_path_append(linkPath, sizeof(linkPath), pTestState->pTempDir, (size_t)-1, "symlink-link", (size_t)-1);
+
+    result = fs_mkdir(pTestState->pFS, targetPath, FS_IGNORE_MOUNTS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to create the symlink target.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    if (symlink(targetPath, linkPath) != 0) {
+        printf("%s: Failed to create a symbolic link.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_info(pTestState->pFS, linkPath, FS_READ | FS_IGNORE_MOUNTS, &info);
+    if (result != FS_SUCCESS || !info.symlink || info.directory) {
+        printf("%s: fs_info() did not report the symbolic link itself.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    foundLink = FS_FALSE;
+    for (pIterator = fs_first(pTestState->pFS, pTestState->pTempDir, FS_IGNORE_MOUNTS); pIterator != NULL; pIterator = fs_next(pIterator)) {
+        if (strcmp(pIterator->pName, "symlink-link") == 0) {
+            foundLink = FS_TRUE;
+            if (!pIterator->info.symlink || pIterator->info.directory) {
+                printf("%s: Directory iteration did not report the symbolic link itself.\n", pTest->name);
+                fs_free_iterator(pIterator);
+                return FS_ERROR;
+            }
+        }
+    }
+
+    if (!foundLink) {
+        printf("%s: Directory iteration did not return the symbolic link.\n", pTest->name);
+        return FS_ERROR;
+    }
+#else
+    (void)pTest;
+#endif
+
+    return FS_SUCCESS;
+}
+/* END system_symlink_info */
+
 /* BEG system_uninit */
 int fs_test_system_uninit(fs_test* pTest)
 {
@@ -4742,6 +4814,7 @@ int main(int argc, char** argv)
     fs_test test_system_read_noexist;               /* Tests that reading a non-existent file fails cleanly. */
     fs_test test_system_duplicate;                  /* Tests fs_file_duplicate(). */
     fs_test test_system_rename;                     /* Tests fs_rename(). Make sure this is done before the remove test. */
+    fs_test test_system_symlink_info;
     fs_test test_system_remove;                     /* Tests fs_remove(). This will delete all of the test files we created earlier. Therefore it should be the last test, before uninitialization. */
     fs_test test_system_uninit;                     /* Needs to be last since this is where the fs_uninit() function is called. */
     fs_test test_mounts;                            /* The top-level test for mounts. This will set up the `fs` object and the folder and file structure in preparation for subsequent tests. */
@@ -4855,6 +4928,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_system_duplicate,               "Duplicate",                      fs_test_system_duplicate,               &test_system_state,   &test_system);
     fs_test_init(&test_system_rename,                  "Rename",                         fs_test_system_rename,                  &test_system_state,   &test_system);
     fs_test_init(&test_system_remove,                  "Remove",                         fs_test_system_remove,                  &test_system_state,   &test_system);
+    fs_test_init(&test_system_symlink_info,            "Symbolic Link Info",             fs_test_system_symlink_info,            &test_system_state,   &test_system);
     fs_test_init(&test_system_uninit,                  "Uninitialization",               fs_test_system_uninit,                  &test_system_state,   &test_system);
 
     /*

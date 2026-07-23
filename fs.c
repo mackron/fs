@@ -6028,6 +6028,28 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
 #include <dirent.h>
 #include <sys/stat.h>
 
+/* Some standard libraries hide lstat() in strict ANSI modes despite providing the function. */
+#if !defined(FS_NO_LSTAT)
+    #if defined(__cplusplus)
+    extern "C" {
+    #endif
+
+    int lstat(const char* pPath, struct stat* pInfo);
+
+    #if defined(__cplusplus)
+    }
+    #endif
+#endif
+
+static int fs_stat_path_posix(const char* pPath, struct stat* pInfo)
+{
+#if defined(FS_NO_LSTAT)
+    return stat(pPath, pInfo);
+#else
+    return lstat(pPath, pInfo);
+#endif
+}
+
 
 static size_t fs_alloc_size_posix(const void* pBackendConfig)
 {
@@ -6109,7 +6131,7 @@ static fs_result fs_info_posix(fs* pFS, const char* pPath, int openMode, fs_file
     } else if (pPath == FS_STDERR) {
         result = fstat(STDERR_FILENO, &info);
     } else {
-        result = stat(pPath, &info);
+        result = fs_stat_path_posix(pPath, &info);
     }
 
     if (result != 0) {
@@ -6534,7 +6556,7 @@ static fs_iterator* fs_first_posix(fs* pFS, const char* pDirectoryPath, size_t d
     pIteratorPosix->iterator.nameLen = fileNameLen;
 
     /* We can now get the file information. */
-    if (stat(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
+    if (fs_stat_path_posix(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
         closedir(pIteratorPosix->pDir);
         fs_free(pIteratorPosix, fs_get_allocation_callbacks(pFS));
         return NULL;
@@ -6581,7 +6603,7 @@ static fs_iterator* fs_next_posix(fs_iterator* pIterator)
     pIteratorPosix->iterator.nameLen = fileNameLen;
 
     /* We can now get the file information. */
-    if (stat(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
+    if (fs_stat_path_posix(pIteratorPosix->pFullFilePath, &statInfo) != 0) {
         fs_free_iterator_posix((fs_iterator*)pIteratorPosix);
         return NULL;
     }
