@@ -4288,6 +4288,51 @@ int fs_test_serialization(fs_test* pTest)
 /* END serialization */
 
 
+static int fs_test_serialization_endian(fs_test* pTest)
+{
+    static const fs_uint8 expected[] = {
+        0x78, 0x56, 0x34, 0x12,
+        0xEF, 0xCD, 0xAB, 0x89, 0x67, 0x45, 0x23, 0x01,
+        0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+    };
+    fs_memory_stream stream;
+    fs_result result;
+    void* pData;
+    size_t dataSize;
+
+    result = fs_memory_stream_init_write(NULL, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize the output stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_stream_write_u32_le((fs_stream*)&stream, 0x12345678);
+    if (result == FS_SUCCESS) {
+        result = fs_stream_write_u64_le((fs_stream*)&stream, ((fs_uint64)0x01234567 << 32) | 0x89ABCDEF);
+    }
+    if (result == FS_SUCCESS) {
+        result = fs_stream_write_s64_le((fs_stream*)&stream, -2);
+    }
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to write little-endian values.\n", pTest->name);
+        fs_memory_stream_uninit(&stream);
+        return FS_ERROR;
+    }
+
+    pData = fs_memory_stream_take_ownership(&stream, &dataSize);
+    fs_memory_stream_uninit(&stream);
+
+    if (dataSize != sizeof(expected) || memcmp(pData, expected, sizeof(expected)) != 0) {
+        printf("%s: Serialized integers are not little-endian.\n", pTest->name);
+        fs_free(pData, NULL);
+        return FS_ERROR;
+    }
+
+    fs_free(pData, NULL);
+    return FS_SUCCESS;
+}
+
+
 static int fs_test_serialization_offsets(fs_test* pTest)
 {
     fs_result result;
@@ -4746,6 +4791,7 @@ int main(int argc, char** argv)
     fs_test test_memory_stream_write_bounds;
     fs_test test_memory_stream_remove_bounds;
     fs_test test_serialization;
+    fs_test test_serialization_endian;
     fs_test test_serialization_offsets;
     fs_test test_serialization_paths;
 
@@ -4876,6 +4922,7 @@ int main(int argc, char** argv)
     Serialization Tests.
     */
     fs_test_init(&test_serialization,                  "Serialization",                  fs_test_serialization,                  &test_serialization_state, &test_root);
+    fs_test_init(&test_serialization_endian,           "Serialization Endian",           fs_test_serialization_endian,           NULL,                      &test_serialization);
     fs_test_init(&test_serialization_offsets,          "Serialization Offsets",          fs_test_serialization_offsets,          NULL,                      &test_serialization);
     fs_test_init(&test_serialization_paths,            "Serialization Paths",            fs_test_serialization_paths,            NULL,                      &test_serialization);
 

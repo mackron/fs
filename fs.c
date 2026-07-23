@@ -5283,6 +5283,88 @@ FS_API fs_result fs_file_open_and_write(fs* pFS, const char* pFilePath, const vo
 #define FS_SERIALIZED_SIG_0 0x52535346
 #define FS_SERIALIZED_SIG_1 0x00315A4C
 
+static fs_result fs_stream_write_u32_le(fs_stream* pStream, fs_uint32 value)
+{
+    fs_uint8 bytes[4];
+
+    bytes[0] = (fs_uint8)(value >>  0);
+    bytes[1] = (fs_uint8)(value >>  8);
+    bytes[2] = (fs_uint8)(value >> 16);
+    bytes[3] = (fs_uint8)(value >> 24);
+
+    return fs_stream_write(pStream, bytes, sizeof(bytes), NULL);
+}
+
+static fs_result fs_stream_write_u64_le(fs_stream* pStream, fs_uint64 value)
+{
+    fs_uint8 bytes[8];
+
+    bytes[0] = (fs_uint8)(value >>  0);
+    bytes[1] = (fs_uint8)(value >>  8);
+    bytes[2] = (fs_uint8)(value >> 16);
+    bytes[3] = (fs_uint8)(value >> 24);
+    bytes[4] = (fs_uint8)(value >> 32);
+    bytes[5] = (fs_uint8)(value >> 40);
+    bytes[6] = (fs_uint8)(value >> 48);
+    bytes[7] = (fs_uint8)(value >> 56);
+
+    return fs_stream_write(pStream, bytes, sizeof(bytes), NULL);
+}
+
+static fs_result fs_stream_write_s64_le(fs_stream* pStream, fs_int64 value)
+{
+    return fs_stream_write_u64_le(pStream, (fs_uint64)value);
+}
+
+
+static fs_result fs_stream_read_u32_le(fs_stream* pStream, fs_uint32* pResult)
+{
+    fs_result result;
+    fs_uint8 bytes[4];
+
+    result = fs_stream_read(pStream, bytes, 4, NULL);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    *pResult = ((fs_uint32)bytes[0] << 0) | ((fs_uint32)bytes[1] << 8) | ((fs_uint32)bytes[2] << 16) | ((fs_uint32)bytes[3] << 24);
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_stream_read_u64_le(fs_stream* pStream, fs_uint64* pResult)
+{
+    fs_result result;
+    fs_uint8 bytes[8];
+
+    result = fs_stream_read(pStream, bytes, 8, NULL);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    *pResult =
+        ((fs_uint64)bytes[0] <<  0) | ((fs_uint64)bytes[1] <<  8) | ((fs_uint64)bytes[2] << 16) | ((fs_uint64)bytes[3] << 24) |
+        ((fs_uint64)bytes[4] << 32) | ((fs_uint64)bytes[5] << 40) | ((fs_uint64)bytes[6] << 48) | ((fs_uint64)bytes[7] << 56);
+
+    return FS_SUCCESS;
+}
+
+static fs_result fs_stream_read_s64_le(fs_stream* pStream, fs_int64* pResult)
+{
+    fs_result result;
+    fs_uint64 temp;
+
+    result = fs_stream_read_u64_le(pStream, &temp);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    *pResult = (fs_int64)temp;
+
+    return FS_SUCCESS;
+}
+
+
 static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, const char* pBasePath, int options, fs_stream* pOutputStream, fs_stream* pTOCStream, fs_uint32* pTOCEntryCount, fs_uint64* pRunningFileOffset)
 {
     fs_result result;
@@ -5308,7 +5390,7 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
             fileFlags |= 0x1;    /* Directory. */
         }
 
-        result = fs_stream_write(pTOCStream, &fileFlags, 4, NULL);
+        result = fs_stream_write_u32_le(pTOCStream, fileFlags);
         if (result != FS_SUCCESS) {
             return result;
         }
@@ -5338,9 +5420,13 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
         }
 
         trimmedPathLen = strlen(pTrimmedPath);
+        if (trimmedPathLen > 0xFFFFFFFFU) {
+            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+            return FS_TOO_BIG;
+        }
 
         /* Path Length. */
-        result = fs_stream_write(pTOCStream, &trimmedPathLen, 4, NULL);
+        result = fs_stream_write_u32_le(pTOCStream, (fs_uint32)trimmedPathLen);
         if (result != FS_SUCCESS) {
             fs_string_free(&path, fs_get_allocation_callbacks(pFS));
             return result;
@@ -5429,14 +5515,14 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
 
 
         /* File Size. */
-        result = fs_stream_write(pTOCStream, &fileSize, 8, NULL);
+        result = fs_stream_write_u64_le(pTOCStream, fileSize);
         if (result != FS_SUCCESS) {
             fs_string_free(&path, fs_get_allocation_callbacks(pFS));
             return result;
         }
 
         /* File Offset. */
-        result = fs_stream_write(pTOCStream, &fileOffset, 8, NULL);
+        result = fs_stream_write_u64_le(pTOCStream, fileOffset);
         if (result != FS_SUCCESS) {
             fs_string_free(&path, fs_get_allocation_callbacks(pFS));
             return result;
@@ -5463,7 +5549,6 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
 FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, fs_stream* pOutputStream)
 {
     fs_result result;
-    fs_uint32 sig[2] = { FS_SERIALIZED_SIG_0, FS_SERIALIZED_SIG_1 };
     fs_memory_stream toc;
     fs_uint32 tocEntryCount = 0;    /* <-- Must be initialized to zero. */
     fs_uint64 runningOffset = 0;    /* <-- Must be initialized to zero. */
@@ -5560,32 +5645,37 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         baseOffset = -(fs_int64)(runningOffset + 32);
 
         /* Signature. */
-        result = fs_stream_write(pOutputStream, sig, 8, NULL);
+        result = fs_stream_write_u32_le(pOutputStream, FS_SERIALIZED_SIG_0);
+        if (result != FS_SUCCESS) {
+            return result;
+        }
+
+        result = fs_stream_write_u32_le(pOutputStream, FS_SERIALIZED_SIG_1);
         if (result != FS_SUCCESS) {
             return result;
         }
 
         /* Base Offset. */
-        result = fs_stream_write(pOutputStream, &baseOffset, 8, NULL);
+        result = fs_stream_write_s64_le(pOutputStream, baseOffset);
         if (result != FS_SUCCESS) {
             return result;
         }
 
         /* TOC Offset. */
-        result = fs_stream_write(pOutputStream, &tocOffset, 8, NULL);
+        result = fs_stream_write_u64_le(pOutputStream, tocOffset);
         if (result != FS_SUCCESS) {
             return result;
         }
 
         /* TOC Entry Count. */
-        result = fs_stream_write(pOutputStream, &tocEntryCount, 4, NULL);
+        result = fs_stream_write_u32_le(pOutputStream, tocEntryCount);
         if (result != FS_SUCCESS) {
             return result;
         }
 
         /* Reserved. */
         reserved = 0;
-        result = fs_stream_write(pOutputStream, &reserved, 4, NULL);
+        result = fs_stream_write_u32_le(pOutputStream, reserved);
         if (result != FS_SUCCESS) {
             return result;
         }
@@ -5594,54 +5684,6 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
     return FS_SUCCESS;
 }
 
-
-
-static fs_result fs_stream_read_u32_le(fs_stream* pStream, fs_uint32* pResult)
-{
-    fs_result result;
-    fs_uint8 bytes[4];
-
-    result = fs_stream_read(pStream, bytes, 4, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
-
-    *pResult = ((fs_uint32)bytes[0] << 0) | ((fs_uint32)bytes[1] << 8) | ((fs_uint32)bytes[2] << 16) | ((fs_uint32)bytes[3] << 24);
-
-    return FS_SUCCESS;
-}
-
-static fs_result fs_stream_read_u64_le(fs_stream* pStream, fs_uint64* pResult)
-{
-    fs_result result;
-    fs_uint8 bytes[8];
-
-    result = fs_stream_read(pStream, bytes, 8, NULL);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
-
-    *pResult =
-        ((fs_uint64)bytes[0] <<  0) | ((fs_uint64)bytes[1] <<  8) | ((fs_uint64)bytes[2] << 16) | ((fs_uint64)bytes[3] << 24) |
-        ((fs_uint64)bytes[4] << 32) | ((fs_uint64)bytes[5] << 40) | ((fs_uint64)bytes[6] << 48) | ((fs_uint64)bytes[7] << 56);
-
-    return FS_SUCCESS;
-}
-
-static fs_result fs_stream_read_s64_le(fs_stream* pStream, fs_int64* pResult)
-{
-    fs_result result;
-    fs_uint64 temp;
-
-    result = fs_stream_read_u64_le(pStream, &temp);
-    if (result != FS_SUCCESS) {
-        return result;
-    }
-
-    *pResult = (fs_int64)temp;
-
-    return FS_SUCCESS;
-}
 
 static fs_result fs_deserialize_add_offset(fs_int64 baseOffset, fs_uint64 localOffset, fs_int64* pResult)
 {
