@@ -5521,12 +5521,21 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
 
 
             /* Add padding zeros to align the data to 8 bytes. */
-            result = fs_stream_write(pOutputStream, padding, (size_t)(FS_ALIGN(*pRunningFileOffset, 8) - *pRunningFileOffset), NULL);
-            if (result != FS_SUCCESS) {
-                fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                return result;
+            {
+                fs_uint64 runningFileOffsetAligned = FS_ALIGN(*pRunningFileOffset, 8);
+                if (runningFileOffsetAligned < *pRunningFileOffset) {   /* If the aligned offset is less than the unaligned offset, it means it overflowed. */
+                    fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+                    return FS_TOO_BIG;
+                }
+
+                result = fs_stream_write(pOutputStream, padding, (size_t)(runningFileOffsetAligned - *pRunningFileOffset), NULL);
+                if (result != FS_SUCCESS) {
+                    fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+                    return result;
+                }
+
+                *pRunningFileOffset = runningFileOffsetAligned;
             }
-            *pRunningFileOffset = FS_ALIGN(*pRunningFileOffset, 8);
         }
 
 
@@ -5642,11 +5651,19 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         fs_uint32 reserved;
 
         /* Padding to align to 8 bytes. */
-        result = fs_stream_write(pOutputStream, padding, (size_t)(FS_ALIGN(runningOffset, 8) - runningOffset), NULL);
-        if (result != FS_SUCCESS) {
-            return result;
+        {
+            fs_uint64 runningOffsetAligned = FS_ALIGN(runningOffset, 8);
+            if (runningOffsetAligned < runningOffset) { /* If the aligned offset is less than the running offset it means it overflowed. */
+                return FS_TOO_BIG;
+            }
+
+            result = fs_stream_write(pOutputStream, padding, (size_t)(runningOffsetAligned - runningOffset), NULL);
+            if (result != FS_SUCCESS) {
+                return result;
+            }
+
+            runningOffset = runningOffsetAligned;
         }
-        runningOffset = FS_ALIGN(runningOffset, 8);
 
 
         /*
