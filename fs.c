@@ -5928,6 +5928,11 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
             /* File. */
             fs_uint64 bytesRemaining;
 
+            if (fileOffset > tocOffset || fileSize > tocOffset - fileOffset) {
+                fs_string_free(&fullPath, fs_get_allocation_callbacks(pFS));
+                return FS_INVALID_DATA;
+            }
+
             result = fs_deserialize_add_offset(baseOffset, fileOffset, &fileSeekOffset);
             if (result != FS_SUCCESS) {
                 fs_string_free(&fullPath, fs_get_allocation_callbacks(pFS));
