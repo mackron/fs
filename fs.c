@@ -7008,6 +7008,7 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     DWORD dwDesiredAccess = 0;
     DWORD dwShareMode = 0;
     DWORD dwCreationDisposition = OPEN_EXISTING;
+    size_t filePathLen;
 
     /*  */ if (pFilePath == FS_STDIN ) {
         hFile = GetStdHandle(STD_INPUT_HANDLE);
@@ -7078,10 +7079,12 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     pFileWin32->openMode = openMode;
 
     /* We need to make a copy of the path for duplication purposes. */
-    if (path.len < FS_COUNTOF(pFileWin32->pFilePathStack)) {
+    filePathLen = strlen(pFilePath);
+
+    if (filePathLen < FS_COUNTOF(pFileWin32->pFilePathStack)) {
         pFileWin32->pFilePath = pFileWin32->pFilePathStack;
     } else {
-        pFileWin32->pFilePathHeap = (char*)fs_malloc(path.len + 1, fs_get_allocation_callbacks(pFS));
+        pFileWin32->pFilePathHeap = (char*)fs_malloc(filePathLen + 1, fs_get_allocation_callbacks(pFS));
         if (pFileWin32->pFilePathHeap == NULL) {
             result = FS_OUT_OF_MEMORY;
             if (pFileWin32->isStandardHandle == FS_FALSE) {
