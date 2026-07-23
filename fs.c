@@ -5579,6 +5579,7 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
     fs_uint64 runningOffset = 0;    /* <-- Must be initialized to zero. */
     fs_uint64 tocOffset;
     fs_int64 initialPos;
+    fs_int64 initialPosAligned;
 
     if (pOutputStream == NULL) {
         return FS_INVALID_ARGS;
@@ -5606,7 +5607,15 @@ FS_API fs_result fs_serialize(fs* pFS, const char* pDirectoryPath, int options, 
         return result;
     }
 
-    result = fs_stream_write(pOutputStream, "\0\0\0\0\0\0\0\0", (size_t)(FS_ALIGN(initialPos, 8) - initialPos), NULL);
+    /* Check that the initial position is not too big for the padding calculation. */
+    if (initialPos < 0 || initialPos > FS_INT64_MAX - 7) {
+        fs_memory_stream_uninit(&toc);
+        return FS_TOO_BIG;
+    }
+
+    initialPosAligned = FS_ALIGN(initialPos, 8);
+
+    result = fs_stream_write(pOutputStream, "\0\0\0\0\0\0\0\0", (size_t)(initialPosAligned - initialPos), NULL);
     if (result != FS_SUCCESS) {
         fs_memory_stream_uninit(&toc);
         return result;
