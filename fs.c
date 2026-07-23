@@ -5382,6 +5382,10 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
         fs_uint64 fileSize;
         fs_uint64 fileOffset;
 
+        if (*pTOCEntryCount == 0xFFFFFFFFUL) {
+            return FS_TOO_BIG;  /* Too many files. Should basically never happen. */
+        }
+
         *pTOCEntryCount += 1;
 
         /* Flags. */
