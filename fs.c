@@ -5179,7 +5179,6 @@ FS_API fs_result fs_mount_fs(fs* pFS, fs* pOtherFS, const char* pVirtualPath, in
     for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
         if (pOtherFS == iterator.pArchive && strcmp(pVirtualPath, iterator.pMountPointPath) == 0) {
             /* File system is already mounted to the virtual path. Just pretend we're successful. */
-            fs_ref(pOtherFS);
             return FS_SUCCESS;
         }
     }
