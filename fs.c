@@ -2018,7 +2018,7 @@ static fs_result fs_mount_list_remove(fs_mount_list* pList, fs_mount_point* pMou
     FS_MOVE_MEMORY
     (
         pMountPoint,
-        FS_OFFSET_PTR(pList, fs_mount_list_get_header_size() + mountPointAllocSize),
+        FS_OFFSET_PTR(pMountPoint, + mountPointAllocSize),
         fs_mount_list_get_alloc_size(pList) - ((fs_uintptr)pMountPoint - (fs_uintptr)FS_OFFSET_PTR(pList, fs_mount_list_get_header_size())) - mountPointAllocSize
     );
 
