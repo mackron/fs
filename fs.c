@@ -5365,207 +5365,206 @@ static fs_result fs_stream_read_s64_le(fs_stream* pStream, fs_int64* pResult)
 }
 
 
+static fs_result fs_serialize_entry(fs* pFS, fs_iterator* pIterator, const char* pFilePath, size_t filePathLen, const char* pBasePath, int options, fs_stream* pOutputStream, fs_stream* pTOCStream, fs_uint64* pRunningFileOffset)
+{
+    fs_result result;
+    const char* pTrimmedPath;
+    size_t trimmedPathLen;
+    fs_uint32 fileFlags;
+    fs_uint64 fileSize;
+    fs_uint64 fileOffset;
+    char padding[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    /* Flags. */
+    fileFlags = 0;
+    if (pIterator->info.directory) {
+        fileFlags |= 0x1;    /* Directory. */
+    }
+
+    result = fs_stream_write_u32_le(pTOCStream, fileFlags);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    pTrimmedPath = fs_path_trim_base(pFilePath, filePathLen, pBasePath, FS_NULL_TERMINATED);
+    if (pTrimmedPath == NULL) {
+        return FS_ERROR;
+    }
+
+    trimmedPathLen = strlen(pTrimmedPath);
+    if (trimmedPathLen > 0xFFFF) {  /* We don't allow file paths longer than 65535 bytes, which should be plenty long enough for all practical use cases. */
+        return FS_TOO_BIG;
+    }
+
+    /* Path Length. */
+    result = fs_stream_write_u32_le(pTOCStream, (fs_uint32)trimmedPathLen);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Path. */
+    result = fs_stream_write(pTOCStream, pTrimmedPath, trimmedPathLen, NULL);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Null Terminator. */
+    result = fs_stream_write(pTOCStream, "\0", 1, NULL);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* Padding. */
+    result = fs_stream_write(pTOCStream, padding, FS_ALIGN(trimmedPathLen + 1, 8) - (trimmedPathLen + 1), NULL);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+
+    if (pIterator->info.directory) {
+        fileOffset = 0;
+        fileSize = 0;
+    } else {
+        fileOffset = *pRunningFileOffset;
+        fileSize = 0;
+
+        /* Open the file and transfer the data to the stream. */
+        {
+            fs_file* pFile;
+            char buffer[4096];
+            size_t bytesRead;
+
+            result = fs_file_open(pFS, pFilePath, FS_READ | options, &pFile);
+            if (result != FS_SUCCESS) {
+                return result;
+            }
+
+            for (;;) {
+                result = fs_file_read(pFile, buffer, sizeof(buffer), &bytesRead);
+                if (result != FS_SUCCESS && result != FS_AT_END) {
+                    fs_file_close(pFile);
+                    return result;
+                }
+
+                if (bytesRead == 0) {
+                    break;
+                }
+
+                result = fs_stream_write(pOutputStream, buffer, bytesRead, NULL);
+                if (result != FS_SUCCESS) {
+                    fs_file_close(pFile);
+                    return result;
+                }
+
+                if (FS_UINT64_MAX - fileSize < bytesRead) {
+                    fs_file_close(pFile);
+                    return FS_TOO_BIG;  /* File is too big. Should never happen in practice. */
+                }
+
+                fileSize += bytesRead;
+
+                if (result == FS_AT_END) {
+                    break;
+                }
+            }
+
+            fs_file_close(pFile);
+            pFile = NULL;
+        }
+
+        if (FS_UINT64_MAX - *pRunningFileOffset < fileSize) {
+            return FS_TOO_BIG;
+        }
+
+        *pRunningFileOffset += fileSize;
+
+
+        /* Add padding zeros to align the data to 8 bytes. */
+        {
+            fs_uint64 runningFileOffsetAligned = FS_ALIGN(*pRunningFileOffset, 8);
+            if (runningFileOffsetAligned < *pRunningFileOffset) {   /* If the aligned offset is less than the unaligned offset, it means it overflowed. */
+                return FS_TOO_BIG;
+            }
+
+            result = fs_stream_write(pOutputStream, padding, (size_t)(runningFileOffsetAligned - *pRunningFileOffset), NULL);
+            if (result != FS_SUCCESS) {
+                return result;
+            }
+
+            *pRunningFileOffset = runningFileOffsetAligned;
+        }
+    }
+
+
+    /* File Size. */
+    result = fs_stream_write_u64_le(pTOCStream, fileSize);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    /* File Offset. */
+    result = fs_stream_write_u64_le(pTOCStream, fileOffset);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    return FS_SUCCESS;
+}
+
 static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, const char* pBasePath, int options, fs_stream* pOutputStream, fs_stream* pTOCStream, fs_uint32* pTOCEntryCount, fs_uint64* pRunningFileOffset)
 {
     fs_result result;
     fs_iterator* pIterator;
-    char padding[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     FS_ASSERT(pTOCEntryCount != NULL);
 
     for (pIterator = fs_first(pFS, pDirectoryPath, options); pIterator != NULL; pIterator = fs_next(pIterator)) {
         fs_string path = fs_string_new();
         int pathLen;
-        const char* pTrimmedPath;
-        size_t trimmedPathLen;
-        fs_uint32 fileFlags;
-        fs_uint64 fileSize;
-        fs_uint64 fileOffset;
 
         if (*pTOCEntryCount == 0xFFFFFFFFUL) {
+            fs_free_iterator(pIterator);
             return FS_TOO_BIG;  /* Too many files. Should basically never happen. */
         }
 
         *pTOCEntryCount += 1;
 
-        /* Flags. */
-        fileFlags = 0;
-        if (pIterator->info.directory) {
-            fileFlags |= 0x1;    /* Directory. */
-        }
-
-        result = fs_stream_write_u32_le(pTOCStream, fileFlags);
-        if (result != FS_SUCCESS) {
-            return result;
-        }
-
-
         /* Construct the full path. It's the full path, trimmed with the base path, that we store in the TOC. */
         pathLen = fs_path_append(path.stack, sizeof(path.stack), pDirectoryPath, FS_NULL_TERMINATED, pIterator->pName, pIterator->nameLen);
         if (pathLen < 0) {
+            fs_free_iterator(pIterator);
             return FS_ERROR;
         }
 
         path.len = (size_t)pathLen;
 
-        if (path.len > sizeof(path.stack)) {
+        if (path.len >= sizeof(path.stack)) {
             result = fs_string_alloc(pathLen, fs_get_allocation_callbacks(pFS), &path);
             if (result != FS_SUCCESS) {
+                fs_free_iterator(pIterator);
                 return result;
             }
 
             fs_path_append(path.heap, path.len + 1, pDirectoryPath, FS_NULL_TERMINATED, pIterator->pName, pIterator->nameLen);
         }
 
-        pTrimmedPath = fs_path_trim_base(fs_string_cstr(&path), fs_string_len(&path), pBasePath, FS_NULL_TERMINATED);
-        if (pTrimmedPath == NULL) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return FS_ERROR;
-        }
-
-        trimmedPathLen = strlen(pTrimmedPath);
-        if (trimmedPathLen > 0xFFFF) {  /* We don't allow file paths longer than 65535 bytes, which should be plenty long enough for all practical use cases. */
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return FS_TOO_BIG;
-        }
-
-        /* Path Length. */
-        result = fs_stream_write_u32_le(pTOCStream, (fs_uint32)trimmedPathLen);
+        result = fs_serialize_entry(pFS, pIterator, fs_string_cstr(&path), fs_string_len(&path), pBasePath, options, pOutputStream, pTOCStream, pRunningFileOffset);
         if (result != FS_SUCCESS) {
             fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+            fs_free_iterator(pIterator);
             return result;
         }
-
-        /* Path. */
-        result = fs_stream_write(pTOCStream, pTrimmedPath, trimmedPathLen, NULL);
-        if (result != FS_SUCCESS) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
-        /* Null Terminator. */
-        result = fs_stream_write(pTOCStream, "\0", 1, NULL);
-        if (result != FS_SUCCESS) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
-        /* Padding. */
-        result = fs_stream_write(pTOCStream, padding, FS_ALIGN(trimmedPathLen + 1, 8) - (trimmedPathLen + 1), NULL);
-        if (result != FS_SUCCESS) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
-
-        if (pIterator->info.directory) {
-            fileOffset = 0;
-            fileSize = 0;
-        } else {
-            fileOffset = *pRunningFileOffset;
-            fileSize = 0;
-
-            /* Open the file and transfer the data to the stream. */
-            {
-                fs_file* pFile;
-                char buffer[4096];
-                size_t bytesRead;
-
-                result = fs_file_open(pFS, fs_string_cstr(&path), FS_READ | options, &pFile);
-                if (result != FS_SUCCESS) {
-                    fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                    return result;
-                }
-
-                for (;;) {
-                    result = fs_file_read(pFile, buffer, sizeof(buffer), &bytesRead);
-                    if (result != FS_SUCCESS && result != FS_AT_END) {
-                        fs_file_close(pFile);
-                        fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                        return result;
-                    }
-
-                    if (bytesRead == 0) {
-                        break;
-                    }
-
-                    result = fs_stream_write(pOutputStream, buffer, bytesRead, NULL);
-                    if (result != FS_SUCCESS) {
-                        fs_file_close(pFile);
-                        fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                        return result;
-                    }
-
-                    if (FS_UINT64_MAX - fileSize < bytesRead) {
-                        fs_file_close(pFile);
-                        fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                        return FS_TOO_BIG;  /* File is too big. Should never happen in practice. */
-                    }
-
-                    fileSize += bytesRead;
-
-                    if (result == FS_AT_END) {
-                        break;
-                    }
-                }
-
-                fs_file_close(pFile);
-                pFile = NULL;
-            }
-
-            if (FS_UINT64_MAX - *pRunningFileOffset < fileSize) {
-                fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                return FS_TOO_BIG;
-            }
-
-            *pRunningFileOffset += fileSize;
-
-
-            /* Add padding zeros to align the data to 8 bytes. */
-            {
-                fs_uint64 runningFileOffsetAligned = FS_ALIGN(*pRunningFileOffset, 8);
-                if (runningFileOffsetAligned < *pRunningFileOffset) {   /* If the aligned offset is less than the unaligned offset, it means it overflowed. */
-                    fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                    return FS_TOO_BIG;
-                }
-
-                result = fs_stream_write(pOutputStream, padding, (size_t)(runningFileOffsetAligned - *pRunningFileOffset), NULL);
-                if (result != FS_SUCCESS) {
-                    fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-                    return result;
-                }
-
-                *pRunningFileOffset = runningFileOffsetAligned;
-            }
-        }
-
-
-        /* File Size. */
-        result = fs_stream_write_u64_le(pTOCStream, fileSize);
-        if (result != FS_SUCCESS) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
-        /* File Offset. */
-        result = fs_stream_write_u64_le(pTOCStream, fileOffset);
-        if (result != FS_SUCCESS) {
-            fs_string_free(&path, fs_get_allocation_callbacks(pFS));
-            return result;
-        }
-
 
         /* If it was a directory we need to call this function recursively. */
         if (pIterator->info.directory) {
             result = fs_serialize_directory(pFS, fs_string_cstr(&path), pBasePath, options, pOutputStream, pTOCStream, pTOCEntryCount, pRunningFileOffset);
             if (result != FS_SUCCESS) {
                 fs_string_free(&path, fs_get_allocation_callbacks(pFS));
+                fs_free_iterator(pIterator);
                 return result;
             }
         }
 
-
-        /* The full path is no longer needed. */
         fs_string_free(&path, fs_get_allocation_callbacks(pFS));
     }
 
