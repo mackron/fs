@@ -6497,13 +6497,15 @@ static fs_result fs_file_duplicate_posix(fs_file* pFile, fs_file* pDuplicate)
 
     /* Do a quick check that it's still pointing to the same file. */
     if (fstat(pFilePosix->fd, &st1) < 0) {
+        result = fs_result_from_errno(errno);
         fs_file_close_posix(pDuplicate);
-        return fs_result_from_errno(errno);
+        return result;
     }
 
     if (fstat(pDuplicatePosix->fd, &st2) < 0) {
+        result = fs_result_from_errno(errno);
         fs_file_close_posix(pDuplicate);
-        return fs_result_from_errno(errno);
+        return result;
     }
 
     if (st1.st_ino != st2.st_ino || st1.st_dev != st2.st_dev) {
@@ -7430,12 +7432,14 @@ static fs_result fs_file_duplicate_win32(fs_file* pFile, fs_file* pDuplicate)
 
     /* Now check the file information in case it got replaced with a different file from under us. */
     if (GetFileInformationByHandle(pFileWin32->hFile, &info1) == FS_FALSE) {
+        result = fs_result_from_GetLastError();
         fs_file_close_win32(pDuplicate);
-        return fs_result_from_GetLastError();
+        return result;
     }
     if (GetFileInformationByHandle(pDuplicateWin32->hFile, &info2) == FS_FALSE) {
+        result = fs_result_from_GetLastError();
         fs_file_close_win32(pDuplicate);
-        return fs_result_from_GetLastError();
+        return result;
     }
 
     if ((info1.dwVolumeSerialNumber != info2.dwVolumeSerialNumber) || (info1.nFileIndexLow != info2.nFileIndexLow) || (info1.nFileIndexHigh != info2.nFileIndexHigh)) {
