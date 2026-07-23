@@ -5424,7 +5424,7 @@ static fs_result fs_serialize_directory(fs* pFS, const char* pDirectoryPath, con
         }
 
         trimmedPathLen = strlen(pTrimmedPath);
-        if (trimmedPathLen > 0xFFFFFFFFU) {
+        if (trimmedPathLen > 0xFFFF) {  /* We don't allow file paths longer than 65535 bytes, which should be plenty long enough for all practical use cases. */
             fs_string_free(&path, fs_get_allocation_callbacks(pFS));
             return FS_TOO_BIG;
         }
