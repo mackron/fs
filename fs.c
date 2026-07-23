@@ -7317,6 +7317,7 @@ static fs_result fs_file_seek_win32(fs_file* pFile, fs_int64 offset, fs_seek_ori
     fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
     LARGE_INTEGER liDistanceToMove;
     DWORD dwMoveMethod;
+    DWORD newFilePointerLow;
 
     switch (origin) {
     case FS_SEEK_SET:
@@ -7338,11 +7339,13 @@ static fs_result fs_file_seek_win32(fs_file* pFile, fs_int64 offset, fs_seek_ori
     /*
     Use SetFilePointer() instead of SetFilePointerEx() for compatibility with old Windows.
 
-    Note from MSDN:
-
-        If you do not need the high order 32-bits, this pointer must be set to NULL.
+    The awkward SetLastError/GetLastError() tap dance here is necessary because INVALID_SET_FILE_POINTER is defined
+    as 0xFFFFFFFF which is a valid seek position. It is not enough to just check for INVALID_SET_FILE_POINTER - we
+    must also check GetLastError().
     */
-    if (SetFilePointer(pFileWin32->hFile, liDistanceToMove.LowPart, (liDistanceToMove.HighPart == 0 ? NULL : &liDistanceToMove.HighPart), dwMoveMethod) == INVALID_SET_FILE_POINTER) {
+    SetLastError(NO_ERROR);
+    newFilePointerLow = SetFilePointer(pFileWin32->hFile, liDistanceToMove.LowPart, &liDistanceToMove.HighPart, dwMoveMethod);
+    if (newFilePointerLow == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
         return fs_result_from_GetLastError();
     }
 
@@ -7354,6 +7357,7 @@ static fs_result fs_file_tell_win32(fs_file* pFile, fs_int64* pCursor)
     fs_file_win32* pFileWin32 = (fs_file_win32*)fs_file_get_backend_data(pFile);
     LARGE_INTEGER liCursor;
 
+    SetLastError(NO_ERROR);
     liCursor.HighPart = 0;
     liCursor.LowPart  = SetFilePointer(pFileWin32->hFile, 0, &liCursor.HighPart, FILE_CURRENT);
 
