@@ -6834,31 +6834,28 @@ static fs_result fs_remove_win32(fs* pFS, const char* pFilePath)
         /* It may have been a directory. */
         DWORD error = GetLastError();
         if (error == ERROR_ACCESS_DENIED || error == ERROR_FILE_NOT_FOUND) {
+            fs_result deleteFileResult = fs_result_from_GetLastError(); /* Need to grab this before calling GetFileAttributes(). */
+
             DWORD attributes = GetFileAttributes(path.path);
-            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            if (attributes == INVALID_FILE_ATTRIBUTES) {
+                result = fs_result_from_GetLastError();
+            } else if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
                 resultWin32 = RemoveDirectory(path.path);
                 if (resultWin32 == FS_FALSE) {
                     result = fs_result_from_GetLastError();
-                    goto done;
                 } else {
-                    return FS_SUCCESS;
+                    result = FS_SUCCESS;
                 }
             } else {
-                result = fs_result_from_GetLastError();
-                goto done;
+                result = deleteFileResult;
             }
         } else {
             result = fs_result_from_GetLastError();
-            goto done;
         }
-
-        result = fs_result_from_GetLastError();
-        goto done;
     } else {
         result = FS_SUCCESS;
     }
 
-done:
     fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
 
     (void)pFS;
