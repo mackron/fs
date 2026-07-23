@@ -7072,6 +7072,7 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     }
 
     if (result != FS_SUCCESS) {
+        fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
         return result;
     }
 
@@ -7104,7 +7105,6 @@ static fs_result fs_file_open_win32(fs* pFS, fs_stream* pStream, const char* pFi
     /* All done. */
     fs_win32_path_uninit(&path, fs_get_allocation_callbacks(pFS));
 
-    (void)pFS;
     (void)pStream;
     return FS_SUCCESS;
 }
