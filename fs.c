@@ -1394,9 +1394,27 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
         size_t chunkSize = 4096;
         size_t bytesRead;
 
+        /* Prevent a size_t overflow. Should never happen in practice because the system would reach an out-of-memory state before hitting this, but checking anyway for completeness. */
+        if (FS_SIZE_MAX - dataSize < chunkSize) {
+            fs_free(pData, pAllocationCallbacks);
+            return FS_TOO_BIG;
+        }
+
         if (dataSize + chunkSize > dataCap) {
             void* pNewData;
-            size_t newCap = dataCap * 2;
+            size_t newCap;
+
+            if (dataCap > FS_SIZE_MAX/2) {
+                newCap = FS_SIZE_MAX;
+
+                if (newCap == dataCap) {
+                    fs_free(pData, pAllocationCallbacks);
+                    return FS_TOO_BIG;
+                }
+            } else {
+                newCap = dataCap * 2;
+            }
+
             if (newCap == 0) {
                 newCap = chunkSize;
             }
@@ -1424,6 +1442,13 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
     if (format == FS_FORMAT_TEXT) {
         if (dataSize >= dataCap) {
             void* pNewData;
+
+            /* A pedantic overflow check in preparation for the null terminator. */
+            if (dataSize == FS_SIZE_MAX) {
+                fs_free(pData, pAllocationCallbacks);
+                return FS_TOO_BIG;
+            }
+
             pNewData = fs_realloc(pData, dataSize + 1, pAllocationCallbacks);
             if (pNewData == NULL) {
                 fs_free(pData, pAllocationCallbacks);
