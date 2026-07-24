@@ -7525,6 +7525,7 @@ static fs_iterator* fs_iterator_win32_resolve(fs_iterator_win32* pIteratorWin32,
 
 static fs_iterator* fs_first_win32(fs* pFS, const char* pDirectoryPath, size_t directoryPathLen)
 {
+    fs_iterator* pIterator;
     HANDLE hFind;
     WIN32_FIND_DATA fd;
     fs_result result;
@@ -7563,7 +7564,13 @@ static fs_iterator* fs_first_win32(fs* pFS, const char* pDirectoryPath, size_t d
         return NULL;
     }
 
-    return fs_iterator_win32_resolve(NULL, pFS, hFind, &fd);
+    pIterator = fs_iterator_win32_resolve(NULL, pFS, hFind, &fd);
+    if (pIterator == NULL) {
+        FindClose(hFind);
+        return NULL;
+    }
+
+    return pIterator;
 }
 
 static fs_iterator* fs_next_win32(fs_iterator* pIterator)
@@ -7582,6 +7589,10 @@ static fs_iterator* fs_next_win32(fs_iterator* pIterator)
 static void fs_free_iterator_win32(fs_iterator* pIterator)
 {
     fs_iterator_win32* pIteratorWin32 = (fs_iterator_win32*)pIterator;
+
+    if (pIterator == NULL) {
+        return;
+    }
 
     FindClose(pIteratorWin32->hFind);
     fs_free(pIteratorWin32, fs_get_allocation_callbacks(pIterator->pFS));
