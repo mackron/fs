@@ -4907,7 +4907,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
     result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
     if (result != FS_SUCCESS) {
-        fs_unmount_read(pFS, pActualPath, options);
+        fs_mount_list_remove(pFS->pReadMountPoints, pNewMountPoint);
         return result;
     }
 
@@ -4915,7 +4915,7 @@ static fs_result fs_mount_read(fs* pFS, const char* pActualPath, const char* pVi
     if (!fileInfo.directory) {
         result = fs_open_archive(pFS, pActualPath, FS_READ | FS_VERBOSE, &pNewMountPoint->pArchive);
         if (result != FS_SUCCESS) {
-            fs_unmount_read(pFS, pActualPath, options);
+            fs_mount_list_remove(pFS->pReadMountPoints, pNewMountPoint);
             return result;
         }
 
@@ -4995,12 +4995,12 @@ static fs_result fs_mount_write(fs* pFS, const char* pActualPath, const char* pV
     /* Must use fs_backend_info() instead of fs_info() because otherwise fs_info() will attempt to read from mounts when we're in the process of trying to add one (this function). */
     result = fs_backend_info(fs_get_backend_or_default(pFS), pFS, (pActualPath[0] != '\0') ? pActualPath : ".", FS_IGNORE_MOUNTS, &fileInfo);
     if (result != FS_SUCCESS && result != FS_DOES_NOT_EXIST) {
-        fs_unmount_write(pFS, pActualPath, options);
+        fs_mount_list_remove(pFS->pWriteMountPoints, pNewMountPoint);
         return result;
     }
 
     if (!fileInfo.directory && result != FS_DOES_NOT_EXIST) {
-        fs_unmount_write(pFS, pActualPath, options);
+        fs_mount_list_remove(pFS->pWriteMountPoints, pNewMountPoint);
         return FS_INVALID_ARGS;
     }
 
@@ -5008,7 +5008,7 @@ static fs_result fs_mount_write(fs* pFS, const char* pActualPath, const char* pV
     if ((options & FS_NO_CREATE_DIRS) == 0) {
         fs_result result = fs_mkdir(pFS, pActualPath, FS_IGNORE_MOUNTS);
         if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
-            fs_unmount_write(pFS, pActualPath, options);
+            fs_mount_list_remove(pFS->pWriteMountPoints, pNewMountPoint);
             return result;
         }
     }
