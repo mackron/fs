@@ -1208,6 +1208,14 @@ FS_API fs_result fs_stream_write(fs_stream* pStream, const void* pSrc, size_t by
 
     if (pBytesWritten != NULL) {
         *pBytesWritten = bytesWritten;
+    } else {
+        /*
+        The caller has not specified a destination for the bytes written. If we didn't write the exact
+        number of bytes as requested we'll need to report an error.
+        */
+        if (result == FS_SUCCESS && bytesWritten != bytesToWrite) {
+            result = FS_ERROR;
+        }
     }
 
     return result;
