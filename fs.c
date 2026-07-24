@@ -3544,7 +3544,13 @@ static fs_result fs_file_alloc_and_open_or_info(fs* pFS, const char* pFilePath, 
 
                 /* Don't try creating a directory if there is */
                 result = fs_mkdir(pFS, pDirPath, FS_IGNORE_MOUNTS);
-                if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {
+
+                /* The path string is no longer needed. */
+                fs_free(pDirPathHeap, fs_get_allocation_callbacks(pFS));
+                pDirPathHeap = NULL;
+                pDirPath = NULL;
+
+                if (result != FS_SUCCESS && result != FS_ALREADY_EXISTS) {  /* <-- This is checking the result of fs_mkdir() just a few lines above. */
                     fs_stream_delete_duplicate((*ppFile)->pStreamForBackend, fs_get_allocation_callbacks(pFS));
                     fs_file_free(ppFile);
                     return result;
