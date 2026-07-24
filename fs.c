@@ -5271,11 +5271,18 @@ FS_API fs_result fs_unmount_fs(fs* pFS, fs* pOtherFS, int options)
 
     FS_UNUSED(options);
 
-    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
+    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS && !fs_mount_list_at_end(&iterator); /*iteratorResult = fs_mount_list_next(&iterator)*/) {
         if (iterator.pArchive == pOtherFS) {
             fs_mount_list_remove(pFS->pReadMountPoints, iterator.internal.pMountPoint);
             fs_unref(pOtherFS);
-            return FS_SUCCESS;
+
+            /*
+            Since we just removed this item we don't want to advance the cursor. We do, however, need to re-resolve
+            the members in preparation for the next iteration.
+            */
+            iteratorResult = fs_mount_list_iterator_resolve_members(&iterator, iterator.internal.cursor);
+        } else {
+            iteratorResult = fs_mount_list_next(&iterator);
         }
     }
 
