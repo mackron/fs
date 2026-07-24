@@ -2622,13 +2622,22 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
     We need a mutex for fs_open_archive() and fs_close_archive(). This needs to be recursive because
     during garbage collection we may end up closing archives in archives.
     */
-    fs_mtx_init(&pFS->archiveLock, fs_mtx_recursive);
+    result = fs_mtx_init(&pFS->archiveLock, fs_mtx_recursive);
+    if (result != FS_SUCCESS) {
+        fs_free(pFS, fs_get_allocation_callbacks(pFS));
+        return result;
+    }
 
     /*
     We need a mutex for the reference counting. This is needed because we may have multiple threads
     opening and closing files at the same time.
     */
-    fs_mtx_init(&pFS->refLock, fs_mtx_recursive);
+    result = fs_mtx_init(&pFS->refLock, fs_mtx_recursive);
+    if (result != FS_SUCCESS) {
+        fs_mtx_destroy(&pFS->archiveLock);
+        fs_free(pFS, fs_get_allocation_callbacks(pFS));
+        return result;
+    }
 
     /* We're now ready to initialize the backend. */
     result = fs_backend_init(pBackend, pFS, pConfig->pBackendConfig, pConfig->pStream);
