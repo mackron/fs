@@ -632,7 +632,45 @@ int fs_test_path_trim_base(fs_test* pTest)
 /* END path_trim_base*/
 
 
+/* BEG binary_search */
+static int fs_test_binary_search_compare(void* pUserData, const void* pA, const void* pB)
+{
+    int a = *(const int*)pA;
+    int b = *(const int*)pB;
 
+    (void)pUserData;
+
+    return (a > b) - (a < b);
+}
+
+int fs_test_binary_search(fs_test* pTest)
+{
+    int values[] = { 10, 20, 30, 40 };
+    int keys[] = { 5, 10, 25, 40, 50 };
+    int expectedIndexes[] = { -1, 0, -1, 3, -1 };
+    size_t i;
+
+    for (i = 0; i < FS_COUNTOF(keys); i += 1) {
+        int* pResult;
+        int* pExpected;
+
+        pResult = (int*)fs_binary_search(&keys[i], values, FS_COUNTOF(values), sizeof(values[0]), fs_test_binary_search_compare, NULL);
+        pExpected = (expectedIndexes[i] >= 0) ? &values[expectedIndexes[i]] : NULL;
+
+        if (pResult != pExpected) {
+            printf("%s: Unexpected result when searching for %d.\n", pTest->name, keys[i]);
+            return FS_ERROR;
+        }
+    }
+
+    if (fs_binary_search(&keys[0], values, 0, sizeof(values[0]), fs_test_binary_search_compare, NULL) != NULL) {
+        printf("%s: Expected an empty search to return NULL.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+/* END binary_search */
 
 
 /* BEG test_state */
@@ -4863,6 +4901,7 @@ int main(int argc, char** argv)
     fs_test test_memory_stream_seek;
     fs_test test_memory_stream_write_bounds;
     fs_test test_memory_stream_remove_bounds;
+    fs_test test_binary_search;
     fs_test test_serialization;
     fs_test test_serialization_endian;
     fs_test test_serialization_offsets;
@@ -4991,6 +5030,8 @@ int main(int argc, char** argv)
     fs_test_init(&test_memory_stream_seek,             "Memory Stream Seek",             fs_test_memory_stream_seek,             NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_write_bounds,     "Memory Stream Write Bounds",     fs_test_memory_stream_write_bounds,     NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_remove_bounds,    "Memory Stream Remove Bounds",    fs_test_memory_stream_remove_bounds,    NULL,                  &test_memory_stream);
+
+    fs_test_init(&test_binary_search,                  "Binary Search",                  fs_test_binary_search,                  NULL,                  &test_root);
 
     /*
     Serialization Tests.

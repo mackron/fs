@@ -9478,21 +9478,17 @@ FS_API void* fs_binary_search(const void* pKey, const void* pList, size_t count,
     size_t iEnd;
     size_t iMid;
 
-    if (count == 0) {
-        return NULL;
-    }
-
     iStart = 0;
-    iEnd = count - 1;
+    iEnd = count;
 
-    while (iStart <= iEnd) {
+    while (iStart < iEnd) {
         int compareResult;
 
         iMid = iStart + (iEnd - iStart) / 2;
 
         compareResult = compareProc(pUserData, pKey, (char*)pList + (iMid * stride));
         if (compareResult < 0) {
-            iEnd = iMid - 1;
+            iEnd = iMid;
         } else if (compareResult > 0) {
             iStart = iMid + 1;
         } else {
