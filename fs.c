@@ -2643,6 +2643,9 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
                 fs_stream_seek(pConfig->pStream, initialStreamCursor, FS_SEEK_SET);
             }
 
+            fs_mtx_destroy(&pFS->refLock);
+            fs_mtx_destroy(&pFS->archiveLock);
+
             fs_free(pFS, fs_get_allocation_callbacks(pFS));
             return result;
         }
