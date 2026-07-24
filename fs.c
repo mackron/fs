@@ -835,7 +835,7 @@ Parameter ordering is the same as c89thread to make amalgamation easier.
 
 /* BEG fs_thread_mtx.c */
 #if defined(FS_WIN32) && !defined(FS_USE_PTHREAD)
-FS_API int fs_mtx_init(fs_mtx* mutex, int type)
+FS_API fs_result fs_mtx_init(fs_mtx* mutex, int type)
 {
     HANDLE hMutex;
 
@@ -877,7 +877,7 @@ FS_API void fs_mtx_destroy(fs_mtx* mutex)
     CloseHandle((HANDLE)mutex->handle);
 }
 
-FS_API int fs_mtx_lock(fs_mtx* mutex)
+FS_API fs_result fs_mtx_lock(fs_mtx* mutex)
 {
     DWORD result;
 
@@ -893,7 +893,7 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
     return FS_SUCCESS;
 }
 
-FS_API int fs_mtx_unlock(fs_mtx* mutex)
+FS_API fs_result fs_mtx_unlock(fs_mtx* mutex)
 {
     BOOL result;
 
@@ -914,7 +914,16 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
     return FS_SUCCESS;
 }
 #else
-FS_API int fs_mtx_init(fs_mtx* mutex, int type)
+static fs_result fs_result_from_pthread(int e)
+{
+    if (e == 0) {
+        return FS_SUCCESS;
+    } else {
+        return fs_result_from_errno(e);
+    }
+}
+
+FS_API fs_result fs_mtx_init(fs_mtx* mutex, int type)
 {
     int result;
 
@@ -925,14 +934,14 @@ FS_API int fs_mtx_init(fs_mtx* mutex, int type)
     #ifdef FS_USE_MANUAL_RECURSIVE_MUTEX
     {
         /* Initialize the main mutex */
-        result = pthread_mutex_init(&mutex->mutex, NULL);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_init(&mutex->mutex, NULL));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
         
         /* For recursive mutexes, we need the guard mutex and metadata */
         if ((type & fs_mtx_recursive) != 0) {
-            if (pthread_mutex_init(&mutex->guard, NULL) != 0) {
+            if (fs_result_from_pthread(pthread_mutex_init(&mutex->guard, NULL)) != FS_SUCCESS) {
                 pthread_mutex_destroy(&mutex->mutex);
                 return FS_ERROR;
             }
@@ -956,10 +965,10 @@ FS_API int fs_mtx_init(fs_mtx* mutex, int type)
             pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
         }
 
-        result = pthread_mutex_init((pthread_mutex_t*)mutex, &attr);
+        result = fs_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
         pthread_mutexattr_destroy(&attr);
 
-        if (result != 0) {
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
 
@@ -990,7 +999,7 @@ FS_API void fs_mtx_destroy(fs_mtx* mutex)
     #endif
 }
 
-FS_API int fs_mtx_lock(fs_mtx* mutex)
+FS_API fs_result fs_mtx_lock(fs_mtx* mutex)
 {
     int result;
 
@@ -1004,8 +1013,8 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
 
         /* Optimized path for plain mutexes. */
         if ((mutex->type & fs_mtx_recursive) == 0) {
-            result = pthread_mutex_lock(&mutex->mutex);
-            if (result != 0) {
+            result = fs_result_from_pthread(pthread_mutex_lock(&mutex->mutex));
+            if (result != FS_SUCCESS) {
                 return FS_ERROR;
             }
 
@@ -1016,8 +1025,8 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
         currentThread = pthread_self();
         
         /* First, lock the guard mutex to safely access the metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
 
@@ -1031,14 +1040,14 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
         /* The guard mutex needs to be unlocked before locking the main mutex or else we'll deadlock. */
         pthread_mutex_unlock(&mutex->guard);
         
-        result = pthread_mutex_lock(&mutex->mutex);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_lock(&mutex->mutex));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
         
         /* Update metadata. */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != FS_SUCCESS) {
             pthread_mutex_unlock(&mutex->mutex);
             return FS_ERROR;
         }
@@ -1052,8 +1061,8 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
     }
     #else
     {
-        result = pthread_mutex_lock((pthread_mutex_t*)mutex);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_lock((pthread_mutex_t*)mutex));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
 
@@ -1062,7 +1071,7 @@ FS_API int fs_mtx_lock(fs_mtx* mutex)
     #endif
 }
 
-FS_API int fs_mtx_unlock(fs_mtx* mutex)
+FS_API fs_result fs_mtx_unlock(fs_mtx* mutex)
 {
     int result;
 
@@ -1076,8 +1085,8 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
 
         /* Optimized path for plain mutexes. */
         if ((mutex->type & fs_mtx_recursive) == 0) {
-            result = pthread_mutex_unlock(&mutex->mutex);
-            if (result != 0) {
+            result = fs_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
+            if (result != FS_SUCCESS) {
                 return FS_ERROR;
             }
 
@@ -1088,8 +1097,8 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
         currentThread = pthread_self();
         
         /* Lock the guard mutex to safely access the metadata */
-        result = pthread_mutex_lock(&mutex->guard);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_lock(&mutex->guard));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
         
@@ -1107,8 +1116,8 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
             mutex->owner = 0;
             pthread_mutex_unlock(&mutex->guard);
 
-            result = pthread_mutex_unlock(&mutex->mutex);
-            if (result != 0) {
+            result = fs_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
+            if (result != FS_SUCCESS) {
                 return FS_ERROR;
             }
         } else {
@@ -1120,8 +1129,8 @@ FS_API int fs_mtx_unlock(fs_mtx* mutex)
     }
     #else
     {
-        result = pthread_mutex_unlock((pthread_mutex_t*)mutex);
-        if (result != 0) {
+        result = fs_result_from_pthread(pthread_mutex_unlock((pthread_mutex_t*)mutex));
+        if (result != FS_SUCCESS) {
             return FS_ERROR;
         }
 

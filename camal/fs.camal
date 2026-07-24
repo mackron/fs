@@ -75,10 +75,10 @@ convert_c89thread_basic_types :: function(src:string) string
 convert_c89thread_mtx_h :: function(src:string) string
 {
     return rename_c89thread_namespace(src)
-        ["int fs_mtx_init"]     <= "FS_API int fs_mtx_init"
+        ["int fs_mtx_init"]     <= "FS_API fs_result fs_mtx_init"
         ["void fs_mtx_destroy"] <= "FS_API void fs_mtx_destroy"
-        ["int fs_mtx_lock"]     <= "FS_API int fs_mtx_lock"
-        ["int fs_mtx_unlock"]   <= "FS_API int fs_mtx_unlock"
+        ["int fs_mtx_lock"]     <= "FS_API fs_result fs_mtx_lock"
+        ["int fs_mtx_unlock"]   <= "FS_API fs_result fs_mtx_unlock"
 
         // Some functions are unused.
         ["(?m)^.*fs_mtx_timedlock.*\R"] <= ""
@@ -89,10 +89,17 @@ convert_c89thread_mtx_h :: function(src:string) string
 convert_c89thread_mtx_c :: function(src:string) string
 {
     return rename_c89thread_namespace(src)
-        ["int fs_mtx_init"]     <= "FS_API int fs_mtx_init"
+        ["int fs_mtx_init"]     <= "FS_API fs_result fs_mtx_init"
         ["void fs_mtx_destroy"] <= "FS_API void fs_mtx_destroy"
-        ["int fs_mtx_lock"]     <= "FS_API int fs_mtx_lock"
-        ["int fs_mtx_unlock"]   <= "FS_API int fs_mtx_unlock"
+        ["int fs_mtx_lock"]     <= "FS_API fs_result fs_mtx_lock"
+        ["int fs_mtx_unlock"]   <= "FS_API fs_result fs_mtx_unlock"
+    ;
+}
+
+convert_c89thread_result_from_pthread :: function(src:string) string
+{
+    return rename_c89thread_namespace(src)
+        ["int fs_result_from_pthread"] <= "fs_result fs_result_from_pthread"
     ;
 }
 
@@ -103,6 +110,8 @@ build_c89thread_mtx_c :: function() string
     win32["\R/\* BEG fs_mtx_timedlock_win32.c \*/\R" : "\R/\* END fs_mtx_timedlock_win32.c \*/\R"] = "";
 
     pthread := convert_c89thread_mtx_c(@(c89thread_h("/\* BEG c89mtx_pthread.c \*/\R" : "\R/\* END c89mtx_pthread.c \*/")));
+    pthread["^"] = "\n\n";
+    pthread["^"] = convert_c89thread_result_from_pthread(@(c89thread_h("/\* BEG c89thrd_result_from_pthread.c \*/\R" : "\R/\* END c89thrd_result_from_pthread.c \*/")));
     pthread["\R/\* BEG fs_mtx_trylock_pthread.c \*/\R"   : "\R/\* END fs_mtx_trylock_pthread.c \*/\R"]   = "";
     pthread["\R/\* BEG fs_mtx_timedlock_pthread.c \*/\R" : "\R/\* END fs_mtx_timedlock_pthread.c \*/\R"] = "";
 
