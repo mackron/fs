@@ -8622,7 +8622,7 @@ FS_API int fs_path_directory(char* pDst, size_t dstCap, const char* pPath, size_
             pDst[bytesToCopy] = '\0';
         }
 
-        if (dirLen > (size_t)-1) {
+        if (dirLen > 0x7FFFFFFF) {
             return -1;  /* Too long. */
         }
 
