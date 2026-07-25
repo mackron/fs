@@ -107,6 +107,7 @@ static fs_result fs_sub_path_init(fs* pFS, const char* pPath, size_t pathLen, fs
         pSubFSPath->pFullPath = pSubFSPath->pFullPathStack;
     }
 
+    fs_free(pPathCleanHeap, fs_get_allocation_callbacks(pFS));
     return FS_SUCCESS;
 }
 
