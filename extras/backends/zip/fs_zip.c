@@ -1555,6 +1555,7 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
 
     result = fs_stream_read(pStream, pZip->pCentralDirectory, pZip->centralDirectorySize, NULL);
     if (result != FS_SUCCESS) {
+        fs_free(pZip->pHeap, fs_get_allocation_callbacks(pFS));
         return FS_INVALID_FILE;
     }
 
