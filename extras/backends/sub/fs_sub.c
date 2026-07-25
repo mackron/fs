@@ -111,10 +111,10 @@ static fs_result fs_sub_path_init(fs* pFS, const char* pPath, size_t pathLen, fs
     return FS_SUCCESS;
 }
 
-static void fs_sub_path_uninit(fs_sub_path* pSubFSPath)
+static void fs_sub_path_uninit(fs_sub_path* pSubFSPath, const fs_allocation_callbacks* pAllocationCallbacks)
 {
     if (pSubFSPath->pFullPathHeap != NULL) {
-        fs_free(pSubFSPath->pFullPathHeap, fs_get_allocation_callbacks(NULL));
+        fs_free(pSubFSPath->pFullPathHeap, pAllocationCallbacks);
     }
 
     FS_SUB_ZERO_OBJECT(pSubFSPath);
@@ -193,7 +193,7 @@ static fs_result fs_remove_sub(fs* pFS, const char* pFilePath)
     }
 
     result = fs_remove(pSubFS->pOwnerFS, subPath.pFullPath, FS_IGNORE_MOUNTS);
-    fs_sub_path_uninit(&subPath);
+    fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return result;
 }
@@ -215,14 +215,14 @@ static fs_result fs_rename_sub(fs* pFS, const char* pOldPath, const char* pNewPa
 
     result = fs_sub_path_init(pFS, pNewPath, FS_NULL_TERMINATED, &subPathNew);
     if (result != FS_SUCCESS) {
-        fs_sub_path_uninit(&subPathOld);
+        fs_sub_path_uninit(&subPathOld, fs_get_allocation_callbacks(pFS));
         return result;
     }
 
     result = fs_rename(pSubFS->pOwnerFS, subPathOld.pFullPath, subPathNew.pFullPath, FS_IGNORE_MOUNTS);
 
-    fs_sub_path_uninit(&subPathOld);
-    fs_sub_path_uninit(&subPathNew);
+    fs_sub_path_uninit(&subPathOld, fs_get_allocation_callbacks(pFS));
+    fs_sub_path_uninit(&subPathNew, fs_get_allocation_callbacks(pFS));
 
     return result;
 }
@@ -242,7 +242,7 @@ static fs_result fs_mkdir_sub(fs* pFS, const char* pPath)
     }
 
     result = fs_mkdir(pSubFS->pOwnerFS, subPath.pFullPath, FS_IGNORE_MOUNTS);
-    fs_sub_path_uninit(&subPath);
+    fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return result;
 }
@@ -262,7 +262,7 @@ static fs_result fs_info_sub(fs* pFS, const char* pPath, int openMode, fs_file_i
     }
 
     result = fs_info(pSubFS->pOwnerFS, subPath.pFullPath, openMode, pInfo);
-    fs_sub_path_uninit(&subPath);
+    fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return result;
 }
@@ -294,7 +294,7 @@ static fs_result fs_file_open_sub(fs* pFS, fs_stream* pStream, const char* pFile
     FS_SUB_ASSERT(pSubFSFile != NULL);
 
     result = fs_file_open(pSubFS->pOwnerFS, subPath.pFullPath, openMode, &pSubFSFile->pActualFile);
-    fs_sub_path_uninit(&subPath);
+    fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return result;
 }
@@ -393,7 +393,7 @@ static fs_iterator* fs_first_sub(fs* pFS, const char* pDirectoryPath, size_t dir
     }
 
     pIterator = fs_first(pSubFS->pOwnerFS, subPath.pFullPath, subPath.fullPathLen);
-    fs_sub_path_uninit(&subPath);
+    fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return pIterator;
 }
