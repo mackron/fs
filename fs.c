@@ -2441,16 +2441,16 @@ static fs_result fs_resolve_sub_path_from_mount_point(fs* pFS, fs_mount_point* p
             return FS_DOES_NOT_EXIST;    /* Most likely violating FS_NO_ABOVE_ROOT_NAVIGATION. */
         }
 
-        pResolvedSubPath->len = (size_t)stringLen;
-
         if ((size_t)stringLen >= sizeof(pResolvedSubPath->stack)) {
             result = fs_string_alloc((size_t)stringLen, fs_get_allocation_callbacks(pFS), pResolvedSubPath);
             if (result != FS_SUCCESS) {
                 return result;
             }
 
-            fs_path_normalize(pResolvedSubPath->heap, pResolvedSubPath->len + 1, pSubPath, FS_NULL_TERMINATED, normalizeOptions);    /* <-- This should never fail. */
+            fs_path_normalize(pResolvedSubPath->heap, (size_t)stringLen + 1, pSubPath, FS_NULL_TERMINATED, normalizeOptions);    /* <-- This should never fail. */
         }
+
+        pResolvedSubPath->len = (size_t)stringLen;
     } else {
         *pResolvedSubPath = fs_string_new_ref(pSubPath, FS_NULL_TERMINATED);
     }
@@ -2478,8 +2478,6 @@ static fs_result fs_resolve_real_path_from_mount_point(fs* pFS, fs_mount_point* 
         return FS_PATH_TOO_LONG;    /* The only error we would get here is if the path is too long. */
     }
 
-    pResolvedRealPath->len = (size_t)stringLen;
-
     if ((size_t)stringLen >= sizeof(pResolvedRealPath->stack)) {
         result = fs_string_alloc((size_t)stringLen, fs_get_allocation_callbacks(pFS), pResolvedRealPath);
         if (result != FS_SUCCESS) {
@@ -2487,8 +2485,10 @@ static fs_result fs_resolve_real_path_from_mount_point(fs* pFS, fs_mount_point* 
             return result;
         }
 
-        fs_path_append(pResolvedRealPath->heap, pResolvedRealPath->len + 1, fs_mount_point_real_path(pMountPoint), fs_mount_point_real_path_len(pMountPoint), fs_string_cstr(&subPath), fs_string_len(&subPath));    /* <-- This should never fail. */
+        fs_path_append(pResolvedRealPath->heap, (size_t)stringLen + 1, fs_mount_point_real_path(pMountPoint), fs_mount_point_real_path_len(pMountPoint), fs_string_cstr(&subPath), fs_string_len(&subPath));    /* <-- This should never fail. */
     }
+
+    pResolvedRealPath->len = (size_t)stringLen;
 
     /* Now that actual path has been constructed we can discard of our sub-path. */
     fs_string_free(&subPath, fs_get_allocation_callbacks(pFS));
