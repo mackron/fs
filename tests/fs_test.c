@@ -632,6 +632,38 @@ int fs_test_path_trim_base(fs_test* pTest)
 /* END path_trim_base*/
 
 
+/* BEG path_append */
+static int fs_test_path_append_internal(fs_test* pTest, const char* pBasePath, const char* pPathToAppend, const char* pExpected)
+{
+    char result[256];
+    int resultLen;
+
+    resultLen = fs_path_append(result, sizeof(result), pBasePath, FS_NULL_TERMINATED, pPathToAppend, FS_NULL_TERMINATED);
+    if (resultLen < 0) {
+        printf("%s: Failed to append \"%s\" to \"%s\".\n", pTest->name, pPathToAppend, pBasePath);
+        return 1;
+    }
+
+    if ((size_t)resultLen != strlen(pExpected) || strcmp(result, pExpected) != 0) {
+        printf("%s: Appending \"%s\" to \"%s\" produced \"%s\"; expected \"%s\".\n", pTest->name, pPathToAppend, pBasePath, result, pExpected);
+        return 1;
+    }
+
+    return 0;
+}
+
+int fs_test_path_append(fs_test* pTest)
+{
+    int errorCount = 0;
+
+    errorCount += fs_test_path_append_internal(pTest, "/", "file", "/file");
+    errorCount += fs_test_path_append_internal(pTest, "/", "",     "/");
+
+    return (errorCount == 0) ? FS_SUCCESS : FS_ERROR;
+}
+/* END path_append */
+
+
 /* BEG binary_search */
 static int fs_test_binary_search_compare(void* pUserData, const void* pA, const void* pB)
 {
@@ -4833,6 +4865,7 @@ int main(int argc, char** argv)
     fs_test test_path_normalize;                    /* Tests path normalization, like resolving ".." and "." segments. Again, this is used extensively for path validation and therefore needs proper testing. */
     fs_test test_path_compare;
     fs_test test_path_trim_base;
+    fs_test test_path_append;
     fs_test test_system;
     fs_test test_system_sysdir;                     /* Standard directory tests need to come first because we'll be writing out our test files to a temp folder. */
     fs_test test_system_init;
@@ -4941,6 +4974,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_path_normalize,                 "Path Normalize",                 fs_test_path_normalize,                 NULL,                 &test_path);
     fs_test_init(&test_path_compare,                   "Path Compare",                   fs_test_path_compare,                   NULL,                 &test_path);
     fs_test_init(&test_path_trim_base,                 "Path Trim Base",                 fs_test_path_trim_base,                 NULL,                 &test_path);
+    fs_test_init(&test_path_append,                    "Path Append",                    fs_test_path_append,                    NULL,                 &test_path);
 
     /*
     Default System IO.

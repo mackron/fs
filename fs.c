@@ -8836,6 +8836,7 @@ FS_API fs_bool32 fs_path_begins_with(const char* pPath, size_t pathLen, const ch
 FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size_t basePathLen, const char* pPathToAppend, size_t pathToAppendLen)
 {
     size_t dstLen = 0;
+    fs_bool32 basePathIsRoot;
 
     if (pBasePath == NULL) {
         pBasePath = "";
@@ -8855,9 +8856,10 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
         pathToAppendLen = strlen(pPathToAppend);
     }
 
+    basePathIsRoot = (basePathLen == 1 && (pBasePath[0] == '\\' || pBasePath[0] == '/'));
 
     /* Do not include the separator if we have one. */
-    if (basePathLen > 0 && (pBasePath[basePathLen - 1] == '\\' || pBasePath[basePathLen - 1] == '/')) {
+    if (!basePathIsRoot && basePathLen > 0 && (pBasePath[basePathLen - 1] == '\\' || pBasePath[basePathLen - 1] == '/')) {
         basePathLen -= 1;
     }
 
@@ -8887,15 +8889,17 @@ FS_API int fs_path_append(char* pDst, size_t dstCap, const char* pBasePath, size
         }
         dstLen += basePathLen;
 
-        /* Separator. */
-        if (pDst != NULL) {
-            if (dstCap > 1) {   /* Need to leave room for the separator. */
-                pDst[0] = '/';
-                pDst += 1;
-                dstCap -= 1;
+        if (!basePathIsRoot) {
+            /* Separator. */
+            if (pDst != NULL) {
+                if (dstCap > 1) {   /* Need to leave room for the separator. */
+                    pDst[0] = '/';
+                    pDst += 1;
+                    dstCap -= 1;
+                }
             }
+            dstLen += 1;
         }
-        dstLen += 1;    
     }
     
 
