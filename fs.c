@@ -2682,8 +2682,25 @@ FS_API fs_result fs_init(const fs_config* pConfig, fs** ppFS)
 
 FS_API void fs_uninit(fs* pFS)
 {
+    fs_result iteratorResult;
+    fs_mount_list_iterator iterator;
+
     if (pFS == NULL) {
         return;
+    }
+
+    /*
+    Release references held by read mounts before garbage collecting archives. Directory mounts do not hold
+    references, but archive mounts and file systems mounted with fs_mount_fs() do.
+    */
+    for (iteratorResult = fs_mount_list_first(pFS->pReadMountPoints, &iterator); iteratorResult == FS_SUCCESS; iteratorResult = fs_mount_list_next(&iterator)) {
+        if (iterator.pArchive != NULL) {
+            if (iterator.internal.pMountPoint->closeArchiveOnUnmount) {
+                fs_close_archive(iterator.pArchive);
+            } else {
+                fs_unref(iterator.pArchive);
+            }
+        }
     }
 
     /*
