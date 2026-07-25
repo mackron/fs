@@ -284,6 +284,7 @@ int pack(int argc, char** argv)
         return 1;
     }
 
+    fs_file_close(pOutputFile);
     return 0;
 }
 
