@@ -77,6 +77,7 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
     char fourcc[4];
     fs_uint32 tocOffset;
     fs_uint32 tocSize;
+    fs_uint32 iFile;
 
     /* No need for a backend config. */
     (void)pBackendConfig;
@@ -130,12 +131,16 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
 
     pPak->fileCount = tocSize / sizeof(fs_pak_toc_entry);
 
+    /* Make sure all strings are null terminated. We'll do this by just putting a null terminator in the last byte of the name array. */
+    for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
+        pPak->pTOC[iFile].name[sizeof(pPak->pTOC[iFile].name)-1] = '\0';
+    }
+
     /* Swap the endianness of the TOC. */
     if (!fs_pak_is_le()) {
-        fs_uint32 i;
-        for (i = 0; i < pPak->fileCount; i += 1) {
-            pPak->pTOC[i].offset = fs_pak_swap_endian_32(pPak->pTOC[i].offset);
-            pPak->pTOC[i].size   = fs_pak_swap_endian_32(pPak->pTOC[i].size);
+        for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
+            pPak->pTOC[iFile].offset = fs_pak_swap_endian_32(pPak->pTOC[iFile].offset);
+            pPak->pTOC[iFile].size   = fs_pak_swap_endian_32(pPak->pTOC[iFile].size);
         }
     }
 
