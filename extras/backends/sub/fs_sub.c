@@ -129,6 +129,10 @@ static size_t fs_alloc_size_sub(const void* pBackendConfig)
         return 0;   /* The sub config must be specified. */
     }
 
+    if (pSubFSConfig->pRootDir == NULL) {
+        return 0;   /* A root directory must be specified. */
+    }
+
     /* We include a copy of the path with the main allocation. */
     return sizeof(fs_sub) + strlen(pSubFSConfig->pRootDir) + 1 + 1;   /* +1 for trailing slash and +1 for null terminator. */
 }
@@ -163,7 +167,7 @@ static fs_result fs_init_sub(fs* pFS, const void* pBackendConfig, fs_stream* pSt
     fs_strcpy(pSubFS->pRootDir, pSubFSConfig->pRootDir);
 
     /* Append a trailing slash if necessary. */
-    if (pSubFS->pRootDir[pSubFS->rootDirLen - 1] != '/') {
+    if (pSubFS->rootDirLen > 0 && pSubFS->pRootDir[pSubFS->rootDirLen - 1] != '/') {
         pSubFS->pRootDir[pSubFS->rootDirLen] = '/';
         pSubFS->pRootDir[pSubFS->rootDirLen + 1] = '\0';
         pSubFS->rootDirLen += 1;
@@ -392,7 +396,7 @@ static fs_iterator* fs_first_sub(fs* pFS, const char* pDirectoryPath, size_t dir
         return NULL;
     }
 
-    pIterator = fs_first_ex(pSubFS->pOwnerFS, subPath.pFullPath, subPath.fullPathLen, 0);   /* TODO: Should we make the open mode configurable somehow? Maybe an option in fs_sub_config? */
+    pIterator = fs_first_ex(pSubFS->pOwnerFS, subPath.pFullPath, subPath.fullPathLen, 0);   /* TODO: Should we make the mode configurable somehow? Maybe an option in fs_sub_config? */
     fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return pIterator;
