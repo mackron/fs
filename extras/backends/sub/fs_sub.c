@@ -392,7 +392,7 @@ static fs_iterator* fs_first_sub(fs* pFS, const char* pDirectoryPath, size_t dir
         return NULL;
     }
 
-    pIterator = fs_first(pSubFS->pOwnerFS, subPath.pFullPath, subPath.fullPathLen);
+    pIterator = fs_first_ex(pSubFS->pOwnerFS, subPath.pFullPath, subPath.fullPathLen, 0);   /* TODO: Should we make the open mode configurable somehow? Maybe an option in fs_sub_config? */
     fs_sub_path_uninit(&subPath, fs_get_allocation_callbacks(pFS));
 
     return pIterator;
