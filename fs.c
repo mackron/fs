@@ -2483,6 +2483,7 @@ static fs_result fs_resolve_real_path_from_mount_point(fs* pFS, fs_mount_point* 
     if ((size_t)stringLen >= sizeof(pResolvedRealPath->stack)) {
         result = fs_string_alloc((size_t)stringLen, fs_get_allocation_callbacks(pFS), pResolvedRealPath);
         if (result != FS_SUCCESS) {
+            fs_string_free(&subPath, fs_get_allocation_callbacks(pFS));
             return result;
         }
 
