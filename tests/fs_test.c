@@ -725,6 +725,22 @@ fs_test_state fs_test_state_init(const fs_backend* pBackend)
 /* END test_state */
 
 /* BEG system_sysdir */
+static int fs_test_system_sysdir_trailing_separator(fs_test* pTest, const char* pPath, const char* pExpected)
+{
+    char path[256];
+    size_t pathLen;
+
+    fs_strcpy(path, pPath);
+    pathLen = fs_sysdir_trim_trailing_separator(path, strlen(path));
+
+    if (pathLen != strlen(pExpected) || strcmp(path, pExpected) != 0) {
+        printf("%s: Trimming \"%s\" produced \"%s\"; expected \"%s\".\n", pTest->name, pPath, path, pExpected);
+        return 1;
+    }
+
+    return 0;
+}
+
 int fs_test_system_sysdir_internal(fs_test* pTest, fs_sysdir_type type, const char* pTypeName)
 {
     char path[256];
@@ -744,6 +760,10 @@ int fs_test_system_sysdir_internal(fs_test* pTest, fs_sysdir_type type, const ch
 int fs_test_system_sysdir(fs_test* pTest)
 {
     int errorCount = 0;
+
+    errorCount += fs_test_system_sysdir_trailing_separator(pTest, "/",     "/");
+    errorCount += fs_test_system_sysdir_trailing_separator(pTest, "C:/",   "C:/");
+    errorCount += fs_test_system_sysdir_trailing_separator(pTest, "/tmp/", "/tmp");
 
     errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_HOME,   "HOME"  );
     errorCount += fs_test_system_sysdir_internal(pTest, FS_SYSDIR_TEMP,   "TEMP"  );

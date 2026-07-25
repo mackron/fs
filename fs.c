@@ -7837,6 +7837,24 @@ static size_t fs_sysdir_home_subdir(const char* pSubDir, char* pDst, size_t dstC
 }
 #endif
 
+static size_t fs_sysdir_trim_trailing_separator(char* pPath, size_t pathLen)
+{
+    fs_bool32 isRoot;
+
+    if (pPath == NULL || pathLen == 0) {
+        return pathLen;
+    }
+
+    isRoot = (pathLen == 1 && (pPath[0] == '/' || pPath[0] == '\\')) || (pathLen == 3 && ((pPath[0] >= 'A' && pPath[0] <= 'Z') || (pPath[0] >= 'a' && pPath[0] <= 'z')) && pPath[1] == ':' && (pPath[2] == '/' || pPath[2] == '\\'));
+    
+    if (!isRoot && (pPath[pathLen - 1] == '/' || pPath[pathLen - 1] == '\\')) {
+        pathLen -= 1;
+        pPath[pathLen] = '\0';
+    }
+
+    return pathLen;
+}
+
 FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
 {
     size_t fullLength = 0;
@@ -7864,8 +7882,6 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
             {
                 fullLength = GetTempPathA(sizeof(pPath), pPath);
                 if (fullLength > 0) {
-                    fullLength -= 1;  /* Remove the trailing slash. */
-
                     if (pDst != NULL && fullLength < dstCap) {
                         FS_COPY_MEMORY(pDst, pPath, fullLength);
                         pDst[fullLength] = '\0';
@@ -8021,12 +8037,9 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
     }
     #endif
 
-    /* Check if there's a trailing slash, and if so, delete it. */
-    if (pDst != NULL && fullLength < dstCap && fullLength > 0) {
-        if (pDst[fullLength - 1] == '/' || pDst[fullLength - 1] == '\\') {
-            pDst[fullLength - 1] = '\0';
-            fullLength -= 1;
-        }
+    /* Remove a trailing separator unless it is part of a root path. */
+    if (pDst != NULL && fullLength < dstCap) {
+        fullLength = fs_sysdir_trim_trailing_separator(pDst, fullLength);
     }
 
     return fullLength;
