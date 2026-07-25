@@ -3279,10 +3279,10 @@ static fs_result fs_open_or_info_from_archive(fs* pFS, const char* pFilePath, in
         fs_bool32 isArchive = FS_FALSE;
 
         /* Skip over "." and ".." segments. */
-        if (fs_strncmp(iFilePathSeg.pFullPath, ".", iFilePathSeg.segmentLength) == 0) {
+        if (fs_strncmp(iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset, ".", iFilePathSeg.segmentLength) == 0) {
             continue;
         }
-        if (fs_strncmp(iFilePathSeg.pFullPath, "..", iFilePathSeg.segmentLength) == 0) {
+        if (fs_strncmp(iFilePathSeg.pFullPath + iFilePathSeg.segmentOffset, "..", iFilePathSeg.segmentLength) == 0) {
             continue;
         }
 
@@ -4245,10 +4245,10 @@ static fs_iterator_internal* fs_iterator_internal_gather(fs_iterator_internal* p
             size_t dirPathRemainingLen;
 
             /* Skip over "." and ".." segments. */
-            if (fs_strncmp(iDirPathSeg.pFullPath, ".", iDirPathSeg.segmentLength) == 0) {
+            if (fs_strncmp(iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset, ".", iDirPathSeg.segmentLength) == 0) {
                 continue;
             }
-            if (fs_strncmp(iDirPathSeg.pFullPath, "..", iDirPathSeg.segmentLength) == 0) {
+            if (fs_strncmp(iDirPathSeg.pFullPath + iDirPathSeg.segmentOffset, "..", iDirPathSeg.segmentLength) == 0) {
                 continue;
             }
 
