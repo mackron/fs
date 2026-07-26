@@ -4734,6 +4734,51 @@ static int fs_test_memory_stream_duplicate(fs_test* pTest)
 }
 
 
+static fs_result fs_test_failing_stream_read(fs_stream* pStream, void* pDst, size_t bytesToRead, size_t* pBytesRead)
+{
+    const char data[] = "abc";
+    size_t bytesRead = FS_MIN(bytesToRead, sizeof(data) - 1);
+
+    (void)pStream;
+
+    if (pDst != NULL) {
+        FS_COPY_MEMORY(pDst, data, bytesRead);
+    }
+
+    *pBytesRead = bytesRead;
+    return FS_ERROR;
+}
+
+static int fs_test_stream_read_to_end_error(fs_test* pTest)
+{
+    fs_stream_vtable vtable;
+    fs_stream stream;
+    fs_result result;
+    void* pData = (void*)1;
+    size_t dataSize = 1;
+
+    FS_ZERO_OBJECT(&vtable);
+    vtable.read = fs_test_failing_stream_read;
+
+    result = fs_stream_init(&vtable, &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize the test stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_stream_read_to_end(&stream, FS_FORMAT_BINARY, NULL, &pData, &dataSize);
+    if (result != FS_ERROR || pData != NULL || dataSize != 0) {
+        printf("%s: A failed read returned partial stream data.\n", pTest->name);
+        if (pData != NULL && pData != (void*)1) {
+            fs_free(pData, NULL);
+        }
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+
 static int fs_test_memory_stream_seek(fs_test* pTest)
 {
     fs_result result;
@@ -4965,6 +5010,7 @@ int main(int argc, char** argv)
     fs_test test_mem_stress_test;                   /* Tests stress scenarios like many files and deep directories in memory. */
     fs_test test_mem_uninit;                        /* Needs to be last since this is where the fs_uninit() function is called for memory backend. */
     fs_test test_memory_stream;
+    fs_test test_stream_read_to_end_error;
     fs_test test_memory_stream_duplicate;
     fs_test test_memory_stream_seek;
     fs_test test_memory_stream_write_bounds;
@@ -5095,6 +5141,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_mem_uninit,                     "Memory Uninitialization",        fs_test_mem_uninit,                     &test_mem_state,       &test_mem);
 
     fs_test_init(&test_memory_stream,                  "Memory Stream",                  NULL,                                   NULL,                  &test_root);
+    fs_test_init(&test_stream_read_to_end_error,       "Stream Read To End Error",       fs_test_stream_read_to_end_error,       NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_duplicate,        "Memory Stream Duplicate",        fs_test_memory_stream_duplicate,        NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_seek,             "Memory Stream Seek",             fs_test_memory_stream_seek,             NULL,                  &test_memory_stream);
     fs_test_init(&test_memory_stream_write_bounds,     "Memory Stream Write Bounds",     fs_test_memory_stream_write_bounds,     NULL,                  &test_memory_stream);

@@ -1455,6 +1455,12 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
         }
     }
 
+    /* Do not return partial data on error. The output pointers must remain cleared on failure. */
+    if (result != FS_SUCCESS && result != FS_AT_END) {
+        fs_free(pData, pAllocationCallbacks);
+        return result;
+    }
+
     /* If we're opening in text mode, we need to append a null terminator. */
     if (format == FS_FORMAT_TEXT) {
         if (dataSize >= dataCap) {
@@ -1484,12 +1490,7 @@ FS_API fs_result fs_stream_read_to_end(fs_stream* pStream, fs_format format, con
         *pDataSize = dataSize;
     }
 
-    /* Make sure the caller is aware of any errors. */
-    if (result != FS_SUCCESS && result != FS_AT_END) {
-        return result;
-    } else {
-        return FS_SUCCESS;
-    }
+    return FS_SUCCESS;
 }
 /* END fs_stream.c */
 
