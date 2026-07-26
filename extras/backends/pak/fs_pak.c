@@ -305,10 +305,6 @@ static fs_result fs_file_seek_pak(fs_file* pFile, fs_int64 offset, fs_seek_origi
     pPak = (fs_pak*)fs_get_backend_data(fs_file_get_fs(pFile));
     FS_PAK_ASSERT(pPak != NULL);
 
-    if (FS_PAK_ABS(offset) > 0xFFFFFFFF) {
-        return FS_BAD_SEEK;    /* Offset is too large. */
-    }
-
     if (origin == FS_SEEK_SET) {
         newCursor = 0;
     } else if (origin == FS_SEEK_CUR) {
@@ -320,13 +316,11 @@ static fs_result fs_file_seek_pak(fs_file* pFile, fs_int64 offset, fs_seek_origi
         return FS_INVALID_ARGS;
     }
 
+    if (offset < -newCursor || offset > (fs_int64)pPak->pTOC[pPakFile->tocIndex].size - newCursor) {
+        return FS_BAD_SEEK;
+    }
+
     newCursor += offset;
-    if (newCursor < 0) {
-        return FS_BAD_SEEK;    /* Negative offset. */
-    }
-    if (newCursor > pPak->pTOC[pPakFile->tocIndex].size) {
-        return FS_BAD_SEEK;    /* Offset is larger than file size. */
-    }
 
     /* The cursor must be adjust for the offset of the file. */
     newCursorAbsolute = newCursor + pPak->pTOC[pPakFile->tocIndex].offset;
