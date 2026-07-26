@@ -548,6 +548,7 @@ FS_API fs_iterator* fs_first_pak(fs* pFS, const char* pDirectoryPath, size_t dir
                 and not directories, it means pDirectoryPath is actually a file. It is invalid to try iterating
                 a file, so we need to abort.
                 */
+                fs_free(pIteratorPak, fs_get_allocation_callbacks(pFS));
                 return NULL;
             }
         } else {
