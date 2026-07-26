@@ -1302,7 +1302,7 @@ the returned pointer with fs_free().
 The format (FS_FORMAT_TEXT or FS_FORMAT_BINARY) is used to determine whether or not a null terminator should be
 appended to the end of the data.
 
-For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
+For flexibility in case the backend does not support cursor retrieval or positioning, the data will be read
 in fixed sized chunks.
 */
 
@@ -1515,7 +1515,7 @@ struct fs_file_info
 struct fs_iterator
 {
     fs* pFS;
-    const char* pName;              /* Must be null terminated. The FS implementation is responsible for manageing the memory allocation. */
+    const char* pName;              /* Must be null terminated. The FS implementation is responsible for managing the memory allocation. */
     size_t nameLen;
     fs_file_info info;
 };
@@ -3367,7 +3367,7 @@ fs_get_allocation_callbacks() if necessary, like so:
 The format (FS_FORMAT_TEXT or FS_FORMAT_BINARY) is used to determine whether or not a null terminator should be
 appended to the end of the data.
 
-For flexiblity in case the backend does not support cursor retrieval or positioning, the data will be read
+For flexibility in case the backend does not support cursor retrieval or positioning, the data will be read
 in fixed sized chunks.
 */
 FS_API fs_result fs_file_read_to_end(fs_file* pFile, fs_format format, void** ppData, size_t* pDataSize);
