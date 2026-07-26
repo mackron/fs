@@ -950,7 +950,7 @@ extern "C" {
 #if defined(SIZE_MAX)
     #define FS_SIZE_MAX  SIZE_MAX
 #else
-    #define FS_SIZE_MAX  0xFFFFFFFF  /* When SIZE_MAX is not defined by the standard library just default to the maximum 32-bit unsigned integer. */
+    #define FS_SIZE_MAX  ((size_t)-1)
 #endif
 
 #if defined(__LP64__) || defined(_WIN64) || (defined(__x86_64__) && !defined(__ILP32__)) || defined(_M_X64) || defined(__ia64) || defined(_M_IA64) || defined(__aarch64__) || defined(_M_ARM64) || defined(__powerpc64__)
