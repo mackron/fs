@@ -131,9 +131,13 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
 
     pPak->fileCount = tocSize / sizeof(fs_pak_toc_entry);
 
-    /* Make sure all strings are null terminated. We'll do this by just putting a null terminator in the last byte of the name array. */
+    /* Every file name in the TOC must be null terminated. */
     for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
-        pPak->pTOC[iFile].name[sizeof(pPak->pTOC[iFile].name)-1] = '\0';
+        if (memchr(pPak->pTOC[iFile].name, '\0', sizeof(pPak->pTOC[iFile].name)) == NULL) {
+            fs_free(pPak->pTOC, fs_get_allocation_callbacks(pFS));
+            pPak->pTOC = NULL;
+            return FS_INVALID_FILE;
+        }
     }
 
     /* Swap the endianness of the TOC. */
