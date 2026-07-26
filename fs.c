@@ -6014,7 +6014,7 @@ FS_API fs_result fs_deserialize(fs* pFS, const char* pDirectoryPath, int options
 
         fullPath.len = (size_t)fullPathLen;
 
-        if (fullPath.len > sizeof(fullPath.stack)) {
+        if (fullPath.len >= sizeof(fullPath.stack)) {
             result = fs_string_alloc(fullPathLen, fs_get_allocation_callbacks(pFS), &fullPath);
             if (result != FS_SUCCESS) {
                 fs_string_free(&localPath, fs_get_allocation_callbacks(pFS));
