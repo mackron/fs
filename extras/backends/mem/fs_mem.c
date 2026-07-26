@@ -907,6 +907,8 @@ static fs_result fs_file_read_mem(fs_file* pFile, void* pDst, size_t bytesToRead
 static fs_result fs_file_write_mem_nolock(fs_file_mem* pFileMem, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten, const fs_allocation_callbacks* pAllocationCallbacks)
 {
     fs_mem_node* pNode;
+    size_t cursor;
+    size_t writeEndPosition;
     size_t newSize;
 
     FS_MEM_ASSERT(pBytesWritten != NULL);
@@ -929,16 +931,35 @@ static fs_result fs_file_write_mem_nolock(fs_file_mem* pFileMem, const void* pSr
     if (bytesToWrite == 0) {
         return FS_SUCCESS;
     }
-    
+
+    if (pFileMem->cursor > FS_SIZE_MAX) {
+        return FS_TOO_BIG;
+    }
+
+    cursor = (size_t)pFileMem->cursor;
+    if (bytesToWrite > FS_SIZE_MAX - cursor) {
+        return FS_TOO_BIG;
+    }
+
+    writeEndPosition = cursor + bytesToWrite;
+
     /* Calculate the new file size after writing. */
-    newSize = FS_MEM_MAX(pNode->data.file.size, (size_t)(pFileMem->cursor + bytesToWrite));
+    newSize = FS_MEM_MAX(pNode->data.file.size, writeEndPosition);
     
     /* Check if we need to expand the buffer. */
     if (newSize > pNode->data.file.capacity) {
         size_t newCapacity;
         void* pNewData;
 
-        newCapacity = FS_MEM_MAX(newSize, pNode->data.file.capacity * 2);
+        if (pNode->data.file.capacity > FS_SIZE_MAX / 2) {
+            newCapacity = FS_SIZE_MAX;
+        } else {
+            newCapacity = pNode->data.file.capacity * 2;
+        }
+
+        if (newCapacity < newSize) {
+            newCapacity = newSize;
+        }
         
         pNewData = fs_realloc(pNode->data.file.pData, newCapacity, pAllocationCallbacks);
         if (pNewData == NULL) {
@@ -958,12 +979,12 @@ static fs_result fs_file_write_mem_nolock(fs_file_mem* pFileMem, const void* pSr
     }
     
     /* Copy the data. */
-    FS_MEM_COPY_MEMORY(FS_MEM_OFFSET_PTR(pNode->data.file.pData, pFileMem->cursor), pSrc, bytesToWrite);
+    FS_MEM_COPY_MEMORY(FS_MEM_OFFSET_PTR(pNode->data.file.pData, cursor), pSrc, bytesToWrite);
     
     /* Update file size and cursor. */
     pNode->data.file.size = newSize;
     pNode->data.file.modificationTime = time(NULL);
-    pFileMem->cursor += bytesToWrite;
+    pFileMem->cursor = writeEndPosition;
     
     *pBytesWritten = bytesToWrite;
     return FS_SUCCESS;
