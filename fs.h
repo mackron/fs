@@ -175,7 +175,7 @@ original path to do the duplication.
 To delete a file, use `fs_remove()`:
 
 ```c
-fs_remove(pFS, "file.txt");
+fs_remove(pFS, "file.txt", 0);
 ```
 
 Note that files are deleted permanently. There is no recycle bin or trash functionality.
@@ -183,7 +183,7 @@ Note that files are deleted permanently. There is no recycle bin or trash functi
 Files can be renamed and moved with `fs_rename()`:
 
 ```c
-fs_rename(pFS, "file.txt", "new-file.txt");
+fs_rename(pFS, "file.txt", "new-file.txt", 0);
 ```
 
 To create a directory, use `fs_mkdir()`:
@@ -533,7 +533,9 @@ such as when working with temporary files.
 You can enumerate over the contents of a directory like the following:
 
 ```c
-for (fs_iterator* pIterator = fs_first(pFS, "directory/to/enumerate", FS_NULL_TERMINATED, 0); pIterator != NULL; pIterator = fs_next(pIterator)) {
+fs_iterator* pIterator;
+
+for (pIterator = fs_first(pFS, "directory/to/enumerate", 0); pIterator != NULL; pIterator = fs_next(pIterator)) {
     printf("Name: %s\n",   pIterator->pName);
     printf("Size: %llu\n", pIterator->info.size);
 }
@@ -2798,8 +2800,8 @@ omitted for clarity.
 ```c
 fs_iterator* pIterator = fs_first(pFS, "somefolder", FS_READ);
 while (pIterator != NULL) {
-    // Use pIterator->name and pIterator->info here...
-    printf("Found entry: %.*s\n", (int)pIterator->nameLength, pIterator->pName);
+    // Use pIterator->pName and pIterator->info here...
+    printf("Found entry: %.*s\n", (int)pIterator->nameLen, pIterator->pName);
     pIterator = fs_next(pIterator);
 }
 
@@ -3667,7 +3669,7 @@ struct fs_memory_stream
         size_t dataCap;
     } write;
     size_t cursor;
-    fs_allocation_callbacks allocationCallbacks; /* This is copied from the allocation callbacks passed in from e_memory_stream_init(). Only used in write mode. */
+    fs_allocation_callbacks allocationCallbacks; /* This is copied from the allocation callbacks passed in from fs_memory_stream_init_write(). Only used in write mode. */
 };
 
 FS_API fs_result fs_memory_stream_init_write(const fs_allocation_callbacks* pAllocationCallbacks, fs_memory_stream* pStream);
