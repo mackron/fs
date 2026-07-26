@@ -3124,6 +3124,54 @@ int fs_test_archives_recursive(fs_test* pTest)
 }
 /* END archives_recursive */
 
+/* BEG archives_validation */
+int fs_test_archives_validation_pak(fs_test* pTest)
+{
+    unsigned char pakData[82];
+    fs_memory_stream stream;
+    fs_config config;
+    fs* pFS;
+    fs_result result;
+
+    memset(pakData, 0, sizeof(pakData));
+    memcpy(pakData, "PACK", 4);
+    pakData[4] = 18;                /* TOC offset. */
+    pakData[8] = 63;                /* Invalid TOC size. */
+
+    fs_memory_stream_init_readonly(pakData, sizeof(pakData), &stream);
+    config = fs_config_init(FS_PAK, NULL, (fs_stream*)&stream);
+    pFS = NULL;
+    result = fs_init(&config, &pFS);
+    if (result != FS_INVALID_FILE) {
+        printf("%s: PAK archive with a partial TOC entry was not rejected.\n", pTest->name);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    pakData[8] = 64;
+    pakData[18] = 'a';              /* File name. */
+    pakData[74] = 80;               /* File offset. */
+    pakData[78] = 6;                /* File size extends beyond the archive. */
+
+    fs_memory_stream_init_readonly(pakData, sizeof(pakData), &stream);
+    config = fs_config_init(FS_PAK, NULL, (fs_stream*)&stream);
+    pFS = NULL;
+    result = fs_init(&config, &pFS);
+    if (result != FS_INVALID_FILE) {
+        printf("%s: PAK archive with an out-of-range file was not rejected.\n", pTest->name);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    return FS_SUCCESS;
+}
+
+int fs_test_archives_validation(fs_test* pTest)
+{
+    return fs_test_archives_validation_pak(pTest);
+}
+/* END archives_validation */
+
 /* BEG archives_duplicate */
 int fs_test_archives_duplicate_pak(fs_test* pTest)
 {
@@ -3168,6 +3216,14 @@ int fs_test_archives_duplicate_pak(fs_test* pTest)
     result = fs_file_read(pFile, data, 1, NULL);
     if (result != FS_SUCCESS || data[0] != 'a') {
         printf("%s: Failed to read PAK file before duplication.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    result = fs_file_seek(pFile, FS_INT64_MIN, FS_SEEK_CUR);
+    if (result != FS_BAD_SEEK) {
+        printf("%s: PAK seek unexpectedly accepted FS_INT64_MIN.\n", pTest->name);
         fs_file_close(pFile);
         fs_uninit(pFS);
         return FS_ERROR;
@@ -5084,6 +5140,7 @@ int main(int argc, char** argv)
     fs_test test_archives_iteration_verbose;        /* Tests iteration with archives in verbose mode. */
     fs_test test_archives_iteration_transparent;    /* Tests iteration with archives in transparent mode. */
     fs_test test_archives_recursive;                /* Tests archives inside archives. */
+    fs_test test_archives_validation;               /* Tests validation of malformed archives. */
     fs_test test_archives_duplicate;                /* Tests duplication of files inside archives. */
     fs_test test_archives_uninit;                   /* This needs to be the last archive test. */
     fs_test test_mem;                               /* The top-level test for memory backend. This will set up the fs_mem object in preparation for subsequent tests. */
@@ -5209,6 +5266,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_archives_iteration_verbose,     "Archives Iteration Verbose",     fs_test_archives_iteration_verbose,     &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_iteration_transparent, "Archives Iteration Transparent", fs_test_archives_iteration_transparent, &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_recursive,             "Archives Recursive",             fs_test_archives_recursive,             &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_validation,            "Archives Validation",            fs_test_archives_validation,            &test_archives_state, &test_archives);
     fs_test_init(&test_archives_duplicate,             "Archives Duplicate",             fs_test_archives_duplicate,             &test_archives_state, &test_archives);
     fs_test_init(&test_archives_uninit,                "Archives Uninitialization",      fs_test_archives_uninit,                &test_archives_state, &test_archives);
 

@@ -15,9 +15,6 @@
 #define FS_PAK_ASSERT(x) assert(x)
 #endif
 
-#define FS_PAK_ABS(x)   (((x) > 0) ? (x) : -(x))
-
-
 /* BEG fs_pak.c */
 static FS_INLINE fs_bool32 fs_pak_is_le(void)
 {
@@ -78,6 +75,7 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
     fs_uint32 tocOffset;
     fs_uint32 tocSize;
     fs_uint32 iFile;
+    fs_int64 archiveSize;
 
     /* No need for a backend config. */
     (void)pBackendConfig;
@@ -111,27 +109,47 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
     tocOffset = fs_pak_le2ne_32(tocOffset);
     tocSize   = fs_pak_le2ne_32(tocSize);
 
+    if ((tocSize % sizeof(fs_pak_toc_entry)) != 0) {
+        return FS_INVALID_FILE;
+    }
+
+    result = fs_stream_seek(pStream, 0, FS_SEEK_END);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    result = fs_stream_tell(pStream, &archiveSize);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    if (archiveSize < 0 || (fs_uint64)tocOffset > (fs_uint64)archiveSize || (fs_uint64)tocSize > (fs_uint64)archiveSize - tocOffset) {
+        return FS_INVALID_FILE;
+    }
+
     /* Seek to the TOC so we can read it. */
     result = fs_stream_seek(pStream, tocOffset, FS_SEEK_SET);
     if (result != FS_SUCCESS) {
         return result;
     }
 
-    pPak->pTOC = (fs_pak_toc_entry*)fs_malloc(tocSize, fs_get_allocation_callbacks(pFS));
-    if (pPak->pTOC == NULL) {
-        return FS_OUT_OF_MEMORY;
-    }
+    if (tocSize > 0) {
+        pPak->pTOC = (fs_pak_toc_entry*)fs_malloc(tocSize, fs_get_allocation_callbacks(pFS));
+        if (pPak->pTOC == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
 
-    result = fs_stream_read(pStream, pPak->pTOC, tocSize, NULL);
-    if (result != FS_SUCCESS) {
-        fs_free(pPak->pTOC, fs_get_allocation_callbacks(pFS));
-        pPak->pTOC = NULL;
-        return result;
+        result = fs_stream_read(pStream, pPak->pTOC, tocSize, NULL);
+        if (result != FS_SUCCESS) {
+            fs_free(pPak->pTOC, fs_get_allocation_callbacks(pFS));
+            pPak->pTOC = NULL;
+            return result;
+        }
     }
 
     pPak->fileCount = tocSize / sizeof(fs_pak_toc_entry);
 
-    /* Every file name in the TOC must be null terminated. */
+    /* Every file name must be null terminated and every file must be contained within the archive. */
     for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
         if (memchr(pPak->pTOC[iFile].name, '\0', sizeof(pPak->pTOC[iFile].name)) == NULL) {
             fs_free(pPak->pTOC, fs_get_allocation_callbacks(pFS));
@@ -145,6 +163,14 @@ static fs_result fs_init_pak(fs* pFS, const void* pBackendConfig, fs_stream* pSt
         for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
             pPak->pTOC[iFile].offset = fs_pak_swap_endian_32(pPak->pTOC[iFile].offset);
             pPak->pTOC[iFile].size   = fs_pak_swap_endian_32(pPak->pTOC[iFile].size);
+        }
+    }
+
+    for (iFile = 0; iFile < pPak->fileCount; iFile += 1) {
+        if ((fs_uint64)pPak->pTOC[iFile].offset > (fs_uint64)archiveSize || (fs_uint64)pPak->pTOC[iFile].size > (fs_uint64)archiveSize - pPak->pTOC[iFile].offset) {
+            fs_free(pPak->pTOC, fs_get_allocation_callbacks(pFS));
+            pPak->pTOC = NULL;
+            return FS_INVALID_FILE;
         }
     }
 
