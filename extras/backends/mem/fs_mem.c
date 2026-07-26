@@ -1092,9 +1092,10 @@ static fs_result fs_file_flush_mem(fs_file* pFile)
     return FS_SUCCESS;
 }
 
-static fs_result fs_file_truncate_mem_nolock(fs_file_mem* pFileMem)
+static fs_result fs_file_truncate_mem_nolock(fs_file_mem* pFileMem, const fs_allocation_callbacks* pAllocationCallbacks)
 {
     fs_mem_node* pNode;
+    size_t newSize;
     
     pNode = pFileMem->pNode;
     FS_MEM_ASSERT(pNode != NULL);
@@ -1104,9 +1105,31 @@ static fs_result fs_file_truncate_mem_nolock(fs_file_mem* pFileMem)
     if ((pFileMem->openMode & FS_WRITE) == 0) {
         return FS_ACCESS_DENIED;
     }
-    
+
+    if (pFileMem->cursor > FS_SIZE_MAX) {
+        return FS_TOO_BIG;
+    }
+
+    newSize = (size_t)pFileMem->cursor;
+
+    if (newSize > pNode->data.file.capacity) {
+        void* pNewData;
+
+        pNewData = fs_realloc(pNode->data.file.pData, newSize, pAllocationCallbacks);
+        if (pNewData == NULL) {
+            return FS_OUT_OF_MEMORY;
+        }
+
+        pNode->data.file.pData = pNewData;
+        pNode->data.file.capacity = newSize;
+    }
+
+    if (newSize > pNode->data.file.size) {
+        FS_MEM_ZERO_MEMORY(FS_MEM_OFFSET_PTR(pNode->data.file.pData, pNode->data.file.size), newSize - pNode->data.file.size);
+    }
+
     /* Truncate at current cursor position. */
-    pNode->data.file.size = (size_t)pFileMem->cursor;
+    pNode->data.file.size = newSize;
     pNode->data.file.modificationTime = time(NULL);
     
     return FS_SUCCESS;
@@ -1126,7 +1149,7 @@ static fs_result fs_file_truncate_mem(fs_file* pFile)
     
     fs_mem_lock(pMem);
     {
-        result = fs_file_truncate_mem_nolock(pFileMem);
+        result = fs_file_truncate_mem_nolock(pFileMem, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
     }
     fs_mem_unlock(pMem);
     
