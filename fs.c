@@ -9423,7 +9423,7 @@ FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* p
     return FS_SUCCESS;
 }
 
-FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, int origin)
+FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, fs_seek_origin origin)
 {
     size_t baseCursor;
     size_t newCursor;

@@ -3677,7 +3677,7 @@ FS_API fs_result fs_memory_stream_init_readonly(const void* pData, size_t dataSi
 FS_API void fs_memory_stream_uninit(fs_memory_stream* pStream);    /* Only needed for write mode. This will free the internal pointer so make sure you've done what you need to do with it. */
 FS_API fs_result fs_memory_stream_read(fs_memory_stream* pStream, void* pDst, size_t bytesToRead, size_t* pBytesRead);
 FS_API fs_result fs_memory_stream_write(fs_memory_stream* pStream, const void* pSrc, size_t bytesToWrite, size_t* pBytesWritten);
-FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, int origin);
+FS_API fs_result fs_memory_stream_seek(fs_memory_stream* pStream, fs_int64 offset, fs_seek_origin origin);
 FS_API fs_result fs_memory_stream_tell(fs_memory_stream* pStream, size_t* pCursor);
 FS_API fs_result fs_memory_stream_remove(fs_memory_stream* pStream, size_t offset, size_t size);
 FS_API fs_result fs_memory_stream_truncate(fs_memory_stream* pStream);
