@@ -404,11 +404,41 @@ static fs_iterator* fs_first_sub(fs* pFS, const char* pDirectoryPath, size_t dir
 
 static fs_iterator* fs_next_sub(fs_iterator* pIterator)
 {
-    return fs_next(pIterator);
+    fs* pSubFSObject;
+    fs_sub* pSubFS;
+
+    FS_SUB_ASSERT(pIterator != NULL);
+
+    pSubFSObject = pIterator->pFS;
+    pSubFS = (fs_sub*)fs_get_backend_data(pSubFSObject);
+    FS_SUB_ASSERT(pSubFS != NULL);
+
+    /*
+    The iterator was allocated by the owner FS, but the core sets pFS to the sub FS after the
+    iterator is returned from fs_first_sub(). Restore the owner while advancing so the iterator
+    will be freed with the same allocation callbacks that were used to allocate it.
+    */
+    pIterator->pFS = pSubFS->pOwnerFS;
+    pIterator = fs_next(pIterator);
+
+    if (pIterator != NULL) {
+        pIterator->pFS = pSubFSObject;
+    }
+
+    return pIterator;
 }
 
 static void fs_free_iterator_sub(fs_iterator* pIterator)
 {
+    fs_sub* pSubFS;
+
+    FS_SUB_ASSERT(pIterator != NULL);
+
+    pSubFS = (fs_sub*)fs_get_backend_data(pIterator->pFS);
+    FS_SUB_ASSERT(pSubFS != NULL);
+
+    /* The iterator was allocated by the owner FS and must be freed with its allocation callbacks. */
+    pIterator->pFS = pSubFS->pOwnerFS;
     fs_free_iterator(pIterator);
 }
 
