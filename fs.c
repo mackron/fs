@@ -8829,7 +8829,7 @@ FS_API const char* fs_path_extension(const char* pPath, size_t pathLen)
     }
 
     /* If the last dot is after the last slash, we've found it. Otherwise, it's not there and we need to return null. */
-    if (pDot != NULL && pDot > pLastSlash) {
+    if (pDot != NULL && (pLastSlash == NULL || pDot > pLastSlash)) {
         return pDot + 1;
     } else {
         return NULL;
