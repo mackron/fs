@@ -28,7 +28,7 @@ static FS_INLINE fs_bool32 fs_pak_is_le(void)
 #endif
 }
 
-static FS_INLINE unsigned int fs_pak_swap_endian_32(unsigned int n)
+static FS_INLINE fs_uint32 fs_pak_swap_endian_32(fs_uint32 n)
 {
     return
         ((n & 0xFF000000) >> 24) |
@@ -37,7 +37,7 @@ static FS_INLINE unsigned int fs_pak_swap_endian_32(unsigned int n)
         ((n & 0x000000FF) << 24);
 }
 
-static FS_INLINE unsigned int fs_pak_le2ne_32(unsigned int n)
+static FS_INLINE fs_uint32 fs_pak_le2ne_32(fs_uint32 n)
 {
     if (!fs_pak_is_le()) {
         return fs_pak_swap_endian_32(n);
