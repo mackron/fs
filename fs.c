@@ -1547,7 +1547,7 @@ static fs_result fs_backend_rename(const fs_backend* pBackend, fs* pFS, const ch
 {
     FS_ASSERT(pBackend != NULL);
 
-    if (pBackend->remove == NULL) {
+    if (pBackend->rename == NULL) {
         return FS_NOT_IMPLEMENTED;
     } else {
         return pBackend->rename(pFS, pOldName, pNewName);
