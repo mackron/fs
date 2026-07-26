@@ -475,6 +475,9 @@ static int fs_test_path_normalize_internal(fs_test* pTest, const char* pPath, co
 int fs_test_path_normalize(fs_test* pTest)
 {
     int errorCount = 0;
+    char pTruncatedPath[3];
+    char pRootPath[1];
+    int result;
 
     errorCount += fs_test_path_normalize_internal(pTest, "", "");
     errorCount += fs_test_path_normalize_internal(pTest, "/", "/");
@@ -489,6 +492,18 @@ int fs_test_path_normalize(fs_test* pTest)
     errorCount += fs_test_path_normalize_internal(pTest, "/abc/../../def", NULL);   /* Expecting error. */
     errorCount += fs_test_path_normalize_internal(pTest, "abc/def/", "abc/def");
     errorCount += fs_test_path_normalize_internal(pTest, "/abc/def/", "/abc/def");
+
+    result = fs_path_normalize(pTruncatedPath, sizeof(pTruncatedPath), "long/b", FS_NULL_TERMINATED, 0);
+    if (result != 6 || strcmp(pTruncatedPath, "lo") != 0) {
+        printf("%s: Expected truncated normalization to produce \"lo\" with length 6, but got \"%s\" with length %d\n", pTest->name, pTruncatedPath, result);
+        errorCount += 1;
+    }
+
+    result = fs_path_normalize(pRootPath, sizeof(pRootPath), "/", FS_NULL_TERMINATED, 0);
+    if (result != 1 || pRootPath[0] != '\0') {
+        printf("%s: Expected root normalization into a one-byte buffer to produce an empty string with length 1\n", pTest->name);
+        errorCount += 1;
+    }
 
     if (errorCount == 0) {
         return FS_SUCCESS;

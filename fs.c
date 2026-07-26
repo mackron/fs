@@ -9048,7 +9048,7 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
     if (iPath.segmentLength == 0) {
         allowLeadingBackNav = FS_FALSE; /* When the path starts with "/" we cannot allow a leading ".." in the output path. */
 
-        if (pDst != NULL && dstCap > 0) {
+        if (pDst != NULL && dstCap > 1) {
             pDst[0] = '/';
             pDst   += 1;
             dstCap -= 1;
@@ -9058,6 +9058,10 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
         /* Get past the root. */
         result = fs_path_next(&iPath);
         if (result != FS_SUCCESS) {
+            if (pDst != NULL && dstCap > 0) {
+                pDst[0] = '\0';
+            }
+
             return dstLen;
         }
     }
@@ -9113,16 +9117,18 @@ FS_API int fs_path_normalize(char* pDst, size_t dstCap, const char* pPath, size_
         for (i = 0; i < top; i += 1) {
             size_t segLen = stack[i].segmentLength;
 
-            if (pDst != NULL && dstCap > segLen) {
-                FS_COPY_MEMORY(pDst, stack[i].pFullPath + stack[i].segmentOffset, segLen);
-                pDst   += segLen;
-                dstCap -= segLen;
+            if (pDst != NULL && dstCap > 1) {
+                size_t bytesToCopy = FS_MIN(segLen, dstCap - 1);
+
+                FS_MOVE_MEMORY(pDst, stack[i].pFullPath + stack[i].segmentOffset, bytesToCopy);
+                pDst   += bytesToCopy;
+                dstCap -= bytesToCopy;
             }
             dstLen += (int)segLen;
 
             /* Separator. */
             if (i + 1 < top) {
-                if (pDst != NULL && dstCap > 0) {
+                if (pDst != NULL && dstCap > 1) {
                     pDst[0] = '/';
                     pDst   += 1;
                     dstCap -= 1;
