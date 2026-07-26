@@ -7881,7 +7881,7 @@ static size_t fs_sysdir_home_subdir(const char* pSubDir, char* pDst, size_t dstC
         size_t subDirLen = strlen(pSubDir);
         size_t fullLength = homeLen + 1 + subDirLen;
 
-        if (fullLength < dstCap) {
+        if (pDst != NULL && fullLength < dstCap) {
             FS_COPY_MEMORY(pDst, pHome, homeLen);
             pDst[homeLen] = '/';
             FS_COPY_MEMORY(pDst + homeLen + 1, pSubDir, subDirLen);
