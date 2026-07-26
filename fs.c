@@ -6847,11 +6847,28 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
 
         if (pathUTF8Len == (size_t)-1) {
             cbMultiByte = (int)-1;
+            wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, NULL, 0);
         } else {
-            cbMultiByte = (int)pathUTF8Len + 1;
+            if (pathUTF8Len > 0x7FFFFFFF) {
+                return FS_TOO_BIG;
+            }
+
+            cbMultiByte = (int)pathUTF8Len;
+            if (cbMultiByte == 0) {
+                wideCharLen = 1;
+            } else {
+                wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, NULL, 0);
+                if (wideCharLen == 0) {
+                    return FS_ERROR;
+                }
+                if (wideCharLen == 0x7FFFFFFF) {
+                    return FS_TOO_BIG;
+                }
+
+                wideCharLen += 1;  /* +1 for the null terminator which is not included when converting an explicitly sized string. */
+            }
         }
 
-        wideCharLen = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, NULL, 0);
         if (wideCharLen == 0) {
             return FS_ERROR;
         }
@@ -6868,8 +6885,31 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
             pPath->path = pPath->pathHeap;
         }
 
-        MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, pPath->path, wideCharLen);
-        pPath->len = wideCharLen - 1;  /* The count returned by MultiByteToWideChar() includes the null terminator, so subtract 1 to compensate. */
+        if (cbMultiByte == 0) {
+            pPath->path[0] = '\0';
+        } else {
+            int conversionResult;
+            int conversionCap;
+
+            if (cbMultiByte == -1) {
+                conversionCap = wideCharLen;
+            } else {
+                conversionCap = wideCharLen - 1;
+            }
+
+            conversionResult = MultiByteToWideChar(CP_UTF8, 0, pPathUTF8, cbMultiByte, pPath->path, conversionCap);
+            if (conversionResult == 0) {
+                fs_free(pPath->pathHeap, pAllocationCallbacks);
+                fs_win32_path_init_internal(pPath);
+                return FS_ERROR;
+            }
+
+            if (cbMultiByte != -1) {
+                pPath->path[conversionResult] = '\0';
+            }
+        }
+
+        pPath->len = wideCharLen - 1;
 
         /* Convert forward slashes to back slashes for compatibility. */
         for (i = 0; i < pPath->len; i += 1) {
@@ -6892,6 +6932,10 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
             pPath->len = pathUTF8Len;
         }
 
+        if (pPath->len == FS_SIZE_MAX) {
+            return FS_TOO_BIG;
+        }
+
         if (pPath->len >= sizeof(pPath->pathStack)) {
             pPath->pathHeap = (fs_win32_char*)fs_malloc(sizeof(fs_win32_char) * (pPath->len + 1), pAllocationCallbacks);
             if (pPath->pathHeap == NULL) {
@@ -6901,7 +6945,9 @@ static fs_result fs_win32_path_init(fs_win32_path* pPath, const char* pPathUTF8,
             pPath->path = pPath->pathHeap;
         }
 
-        fs_strcpy(pPath->path, pPathUTF8);
+        FS_COPY_MEMORY(pPath->path, pPathUTF8, pPath->len);
+        pPath->path[pPath->len] = '\0';
+
         for (i = 0; i < pPath->len; i += 1) {
             if (pPath->path[i] == '/') {
                 pPath->path[i] = '\\';
