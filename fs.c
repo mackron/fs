@@ -7783,13 +7783,22 @@ HRESULT fs_get_executable_directory_win32(char* pPath)
     DWORD result;
 
     result = GetModuleFileNameA(NULL, pPath, 260);
-    if (result == 260) {
-        return ERROR_INSUFFICIENT_BUFFER;
+    if (result == 0) {
+        DWORD error = GetLastError();
+        if (error != ERROR_SUCCESS) {
+            return HRESULT_FROM_WIN32(error);
+        } else {
+            return E_FAIL;
+        }
+    }
+    
+    if (result >= 260) {
+        return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
     }
 
     fs_path_directory(pPath, 260, pPath, result);
 
-    return ERROR_SUCCESS;
+    return S_OK;
 }
 
 /*
@@ -7800,7 +7809,7 @@ The `pPath` pointer must be large enough to store at least 260 characters.
 */
 HRESULT fs_get_folder_path_win32(char* pPath, int nFolder)
 {
-    HRESULT hr;
+    HRESULT hr = E_FAIL;
 
     FS_ASSERT(pPath != NULL);
 
@@ -7817,15 +7826,15 @@ HRESULT fs_get_folder_path_win32(char* pPath, int nFolder)
     If that also stops working, we would need to use the Known Folder API which I'm unfamiliar with.
     */
 
-    hr = SHGetSpecialFolderPathA(NULL, pPath, nFolder, 0);
-    if (FAILED(hr)) {
+    if (!SHGetSpecialFolderPathA(NULL, pPath, nFolder, 0)) {
         /*
         If this fails it could be because we're calling this from an old version of Windows. We'll
         check for known folder types and do a fall back.
         */
         if (nFolder == CSIDL_LOCAL_APPDATA) {
-            hr = SHGetSpecialFolderPathA(NULL, pPath, CSIDL_APPDATA, 0);
-            if (FAILED(hr)) {
+            if (SHGetSpecialFolderPathA(NULL, pPath, CSIDL_APPDATA, 0)) {
+                hr = S_OK;
+            } else {
                 hr = fs_get_executable_directory_win32(pPath);
             }
         } else if (nFolder == CSIDL_PROFILE) {
@@ -7835,6 +7844,8 @@ HRESULT fs_get_folder_path_win32(char* pPath, int nFolder)
             */
             hr = fs_get_executable_directory_win32(pPath);
         }
+    } else {
+        hr = S_OK;
     }
 
     return hr;
@@ -7929,9 +7940,17 @@ FS_API size_t fs_sysdir(fs_sysdir_type type, char* pDst, size_t dstCap)
             {
                 fullLength = GetTempPathA(sizeof(pPath), pPath);
                 if (fullLength > 0) {
-                    if (pDst != NULL && fullLength < dstCap) {
-                        FS_COPY_MEMORY(pDst, pPath, fullLength);
-                        pDst[fullLength] = '\0';
+                    if (fullLength < sizeof(pPath)) {
+                        if (pDst != NULL && fullLength < dstCap) {
+                            FS_COPY_MEMORY(pDst, pPath, fullLength);
+                            pDst[fullLength] = '\0';
+                        }
+                    } else {
+                        /*
+                        Getting here means our stack allocated buffer `pPath` is too small for GetTempPathA(). This is extremely
+                        unlikely to get hit so I'm going to keep this simple and just fail in this case.
+                        */
+                        fullLength = 0;
                     }
                 }
             } break;
