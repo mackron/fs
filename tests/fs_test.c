@@ -3124,6 +3124,103 @@ int fs_test_archives_recursive(fs_test* pTest)
 }
 /* END archives_recursive */
 
+/* BEG archives_duplicate */
+int fs_test_archives_duplicate_pak(fs_test* pTest)
+{
+    unsigned char pakData[82];
+    fs_memory_stream stream;
+    fs_config config;
+    fs* pFS = NULL;
+    fs_file* pFile = NULL;
+    fs_file* pDuplicate = NULL;
+    fs_result result;
+    char data[2];
+
+    memset(pakData, 0, sizeof(pakData));
+    memcpy(pakData, "PACK", 4);
+    pakData[4] = 18;                /* TOC offset. */
+    pakData[8] = 64;                /* TOC size. */
+    memcpy(pakData + 12, "abcdef", 6);
+    pakData[18] = 'a';              /* File name. */
+    pakData[74] = 12;               /* File offset. */
+    pakData[78] = 6;                /* File size. */
+
+    result = fs_memory_stream_init_readonly(pakData, sizeof(pakData), &stream);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize PAK stream.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    config = fs_config_init(FS_PAK, NULL, (fs_stream*)&stream);
+    result = fs_init(&config, &pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize PAK file system.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_file_open(pFS, "a", FS_READ, &pFile);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to open PAK file.\n", pTest->name);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, data, 1, NULL);
+    if (result != FS_SUCCESS || data[0] != 'a') {
+        printf("%s: Failed to read PAK file before duplication.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    result = fs_file_duplicate(pFile, &pDuplicate);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to duplicate PAK file.\n", pTest->name);
+        fs_file_close(pFile);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pFile, data, sizeof(data), NULL);
+    if (result != FS_SUCCESS || memcmp(data, "bc", sizeof(data)) != 0) {
+        printf("%s: Failed to read original PAK file after duplication.\n", pTest->name);
+        fs_file_close(pDuplicate);
+        fs_file_close(pFile);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    result = fs_file_read(pDuplicate, data, sizeof(data), NULL);
+    if (result != FS_SUCCESS || memcmp(data, "bc", sizeof(data)) != 0) {
+        printf("%s: Duplicated PAK file does not have an independent cursor.\n", pTest->name);
+        fs_file_close(pDuplicate);
+        fs_file_close(pFile);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pFile);
+
+    result = fs_file_read(pDuplicate, data, sizeof(data), NULL);
+    if (result != FS_SUCCESS || memcmp(data, "de", sizeof(data)) != 0) {
+        printf("%s: Failed to read duplicated PAK file after closing original.\n", pTest->name);
+        fs_file_close(pDuplicate);
+        fs_uninit(pFS);
+        return FS_ERROR;
+    }
+
+    fs_file_close(pDuplicate);
+    fs_uninit(pFS);
+
+    return FS_SUCCESS;
+}
+
+int fs_test_archives_duplicate(fs_test* pTest)
+{
+    return fs_test_archives_duplicate_pak(pTest);
+}
+/* END archives_duplicate */
+
 /* BEG archives_uninit */
 int fs_test_archives_uninit(fs_test* pTest)
 {
@@ -4987,6 +5084,7 @@ int main(int argc, char** argv)
     fs_test test_archives_iteration_verbose;        /* Tests iteration with archives in verbose mode. */
     fs_test test_archives_iteration_transparent;    /* Tests iteration with archives in transparent mode. */
     fs_test test_archives_recursive;                /* Tests archives inside archives. */
+    fs_test test_archives_duplicate;                /* Tests duplication of files inside archives. */
     fs_test test_archives_uninit;                   /* This needs to be the last archive test. */
     fs_test test_mem;                               /* The top-level test for memory backend. This will set up the fs_mem object in preparation for subsequent tests. */
     fs_test test_mem_init;                          /* Initializes the memory backend. */
@@ -5111,6 +5209,7 @@ int main(int argc, char** argv)
     fs_test_init(&test_archives_iteration_verbose,     "Archives Iteration Verbose",     fs_test_archives_iteration_verbose,     &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_iteration_transparent, "Archives Iteration Transparent", fs_test_archives_iteration_transparent, &test_archives_state, &test_archives_iteration);
     fs_test_init(&test_archives_recursive,             "Archives Recursive",             fs_test_archives_recursive,             &test_archives_state, &test_archives);
+    fs_test_init(&test_archives_duplicate,             "Archives Duplicate",             fs_test_archives_duplicate,             &test_archives_state, &test_archives);
     fs_test_init(&test_archives_uninit,                "Archives Uninitialization",      fs_test_archives_uninit,                &test_archives_state, &test_archives);
 
     /*

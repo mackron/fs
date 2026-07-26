@@ -199,6 +199,7 @@ typedef struct fs_file_pak
     fs_stream* pStream;
     fs_uint32 tocIndex;
     fs_uint32 cursor;
+    fs_bool32 ownsStream;
 } fs_file_pak;
 
 static size_t fs_file_alloc_size_pak(fs* pFS)
@@ -230,6 +231,7 @@ static fs_result fs_file_open_pak(fs* pFS, fs_stream* pStream, const char* pPath
             pPakFile->tocIndex = tocIndex;
             pPakFile->cursor   = 0;
             pPakFile->pStream  = pStream;
+            pPakFile->ownsStream = FS_FALSE;
 
             result = fs_stream_seek(pPakFile->pStream, pPak->pTOC[tocIndex].offset, FS_SEEK_SET);
             if (result != FS_SUCCESS) {
@@ -246,8 +248,14 @@ static fs_result fs_file_open_pak(fs* pFS, fs_stream* pStream, const char* pPath
 
 static void fs_file_close_pak(fs_file* pFile)
 {
-    /* Nothing to do. */
-    (void)pFile;
+    fs_file_pak* pPakFile;
+
+    pPakFile = (fs_file_pak*)fs_file_get_backend_data(pFile);
+    FS_PAK_ASSERT(pPakFile != NULL);
+
+    if (pPakFile->ownsStream) {
+        fs_stream_delete_duplicate(pPakFile->pStream, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+    }
 }
 
 static fs_result fs_file_read_pak(fs_file* pFile, void* pDst, size_t bytesToRead, size_t* pBytesRead)
@@ -374,6 +382,9 @@ static fs_result fs_file_duplicate_pak(fs_file* pFile, fs_file* pDuplicatedFile)
 {
     fs_file_pak* pPakFile;
     fs_file_pak* pDuplicatedPakFile;
+    fs_pak* pPak;
+    fs_result result;
+    fs_int64 cursorAbsolute;
 
     pPakFile = (fs_file_pak*)fs_file_get_backend_data(pFile);
     FS_PAK_ASSERT(pPakFile != NULL);
@@ -381,8 +392,28 @@ static fs_result fs_file_duplicate_pak(fs_file* pFile, fs_file* pDuplicatedFile)
     pDuplicatedPakFile = (fs_file_pak*)fs_file_get_backend_data(pDuplicatedFile);
     FS_PAK_ASSERT(pDuplicatedPakFile != NULL);
 
-    /* We should be able to do this with a simple memcpy. */
-    FS_PAK_COPY_MEMORY(pDuplicatedPakFile, pPakFile, fs_file_alloc_size_pak(fs_file_get_fs(pFile)));
+    pPak = (fs_pak*)fs_get_backend_data(fs_file_get_fs(pFile));
+    FS_PAK_ASSERT(pPak != NULL);
+
+    pDuplicatedPakFile->pStream    = NULL;
+    pDuplicatedPakFile->tocIndex   = pPakFile->tocIndex;
+    pDuplicatedPakFile->cursor     = pPakFile->cursor;
+    pDuplicatedPakFile->ownsStream = FS_FALSE;
+
+    result = fs_stream_duplicate(pPakFile->pStream, fs_get_allocation_callbacks(fs_file_get_fs(pFile)), &pDuplicatedPakFile->pStream);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
+    cursorAbsolute = (fs_int64)pPak->pTOC[pPakFile->tocIndex].offset + pPakFile->cursor;
+    result = fs_stream_seek(pDuplicatedPakFile->pStream, cursorAbsolute, FS_SEEK_SET);
+    if (result != FS_SUCCESS) {
+        fs_stream_delete_duplicate(pDuplicatedPakFile->pStream, fs_get_allocation_callbacks(fs_file_get_fs(pFile)));
+        pDuplicatedPakFile->pStream = NULL;
+        return result;
+    }
+
+    pDuplicatedPakFile->ownsStream = FS_TRUE;
 
     return FS_SUCCESS;
 }
