@@ -1077,6 +1077,11 @@ typedef unsigned int  fs_bool32;
         typedef pthread_t       fs_pthread_t;
         typedef pthread_mutex_t fs_pthread_mutex_t;
     #else
+        /*
+        If you have opted into not including pthread.h in the header section, you need to
+        accept that the sizes of the structures below may not be accurate. It is on you
+        to take this risk and no technical support will be offered.
+        */
         typedef fs_uintptr      fs_pthread_t;
         typedef union           fs_pthread_mutex_t { char __data[40]; fs_uint64 __alignment; } fs_pthread_mutex_t;
     #endif
