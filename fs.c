@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <limits.h> /* For INT_MAX. */
 
 #if defined(__clang__) && defined(__has_attribute)
     #if __has_attribute(suppress)
@@ -886,6 +887,10 @@ FS_API fs_result fs_mtx_lock(fs_mtx* mutex)
     }
 
     result = WaitForSingleObject((HANDLE)mutex->handle, INFINITE);
+    if (result == WAIT_ABANDONED) {
+        ReleaseMutex((HANDLE)mutex->handle);
+        return FS_ERROR;
+    }
     if (result != WAIT_OBJECT_0) {
         return FS_ERROR;
     }
@@ -946,7 +951,6 @@ FS_API fs_result fs_mtx_init(fs_mtx* mutex, int type)
                 return FS_ERROR;
             }
 
-            mutex->owner = 0;  /* No owner initially. */
             mutex->recursionCount = 0;
         }
         
@@ -956,17 +960,23 @@ FS_API fs_result fs_mtx_init(fs_mtx* mutex, int type)
     }
     #else
     {
-        pthread_mutexattr_t attr;   /* For specifying whether or not the mutex is recursive. */
-
-        pthread_mutexattr_init(&attr);
         if ((type & fs_mtx_recursive) != 0) {
-            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-        } else {
-            pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);     /* Will deadlock. Consistent with Win32. */
-        }
+            pthread_mutexattr_t attr;
 
-        result = fs_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
-        pthread_mutexattr_destroy(&attr);
+            result = fs_result_from_pthread(pthread_mutexattr_init(&attr));
+            if (result != FS_SUCCESS) {
+                return FS_ERROR;
+            }
+
+            result = fs_result_from_pthread(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
+            if (result == FS_SUCCESS) {
+                result = fs_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, &attr));
+            }
+
+            pthread_mutexattr_destroy(&attr);
+        } else {
+            result = fs_result_from_pthread(pthread_mutex_init((pthread_mutex_t*)mutex, NULL));
+        }
 
         if (result != FS_SUCCESS) {
             return FS_ERROR;
@@ -1032,6 +1042,11 @@ FS_API fs_result fs_mtx_lock(fs_mtx* mutex)
 
         /* We can bomb out early if the current thread already owns this mutex. */
         if (mutex->recursionCount > 0 && pthread_equal(mutex->owner, currentThread)) {
+            if (mutex->recursionCount == INT_MAX) {
+                pthread_mutex_unlock(&mutex->guard);
+                return FS_ERROR;
+            }
+
             mutex->recursionCount += 1;
             pthread_mutex_unlock(&mutex->guard);
             return FS_SUCCESS;
@@ -1112,8 +1127,7 @@ FS_API fs_result fs_mtx_unlock(fs_mtx* mutex)
         mutex->recursionCount -= 1;
 
         if (mutex->recursionCount == 0) {
-            /* Last unlock. Clear ownership and unlock the main mutex. */
-            mutex->owner = 0;
+            /* Last unlock. Unlock the main mutex. */
             pthread_mutex_unlock(&mutex->guard);
 
             result = fs_result_from_pthread(pthread_mutex_unlock(&mutex->mutex));
