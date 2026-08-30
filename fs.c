@@ -372,7 +372,7 @@ FS_API int fs_strnicmp(const char* str1, const char* str2, size_t count)
 }
 
 
-/* BEG fs_result.c */
+/* BEG fs_result_description.c */
 FS_API const char* fs_result_description(fs_result result)
 {
     switch (result)
@@ -434,7 +434,9 @@ FS_API const char* fs_result_description(fs_result result)
         default:                               return "Unknown error";
     }
 }
+/* END fs_result_description.h */
 
+/* BEG fs_result_conversion.c */
 #include <errno.h>
 
 FS_API fs_result fs_result_from_errno(int error)
@@ -717,7 +719,7 @@ FS_API fs_result fs_result_from_GetLastError(void)
     }
 }
 #endif /* _WIN32 */
-/* END fs_result.c */
+/* END fs_result_conversion.c */
 
 
 /* BEG fs_allocation_callbacks.c */
