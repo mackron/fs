@@ -434,7 +434,7 @@ FS_API const char* fs_result_description(fs_result result)
         default:                               return "Unknown error";
     }
 }
-/* END fs_result_description.h */
+/* END fs_result_description.c */
 
 /* BEG fs_result_conversion.c */
 #include <errno.h>
