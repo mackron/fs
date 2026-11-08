@@ -1260,6 +1260,8 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
     fs_uint64 cdSizeInBytes64;
     fs_uint32 cdOffset32;
     fs_uint64 cdOffset64;
+    size_t centralDirectorySizeAligned;
+    size_t heapSize;
 
     /* No need for a backend config. Maybe use this later for passwords if we ever add support for that? */
     (void)pBackendConfig;
@@ -1543,14 +1545,25 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
 
     pZip->centralDirectorySize = (size_t)cdSizeInBytes64;
 
+    /* Check alignment, multiplication and addition before allocating the directory and index. */
+    if (pZip->centralDirectorySize > FS_SIZE_MAX - (FS_SIZEOF_PTR - 1)) {
+        return FS_TOO_BIG;
+    }
 
-    pZip->pHeap = fs_malloc(FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR) + (sizeof(*pZip->pIndex) * pZip->fileCount), fs_get_allocation_callbacks(pFS));
+    centralDirectorySizeAligned = FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR);
+    if (pZip->fileCount > (FS_SIZE_MAX - centralDirectorySizeAligned) / sizeof(*pZip->pIndex)) {
+        return FS_TOO_BIG;
+    }
+
+    heapSize = centralDirectorySizeAligned + sizeof(*pZip->pIndex) * pZip->fileCount;
+
+    pZip->pHeap = fs_malloc(heapSize, fs_get_allocation_callbacks(pFS));
     if (pZip->pHeap == NULL) {
         return FS_OUT_OF_MEMORY;
     }
 
     pZip->pCentralDirectory =                FS_ZIP_OFFSET_PTR(pZip->pHeap, 0);
-    pZip->pIndex            = (fs_zip_index*)FS_ZIP_OFFSET_PTR(pZip->pHeap, FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR));
+    pZip->pIndex            = (fs_zip_index*)FS_ZIP_OFFSET_PTR(pZip->pHeap, centralDirectorySizeAligned);
     pZip->pCDRootNode       = NULL; /* <-- This will be set later. */
 
     result = fs_stream_read(pStream, pZip->pCentralDirectory, pZip->centralDirectorySize, NULL);
@@ -1564,6 +1577,7 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
         fs_memory_stream cdStream;
         size_t iFile;
         size_t nodeUpperBoundCount;
+        size_t nodeCapacity;
 
         result = fs_memory_stream_init_readonly(pZip->pCentralDirectory, pZip->centralDirectorySize, &cdStream);
         if (result != FS_SUCCESS) {
@@ -1681,6 +1695,12 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
             prevPathLen = 0;
 
             /* Start the count at 1 to account for the root node. */
+            nodeCapacity = (FS_SIZE_MAX - heapSize) / sizeof(*pZip->pCDRootNode);
+            if (nodeCapacity == 0) {
+                fs_free(pZip->pHeap, fs_get_allocation_callbacks(pFS));
+                return FS_TOO_BIG;
+            }
+
             nodeUpperBoundCount = 1;
 
             for (iFile = 0; iFile < pZip->fileCount; iFile += 1) {
@@ -1725,10 +1745,20 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
                     }
 
                     /* Increment the counter to account for the segment that the next iterator is currently sitting on. */
+                    if (nodeUpperBoundCount == nodeCapacity) {
+                        fs_free(pZip->pHeap, fs_get_allocation_callbacks(pFS));
+                        return FS_TOO_BIG;
+                    }
+
                     nodeUpperBoundCount += 1;
 
                     /* Now we need to increment the counter for every new segment. */
                     while (fs_path_next(&nextIterator) == FS_SUCCESS) {
+                        if (nodeUpperBoundCount == nodeCapacity) {
+                            fs_free(pZip->pHeap, fs_get_allocation_callbacks(pFS));
+                            return FS_TOO_BIG;
+                        }
+
                         nodeUpperBoundCount += 1;
                     }
                 }
@@ -1744,7 +1774,9 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
         to remember to update our pointers here.
         */
         {
-            void* pNewHeap = fs_realloc(pZip->pHeap, FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR) + (sizeof(*pZip->pIndex) * pZip->fileCount) + (sizeof(*pZip->pCDRootNode) * nodeUpperBoundCount), fs_get_allocation_callbacks(pFS));
+            void* pNewHeap;
+
+            pNewHeap = fs_realloc(pZip->pHeap, heapSize + sizeof(*pZip->pCDRootNode) * nodeUpperBoundCount, fs_get_allocation_callbacks(pFS));
             if (pNewHeap == NULL) {
                 fs_free(pZip->pHeap, fs_get_allocation_callbacks(pFS));
                 return FS_OUT_OF_MEMORY;
@@ -1752,8 +1784,8 @@ static fs_result fs_init_zip(fs* pFS, const void* pBackendConfig, fs_stream* pSt
 
             pZip->pHeap = pNewHeap;
             pZip->pCentralDirectory =                  FS_ZIP_OFFSET_PTR(pZip->pHeap, 0);
-            pZip->pIndex            = (fs_zip_index*  )FS_ZIP_OFFSET_PTR(pZip->pHeap, FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR));
-            pZip->pCDRootNode       = (fs_zip_cd_node*)FS_ZIP_OFFSET_PTR(pZip->pHeap, FS_ZIP_ALIGN(pZip->centralDirectorySize, FS_SIZEOF_PTR) + (sizeof(*pZip->pIndex) * pZip->fileCount));
+            pZip->pIndex            = (fs_zip_index*  )FS_ZIP_OFFSET_PTR(pZip->pHeap, centralDirectorySizeAligned);
+            pZip->pCDRootNode       = (fs_zip_cd_node*)FS_ZIP_OFFSET_PTR(pZip->pHeap, heapSize);
         }
 
         /*

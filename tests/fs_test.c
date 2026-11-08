@@ -3166,8 +3166,115 @@ int fs_test_archives_validation_pak(fs_test* pTest)
     return FS_SUCCESS;
 }
 
+static void fs_test_zip_write_u64(unsigned char* pData, fs_uint64 value)
+{
+    size_t i;
+
+    for (i = 0; i < 8; i += 1) {
+        pData[i] = (unsigned char)(value & 0xFF);
+        value >>= 8;
+    }
+}
+
+int fs_test_archives_validation_zip(fs_test* pTest)
+{
+    unsigned char zipData[177];
+    fs_memory_stream stream;
+    fs_config config;
+    fs* pFS = NULL;
+    fs_result result;
+    size_t i;
+    const struct
+    {
+        const char* pName;
+        fs_uint64 recordCount;
+        fs_uint64 directorySize;
+    } cases[] = {
+        { "index multiplication", (fs_uint64)FS_SIZE_MAX / sizeof(size_t) + 1, 47 },
+        { "directory and index addition", (fs_uint64)FS_SIZE_MAX / sizeof(size_t), 47 },
+        { "directory alignment", 1, (fs_uint64)FS_SIZE_MAX },
+        { "aligned directory and index addition", 1, (fs_uint64)(FS_SIZE_MAX - (FS_SIZEOF_PTR - 1)) },
+        { "maximum record count", (fs_uint64)-1, 47 },
+        { "maximum directory size", 1, (fs_uint64)-1 }
+    };
+
+    /* A Zip64 archive with one stored file named "a", containing the byte 'a'. */
+    memset(zipData, 0, sizeof(zipData));
+    memcpy(zipData, "PK\003\004", 4);
+    zipData[4] = 20;                       /* Version needed. */
+    memcpy(zipData + 14, "\x43\xBE\xB7\xE8", 4); /* CRC32. */
+    zipData[18] = 1;                       /* Compressed size. */
+    zipData[22] = 1;                       /* Uncompressed size. */
+    zipData[26] = 1;                       /* File name length. */
+    zipData[30] = 'a';
+    zipData[31] = 'a';
+
+    memcpy(zipData + 32, "PK\001\002", 4);
+    zipData[36] = 45;                      /* Version made by. */
+    zipData[38] = 20;                      /* Version needed. */
+    memcpy(zipData + 48, zipData + 14, 4);
+    zipData[52] = 1;                       /* Compressed size. */
+    zipData[56] = 1;                       /* Uncompressed size. */
+    zipData[60] = 1;                       /* File name length. */
+    zipData[78] = 'a';
+
+    memcpy(zipData + 79, "PK\006\006", 4);
+    zipData[83] = 44;                      /* Zip64 EOCD size, excluding its first 12 bytes. */
+    zipData[91] = 45;
+    zipData[93] = 45;
+    fs_test_zip_write_u64(zipData + 103, 1);  /* Records on this disk. */
+    fs_test_zip_write_u64(zipData + 111, 1);  /* Total records. */
+    fs_test_zip_write_u64(zipData + 119, 47); /* Central directory size. */
+    fs_test_zip_write_u64(zipData + 127, 32); /* Central directory offset. */
+
+    memcpy(zipData + 135, "PK\006\007", 4);
+    fs_test_zip_write_u64(zipData + 143, 79); /* Zip64 EOCD offset. */
+    zipData[151] = 1;                      /* Disk count. */
+    memcpy(zipData + 155, "PK\005\006", 4);
+    memset(zipData + 163, 0xFF, 12);        /* Use the Zip64 count, size and offset. */
+
+    fs_memory_stream_init_readonly(zipData, sizeof(zipData), &stream);
+    config = fs_config_init(FS_ZIP, NULL, (fs_stream*)&stream);
+
+    result = fs_init(&config, &pFS);
+    if (result != FS_SUCCESS) {
+        printf("%s: Failed to initialize a valid Zip64 archive.\n", pTest->name);
+        return FS_ERROR;
+    }
+
+    result = fs_test_open_and_read_file(pTest, pFS, "a", FS_READ, "a", 1);
+    fs_uninit(pFS);
+    if (result != FS_SUCCESS) {
+        return FS_ERROR;
+    }
+
+    for (i = 0; i < FS_COUNTOF(cases); i += 1) {
+        fs_test_zip_write_u64(zipData + 103, cases[i].recordCount);
+        fs_test_zip_write_u64(zipData + 111, cases[i].recordCount);
+        fs_test_zip_write_u64(zipData + 119, cases[i].directorySize);
+        fs_memory_stream_init_readonly(zipData, sizeof(zipData), &stream);
+        pFS = NULL;
+
+        result = fs_init(&config, &pFS);
+        if (result != FS_TOO_BIG) {
+            printf("%s: Zip64 %s overflow returned %d instead of FS_TOO_BIG.\n", pTest->name, cases[i].pName, result);
+            fs_uninit(pFS);
+            return FS_ERROR;
+        }
+    }
+
+    return FS_SUCCESS;
+}
+
 int fs_test_archives_validation(fs_test* pTest)
 {
+    int result;
+
+    result = fs_test_archives_validation_zip(pTest);
+    if (result != FS_SUCCESS) {
+        return result;
+    }
+
     return fs_test_archives_validation_pak(pTest);
 }
 /* END archives_validation */
