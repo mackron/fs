@@ -5,6 +5,12 @@
 #include "fs_zip.h"
 
 #include <errno.h>
+
+/* DJGPP hides EINVAL in strict ANSI mode. */
+#if defined(__DJGPP__) && !defined(EINVAL)
+    #define EINVAL 14
+#endif
+
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
