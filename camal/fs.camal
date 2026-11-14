@@ -9,39 +9,24 @@ rename_results_namespace :: function(src:string) string
     return @(src)
         ["\bNS_"] <= "FS_"
         ["\bns_"] <= "fs_"
+        ["\bfs_result_to_string\b"] <= "fs_result_description"
     ;
 }
 
-construct_results_h :: function() string
+construct_result_conversion_c :: function() string
 {
     content : string;
-    content["$"] = @(results_c("/\* BEG result.h \*/\R"           : "\R/\* END result.h \*/"));
-    content["$"] = "\n\n";
-    content["$"] = @(results_c("/\* BEG result_to_string.h \*/\R" : "\R/\* END result_to_string.h \*/"));
-
-    content = rename_results_namespace(content);
-    content["fs_result_to_string"] = "fs_result_description";
-
-    return content;
-}
-
-construct_results_c :: function() string
-{
-    content : string;
-    content["$"] = @(results_c("/\* BEG result_to_string.c \*/\R"         : "\R/\* END result_to_string.c \*/"));
-    content["$"] = "\n\n";
     content["$"] = @(results_c("/\* BEG result_from_errno.c \*/\R"        : "\R/\* END result_from_errno.c \*/"));
     content["$"] = "\n\n";
     content["$"] = @(results_c("/\* BEG result_from_GetLastError.c \*/\R" : "\R/\* END result_from_GetLastError.c \*/"));
 
-    content = rename_results_namespace(content);
-    content["fs_result_to_string"] = "fs_result_description";
-
-    return content;
+    return rename_results_namespace(content);
 }
 
-fs_h("/\* BEG fs_result.h \*/\R" : "\R/\* END fs_result.h \*/") = construct_results_h();
-fs_c("/\* BEG fs_result.c \*/\R" : "\R/\* END fs_result.c \*/") = construct_results_c();
+fs_h("/\* BEG fs_result.h \*/\R" : "\R/\* END fs_result.h \*/") = rename_results_namespace(@(results_c("/\* BEG result.h \*/\R" : "\R/\* END result.h \*/")));
+fs_h("/\* BEG fs_result_description.h \*/\R" : "\R/\* END fs_result_description.h \*/") = rename_results_namespace(@(results_c("/\* BEG result_to_string.h \*/\R" : "\R/\* END result_to_string.h \*/")));
+fs_c("/\* BEG fs_result_description.c \*/\R" : "\R/\* END fs_result_description.c \*/") = rename_results_namespace(@(results_c("/\* BEG result_to_string.c \*/\R" : "\R/\* END result_to_string.c \*/")));
+fs_c("/\* BEG fs_result_conversion.c \*/\R" : "\R/\* END fs_result_conversion.c \*/") = construct_result_conversion_c();
 
 
 /* Threading. */
@@ -115,10 +100,17 @@ build_c89thread_mtx_c :: function() string
     pthread["\R/\* BEG fs_mtx_trylock_pthread.c \*/\R"   : "\R/\* END fs_mtx_trylock_pthread.c \*/\R"]   = "";
     pthread["\R/\* BEG fs_mtx_timedlock_pthread.c \*/\R" : "\R/\* END fs_mtx_timedlock_pthread.c \*/\R"] = "";
 
+    dos := convert_c89thread_mtx_c(@(c89thread_h("/\* BEG c89mtx_dos.c \*/\R" : "\R/\* END c89mtx_dos.c \*/")));
+    dos["\R/\* BEG fs_mtx_trylock_dos.c \*/\R"   : "\R/\* END fs_mtx_trylock_dos.c \*/\R"]   = "";
+    dos["\R/\* BEG fs_mtx_timedlock_dos.c \*/\R" : "\R/\* END fs_mtx_timedlock_dos.c \*/\R"] = "";
+
     result : string;
 
     result["$"] = "#if defined(FS_WIN32) && !defined(FS_USE_PTHREAD)\n";
     result["$"] = win32;
+    result["$"] = "\n";
+    result["$"] = "#elif defined(FS_DOS)\n";
+    result["$"] = dos;
     result["$"] = "\n";
     result["$"] = "#else\n";
     result["$"] = pthread;
